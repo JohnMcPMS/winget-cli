@@ -46,6 +46,8 @@ namespace AppInstaller::Settings
                 return userSettings.Get<Setting::EFExperimentalMSStore>();
             case ExperimentalFeature::Feature::PackagedAPI:
                 return userSettings.Get<Setting::EFPackagedAPI>();
+            case ExperimentalFeature::Feature::DirectMSI:
+                return userSettings.Get<Setting::EFDirectMSI>();
             default:
                 THROW_HR(E_UNEXPECTED);
             }
@@ -76,6 +78,8 @@ namespace AppInstaller::Settings
             return ExperimentalFeature{ "Microsoft Store Support", "experimentalMSStore", "https://aka.ms/winget-settings", Feature::ExperimentalMSStore };
         case Feature::PackagedAPI:
             return ExperimentalFeature{ "Packaged API Support", "packagedAPI", "https://aka.ms/winget-settings", Feature::PackagedAPI };
+        case Feature::DirectMSI:
+            return ExperimentalFeature{ "Direct MSI Installation", "directMSI", "https://aka.ms/winget-settings", Feature::DirectMSI };
         default:
             THROW_HR(E_UNEXPECTED);
         }
