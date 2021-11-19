@@ -148,6 +148,12 @@ namespace AppInstaller::CLI
 
     void ServerInitialize()
     {
-        AppInstaller::CLI::Execution::COMContext::SetLoggers();
+        // Logging is not critical to the COM server, but hopefully the failure telemetry
+        // will at least give some indication of the problem existing.
+        try
+        {
+            AppInstaller::CLI::Execution::COMContext::SetLoggers();
+        }
+        CATCH_LOG();
     }
 }

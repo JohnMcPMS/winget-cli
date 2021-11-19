@@ -70,15 +70,16 @@ namespace AppInstaller::CLI::Execution
 
     void COMContext::SetLoggers()
     {
+        // Call functions in order of importance in the event that they throw
+        Logging::EnableWilFailureTelemetry();
+
         Logging::Log().SetLevel(Logging::Level::Info);
         Logging::Log().EnableChannel(Logging::Channel::All);
+
+        Logging::AddTraceLogger();
 
         // TODO: Log to file for COM API calls only when debugging in visual studio
         Logging::AddFileLogger(s_comLogFileNamePrefix);
         Logging::BeginLogFileCleanup();
-
-        Logging::AddTraceLogger();
-
-        Logging::EnableWilFailureTelemetry();
     }
 }
