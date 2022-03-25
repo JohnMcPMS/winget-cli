@@ -81,4 +81,5 @@ namespace AppInstaller::Repository::Correlation
     DEFINE_CORRELATION_ALGORITHM(NoCorrelation);
     DEFINE_CORRELATION_ALGORITHM(NormalizedNameAndPublisherCorrelation);
     DEFINE_CORRELATION_ALGORITHM(NormalizedEditDistanceCorrelation);
+    DEFINE_CORRELATION_ALGORITHM(WordCorrelation);
 }

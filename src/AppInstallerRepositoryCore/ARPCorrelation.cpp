@@ -201,5 +201,66 @@ namespace AppInstaller::Repository::Correlation
     {
         return 0.5;
     }
+    
+    // This correlation attempts to use a longest common substring algorithm on the words of the values being compared.
+    // The thinking is:
+    //  1. there is at a minimum one word that is strongly tied to the brand of the the product name and publisher
+    //  2. that these branding words are unique
+    //  3. that typos in those words will be corrected in the data, not by our matching.
+    // 
+    // The algorithm is applied to both name and publisher, but the results are treated separately:
+    //  1. split the value into words
+    //  2. fold the case of each word
+    //  3. use the existing normalization regexes to find words that would be removed by normalization
+    //      a. do not remove them, just mark them as such for future scoring (ignorable)
+    //  4. use longest common substring (ne phrase) at the word level to find the longest phrases
+    //  5. calculate a score based on how much of each value was covered by the longest phrase
+    // 
+    // The scoring will take into account the name and publisher separately. The goal thresholds are:
+    //  1.00 : Exact match for all words
+    //  0.90 : Complete match when ignorable words are ignored
+    //  0.75 : Complete match on one of the values, score will decrease with every missed word in other value
+    //  0.50 : Incomplete match for both values, score will decrease with every missed word
+    //  0.00 : No matching words
+    // 
+    // The scores will be combined to target an overall threshold of 0.5 as a reasonable match and 0.75 as a confident match.
+    // Initial investigation into creating functions to combine the values are:
+    //  if (name + publisher < 1)
+    //      score = constant * (name ^ power) * (1 - publisher)
+    //  else
+    //      score = (1 - (1 - name) ^ power) - constant * (1 - publisher) ^ power
+    // Where the values are:
+    //  constant    : the output score when the name is a perfect match (1.0) and the publisher is a perfect miss (0.0)
+    //  power       : a value used to create non-linear progression of the score, increasing it effectively increases the
+    //                output threshold by lowering further for already low scores
+    // The goal of these functions is to create a case that when:
+    //  publisher == 0 : A slow ramp to the constant value, because a perfect name match should be fairly confident even if the publisher doesn't
+    //  publisher == 1 : A quick ramp as the name matches more, as perfect publisher match plus some name should be better than just some name
+    //  name == 0      : Should always be 0
+    //  name == 1      : A quick ramp from the constant value to 1 as the publisher matches more
+    double WordCorrelation::GetMatchingScore(
+        const Manifest::Manifest&,
+        const ManifestLocalization& localization,
+        const ARPEntry& arpEntry) const
+    {
+        NameNormalizer normer(NormalizationVersion::Initial);
+
+        auto arpNormalizedName = normer.Normalize(arpEntry.Name, arpEntry.Publisher);
+
+        auto name = localization.Get<Localization::PackageName>();
+        auto publisher = localization.Get<Localization::Publisher>();
+
+        auto manifestNormalizedName = normer.Normalize(name, publisher);
+
+        auto nameDistance = EditDistanceScore(arpNormalizedName.Name(), manifestNormalizedName.Name());
+        auto publisherDistance = EditDistanceScore(arpNormalizedName.Publisher(), manifestNormalizedName.Publisher());
+
+        return nameDistance * publisherDistance;
+    }
+
+    double WordCorrelation::GetMatchingThreshold() const
+    {
+        return 0.5;
+    }
 
 }
