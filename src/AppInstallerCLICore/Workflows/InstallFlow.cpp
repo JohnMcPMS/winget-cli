@@ -512,6 +512,9 @@ namespace AppInstaller::CLI::Workflow
             return;
         }
 
+        const auto& manifest = context.Get<Execution::Data::Manifest>();
+        const auto& arpSnapshot = context.Get<Execution::Data::ARPSnapshot>();
+
         // Open the ARP source again to get the (potentially) changed ARP entries
         Source arpSource = context.Reporter.ExecuteWithProgress(
             [](IProgressCallback& progress)
@@ -521,82 +524,6 @@ namespace AppInstaller::CLI::Workflow
                 return result;
             }, true);
 
-        const auto& manifest = context.Get<Execution::Data::Manifest>();
-
-        // Try finding the package by product code in ARP.
-        // If we can find it now, we will be able to find it again later
-        // so we don't need to do anything else here.
-        SearchRequest productCodeSearchRequest;
-        std::vector<std::string> productCodes;
-        for (const auto& installer : manifest.Installers)
-        {
-            if (!installer.ProductCode.empty())
-            {
-                if (std::find(productCodes.begin(), productCodes.end(), installer.ProductCode) == productCodes.end())
-                {
-                    productCodeSearchRequest.Inclusions.emplace_back(PackageMatchFilter(PackageMatchField::ProductCode, MatchType::Exact, installer.ProductCode));
-                    productCodes.emplace_back(installer.ProductCode);
-                }
-            }
-        }
-
-        SearchResult arpFoundByProductCode;
-
-        // Don't execute this search if it would just find everything
-        if (!productCodeSearchRequest.IsForEverything())
-        {
-            arpFoundByProductCode = arpSource.Search(productCodeSearchRequest);
-        }
-
-        if (!arpFoundByProductCode.Matches.empty())
-        {
-            // TODO: Would we want to report changes in this case?
-            AICLI_LOG(CLI, Info, << "Installed package can be found in ARP by Product Code");
-            return;
-        }
-
-        // The product codes were not enough to find the package.
-        // We need to run some heuristics to try and match it with some ARP entry.
-
-        // First format the ARP data appropriately for the heuristic search
-        std::vector<Correlation::ARPEntry> arpEntries;
-
-        size_t changedCount = 0;
-        const auto& arpSnapshot = context.Get<Execution::Data::ARPSnapshot>();
-        for (auto& entry : arpSource.Search({}).Matches)
-        {
-            auto installed = entry.Package->GetInstalledVersion();
-
-            if (installed)
-            {
-                // Compare with the previous snapshot to see if it changed.
-                auto entryKey = std::make_tuple(
-                    entry.Package->GetProperty(PackageProperty::Id),
-                    installed->GetProperty(PackageVersionProperty::Version),
-                    installed->GetProperty(PackageVersionProperty::Channel));
-
-                auto itr = std::lower_bound(arpSnapshot.begin(), arpSnapshot.end(), entryKey);
-                bool isNewOrUpdated = (itr == arpSnapshot.end() || *itr != entryKey);
-                if (isNewOrUpdated)
-                {
-                    ++changedCount;
-                }
-
-                arpEntries.emplace_back(installed, isNewOrUpdated);
-            }
-        }
-
-        // Find the best match
-        const auto& correlationMeasure = Correlation::ARPCorrelationMeasure::GetInstance();
-        auto arpEntry = correlationMeasure.GetBestMatchForManifest(manifest, arpEntries)
-            ->Entry; // TODO: Fix; this was modified as a hack for the tests...
-
-        IPackageVersion::Metadata arpEntryMetadata;
-        if (arpEntry)
-        {
-            arpEntryMetadata = arpEntry->GetMetadata();
-        }
-
         // We can only get the source identifier from an active source
         std::string sourceIdentifier;
         if (context.Contains(Execution::Data::PackageVersion))
@@ -604,28 +531,13 @@ namespace AppInstaller::CLI::Workflow
             sourceIdentifier = context.Get<Execution::Data::PackageVersion>()->GetProperty(PackageVersionProperty::SourceIdentifier);
         }
 
+        auto arpEntry = Correlation::FindARPEntryForNewlyInstalledPackage(manifest, arpSnapshot, arpSource, sourceIdentifier);
+
         // Store the ARP entry found to match the package to record it in the tracking catalog later
         if (arpEntry)
         {
-            // We use the product code as the ID in the ARP source.
-            context.Add<Data::ProductCodeFromARP>(arpEntry->GetProperty(PackageVersionProperty::Id));
+            context.Add<Data::ProductCodeFromARP>(arpEntry->GetMultiProperty(PackageVersionMultiProperty::ProductCode));
         }
-
-        // TODO: Revisit removed checks
-
-        Logging::Telemetry().LogSuccessfulInstallARPChange(
-            sourceIdentifier,
-            manifest.Id,
-            manifest.Version,
-            manifest.Channel,
-            changedCount,
-            0, // TODO findByManifest.Matches.size(),
-            0, // TODO packagesInBoth.size(),
-            arpEntry ? static_cast<std::string>(arpEntry->GetProperty(PackageVersionProperty::Name)) : "",
-            arpEntry ? static_cast<std::string>(arpEntry->GetProperty(PackageVersionProperty::Version)) : "",
-            arpEntry ? static_cast<std::string_view>(arpEntryMetadata[PackageVersionMetadata::Publisher]) : "",
-            arpEntry ? static_cast<std::string_view>(arpEntryMetadata[PackageVersionMetadata::InstalledLocale]) : ""
-        );
     }
     CATCH_LOG();
 
@@ -647,7 +559,15 @@ namespace AppInstaller::CLI::Workflow
         // Note that this may overwrite existing information.
         if (context.Contains(Data::ProductCodeFromARP))
         {
-            manifest.DefaultInstallerInfo.ProductCode = context.Get<Data::ProductCodeFromARP>().get();
+            // Use a new Installer entry
+            manifest.Installers.emplace_back();
+            auto& installer = manifest.Installers.back();
+            for (const auto& arpProductCode : context.Get<Data::ProductCodeFromARP>())
+            {
+                AppsAndFeaturesEntry newEntry;
+                newEntry.ProductCode = arpProductCode.get();
+                installer.AppsAndFeaturesEntries.push_back(std::move(newEntry));
+            }
         }
 
         auto trackingCatalog = context.Get<Data::PackageVersion>()->GetSource().GetTrackingCatalog();
