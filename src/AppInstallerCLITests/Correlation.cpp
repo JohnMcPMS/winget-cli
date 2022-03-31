@@ -292,3 +292,15 @@ TEST_CASE("CorrelationHeuristicIsGood", "[correlation]")
     auto results = EvaluateDataSetWithHeuristic(dataSet, measure);
     EvaluateResults(results, dataSet);
 }
+
+
+TEST_CASE("MyTestCase", "[correlation]")
+{
+    // Each section loads a different data set,
+    // and then they are all handled the same
+    DataSet dataSet = GetDataSet_ManyAppsNoNoise();
+
+    TestAlgorithmForStringMatching<LongestCommonPhraseNameAndPublisherCorrelationMeasure> measure;
+    auto results = EvaluateDataSetWithHeuristic(dataSet, measure);
+    //ReportResults(results);
+}

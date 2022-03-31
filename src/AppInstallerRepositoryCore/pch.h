@@ -58,6 +58,7 @@
 #include <tuple>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 #pragma warning( push )
 #pragma warning ( disable : 26495 26439 )

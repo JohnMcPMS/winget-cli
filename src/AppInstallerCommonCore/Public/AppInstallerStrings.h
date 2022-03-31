@@ -190,4 +190,7 @@ namespace AppInstaller::Utility
             return {};
         }
     }
+
+    // Splits the given phrase into words using the ICU word break iterator.
+    std::vector<std::string_view> SplitWords(std::string_view phrase, std::string_view locale = {});
 }

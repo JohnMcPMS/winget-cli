@@ -13,6 +13,7 @@ namespace AppInstaller::Utility
         struct InterimNameNormalizationResult
         {
             std::wstring Name;
+            std::vector<std::wstring> NameWords;
             Architecture Architecture = Architecture::Unknown;
             std::wstring Locale;
         };
@@ -376,8 +377,8 @@ namespace AppInstaller::Utility
                 // Repeatedly remove matches for the regexes to create the minimum name
                 while (RemoveAll(ProgramNameRegexes, result.Name));
 
-                auto tokens = Split(ProgramNameSplit, result.Name, LegalEntitySuffixes);
-                result.Name = Join(tokens);
+                result.NameWords = Split(ProgramNameSplit, result.Name, LegalEntitySuffixes);
+                result.Name = Join(result.NameWords);
 
                 // Drop all undesired characters
                 Remove(NonLettersAndDigits, result.Name);
@@ -415,6 +416,7 @@ namespace AppInstaller::Utility
 
                 NormalizedName result;
                 result.Name(ConvertToUTF8(nameResult.Name));
+                result.NameWords(std::move(nameResult.NameWords));
                 result.Architecture(nameResult.Architecture);
                 result.Locale(ConvertToUTF8(nameResult.Locale));
                 result.Publisher(ConvertToUTF8(pubResult.Publisher));
@@ -428,6 +430,7 @@ namespace AppInstaller::Utility
 
                 NormalizedName result;
                 result.Name(ConvertToUTF8(nameResult.Name));
+                result.NameWords(std::move(nameResult.NameWords));
                 result.Architecture(nameResult.Architecture);
                 result.Locale(ConvertToUTF8(nameResult.Locale));
 
@@ -439,6 +442,11 @@ namespace AppInstaller::Utility
                 InterimPublisherNormalizationResult pubResult = NormalizePublisherInternal(publisher);
 
                 return ConvertToUTF8(pubResult.Publisher);
+            }
+
+            NormalizedWordCategory DetermineWordCategory(std::string_view, bool) const override
+            {
+                return NormalizedWordCategory::Primary;
             }
         };
     }
@@ -468,5 +476,10 @@ namespace AppInstaller::Utility
     std::string NameNormalizer::NormalizePublisher(std::string_view publisher) const
     {
         return m_normalizer->NormalizePublisher(publisher);
+    }
+
+    NormalizedWordCategory NameNormalizer::DetermineWordCategory(std::string_view value, bool isName) const
+    {
+        return m_normalizer->DetermineWordCategory(value, isName);
     }
 }

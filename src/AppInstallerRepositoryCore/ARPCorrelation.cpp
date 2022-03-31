@@ -366,7 +366,84 @@ namespace AppInstaller::Repository::Correlation
 
         return toLog;
     }
-    
+
+    // Find the best match using heuristics
+    std::shared_ptr<AppInstaller::Repository::IPackageVersion> FindARPEntryForNewlyInstalledPackageWithHeuristics(
+        const Manifest::Manifest& manifest,
+        const std::vector<ARPEntrySnapshot>& arpSnapshot,
+        Source& arpSource)
+    {
+        // First format the ARP data appropriately for the heuristic search
+        std::vector<Correlation::ARPEntry> arpEntriesForCorrelation;
+        for (auto& entry : arpSource.Search({}).Matches)
+        {
+            // TODO: Remove duplication with the other function
+            auto installed = entry.Package->GetInstalledVersion();
+
+            if (installed)
+            {
+                // Compare with the previous snapshot to see if it changed.
+                auto entryKey = std::make_tuple(
+                    entry.Package->GetProperty(PackageProperty::Id),
+                    installed->GetProperty(PackageVersionProperty::Version),
+                    installed->GetProperty(PackageVersionProperty::Channel));
+
+                auto itr = std::lower_bound(arpSnapshot.begin(), arpSnapshot.end(), entryKey);
+                bool isNewOrUpdated = (itr == arpSnapshot.end() || *itr != entryKey);
+                arpEntriesForCorrelation.emplace_back(installed, isNewOrUpdated);
+            }
+        }
+
+        // Find the best match
+        const auto& correlationMeasure = Correlation::ARPCorrelationAlgorithm::GetInstance();
+        return correlationMeasure.GetBestMatchForManifest(manifest, arpEntriesForCorrelation)->Entry;
+    }
+
+    struct WordMatchingWord
+    {
+        WordMatchingWord(std::string_view value, NormalizedWordCategory category) :
+            m_value(FoldCase(value)), m_category(category)
+        {}
+
+    private:
+        std::string m_value;
+        NormalizedWordCategory m_category;
+    };
+
+    struct WordMatchingPhrase
+    {
+        WordMatchingPhrase(const NameNormalizer& normalizer, std::string_view value, bool isName, std::string_view locale)
+        {
+            UNREFERENCED_PARAMETER(isName);
+            UNREFERENCED_PARAMETER(locale);
+
+            std::cout << value << " => ";
+            auto normd = normalizer.NormalizeName(value);
+
+            for (const auto& word : normd.NameWords())
+            {
+                std::cout << '\'' << ConvertToUTF8(word) << "' ";
+            }
+            std::cout << std::endl;
+
+            //std::vector<std::string_view> words = SplitWords(value, locale);
+
+            //for (const auto& word : words)
+            //{
+            //    // Using the normalization rules, determine the type of the word
+            //    NormalizedWordCategory category = normalizer.DetermineWordCategory(word, isName);
+
+            //    if (category != NormalizedWordCategory::Whitespace)
+            //    {
+            //        m_words.emplace_back(word, category);
+            //    }
+            //}
+        }
+
+    private:
+        std::vector<WordMatchingWord> m_words;
+    };
+
     // This correlation attempts to use a longest common substring algorithm on the words of the values being compared.
     // The thinking is:
     //  1. there is at a minimum one word that is strongly tied to the brand of the the product name and publisher
@@ -403,60 +480,20 @@ namespace AppInstaller::Repository::Correlation
     //  publisher == 1 : A quick ramp as the name matches more, as perfect publisher match plus some name should be better than just some name
     //  name == 0      : Should always be 0
     //  name == 1      : A quick ramp from the constant value to 1 as the publisher matches more
-    double WordCorrelation::GetMatchingScore(
-        const Manifest::Manifest&,
-        const ManifestLocalization& localization,
-        const ARPEntry& arpEntry) const
+    double LongestCommonPhraseNameAndPublisherCorrelationMeasure::GetMatchingScore(
+        std::string_view packageName, std::string_view packagePublisher, std::string_view arpName, std::string_view arpPublisher) const
     {
-        NameNormalizer normer(NormalizationVersion::Initial);
+        UNREFERENCED_PARAMETER(packagePublisher);
+        UNREFERENCED_PARAMETER(arpName);
+        UNREFERENCED_PARAMETER(arpPublisher);
 
-        auto arpNormalizedName = normer.Normalize(arpEntry.Name, arpEntry.Publisher);
+        // Assumptions made by sample algorithm:
+        //  English language for word breaking
 
-        auto name = localization.Get<Localization::PackageName>();
-        auto publisher = localization.Get<Localization::Publisher>();
+        // Really we want to be able to do the manifest specific setup once, rather than calculating these over and over
+        NameNormalizer normalizer{ NormalizationVersion::Initial };
+        WordMatchingPhrase packageNamePhrase{ normalizer, packageName, true, {} };
 
-        auto manifestNormalizedName = normer.Normalize(name, publisher);
-
-        auto nameDistance = EditDistanceScore(arpNormalizedName.Name(), manifestNormalizedName.Name());
-        auto publisherDistance = EditDistanceScore(arpNormalizedName.Publisher(), manifestNormalizedName.Publisher());
-
-        return nameDistance * publisherDistance;
-    }
-
-    double WordCorrelation::GetMatchingThreshold() const
-    {
-        return 0.5;
-    }
-
-    // Find the best match using heuristics
-    std::shared_ptr<AppInstaller::Repository::IPackageVersion> FindARPEntryForNewlyInstalledPackageWithHeuristics(
-        const Manifest::Manifest& manifest,
-        const std::vector<ARPEntrySnapshot>& arpSnapshot,
-        Source& arpSource)
-    {
-        // First format the ARP data appropriately for the heuristic search
-        std::vector<Correlation::ARPEntry> arpEntriesForCorrelation;
-        for (auto& entry : arpSource.Search({}).Matches)
-        {
-            // TODO: Remove duplication with the other function
-            auto installed = entry.Package->GetInstalledVersion();
-
-            if (installed)
-            {
-                // Compare with the previous snapshot to see if it changed.
-                auto entryKey = std::make_tuple(
-                    entry.Package->GetProperty(PackageProperty::Id),
-                    installed->GetProperty(PackageVersionProperty::Version),
-                    installed->GetProperty(PackageVersionProperty::Channel));
-
-                auto itr = std::lower_bound(arpSnapshot.begin(), arpSnapshot.end(), entryKey);
-                bool isNewOrUpdated = (itr == arpSnapshot.end() || *itr != entryKey);
-                arpEntriesForCorrelation.emplace_back(installed, isNewOrUpdated);
-            }
-        }
-
-        // Find the best match
-        const auto& correlationMeasure = Correlation::ARPCorrelationAlgorithm::GetInstance();
-        return correlationMeasure.GetBestMatchForManifest(manifest, arpEntriesForCorrelation)->Entry;
+        return {};
     }
 }

@@ -107,6 +107,12 @@ namespace AppInstaller::Repository::Correlation
         double GetMatchingScore(std::string_view packageName, std::string_view packagePublisher, std::string_view arpName, std::string_view arpPublisher) const override;
     };
 
+    // Measures the correlation using longest common substring on the words of the values (aka longest common phrase).
+    struct LongestCommonPhraseNameAndPublisherCorrelationMeasure : public NameAndPublisherCorrelationMeasure
+    {
+        double GetMatchingScore(std::string_view packageName, std::string_view packagePublisher, std::string_view arpName, std::string_view arpPublisher) const override;
+    };
+
     // Finds the ARP entry in the ARP source that matches a newly installed package.
     // Takes the package manifest, a snapshot of the ARP before the installation, and the current ARP source.
     // Returns the entry in the ARP source, or nullptr if there was no match.

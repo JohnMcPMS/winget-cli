@@ -591,4 +591,26 @@ namespace AppInstaller::Utility
 
         return path.filename();
     }
+
+    std::vector<std::string_view> SplitWords(std::string_view phrase, std::string_view locale)
+    {
+        std::vector<std::string_view> result;
+
+        // TODO: implement locale
+        UNREFERENCED_PARAMETER(locale);
+        ICUBreakIterator itr{ phrase, UBRK_WORD };
+
+        int32_t currentBrk = itr.CurrentBreak();
+
+        while (itr.Next() != UBRK_DONE)
+        {
+            if (currentBrk != itr.CurrentBreak())
+            {
+                result.emplace_back(phrase.substr(currentBrk, itr.CurrentBreak() - currentBrk));
+            }
+            currentBrk = itr.CurrentBreak();
+        }
+
+        return result;
+    }
 }
