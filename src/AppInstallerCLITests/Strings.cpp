@@ -204,3 +204,22 @@ TEST_CASE("SplitIntoWords", "[strings]")
     // Split as "私" "の" "テスト"
     REQUIRE(SplitIntoWords("\xe7\xa7\x81\xe3\x81\xae\xe3\x83\x86\xe3\x82\xb9\xe3\x83\x88") == std::vector<std::string>{ "\xe7\xa7\x81", "\xe3\x81\xae", "\xe3\x83\x86\xe3\x82\xb9\xe3\x83\x88" });
 }
+
+TEST_CASE("UTFString", "[strings]")
+{
+    UTFString test;
+    REQUIRE(test.get<char>().empty());
+    REQUIRE(test.get<wchar_t>().empty());
+
+    test = "Test";
+    REQUIRE(test.get<char>() == "Test");
+    REQUIRE(test.get<wchar_t>() == L"Test");
+
+    test = L"Again";
+    REQUIRE(test.get<char>() == "Again");
+    REQUIRE(test.get<wchar_t>() == L"Again");
+
+    test = "";
+    REQUIRE(test.get<char>() == "");
+    REQUIRE(test.get<wchar_t>() == L"");
+}

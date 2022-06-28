@@ -194,7 +194,41 @@ namespace AppInstaller::Utility
 
         FAIL_FAST_HR_IF(E_UNEXPECTED, utf32ByteCount != utf32BytesWritten);
 
+        // TODO: Remove the BOM that ucnv_convert places at the beginning of the string
+
         return result;
+    }
+
+    template <std::size_t... Indices, typename Tuple>
+    static void ClearHelper(std::index_sequence<Indices...>, Tuple& t)
+    {
+        (std::get<Indices>(t).clear(), ...);
+    }
+
+    void UTFString::clear() noexcept
+    {
+        ClearHelper(std::make_index_sequence<std::tuple_size_v<StorageType>>{}, m_storage);
+        m_primary = NotSet;
+    }
+
+    std::string UTFString::CharacterTraits<char>::ConvertFrom(const std::string& s)
+    {
+        return s;
+    }
+
+    std::string UTFString::CharacterTraits<char>::ConvertFrom(const std::wstring& s)
+    {
+        return ConvertToUTF8(s);
+    }
+
+    std::wstring UTFString::CharacterTraits<wchar_t>::ConvertFrom(const std::string& s)
+    {
+        return ConvertToUTF16(s);
+    }
+
+    std::wstring UTFString::CharacterTraits<wchar_t>::ConvertFrom(const std::wstring& s)
+    {
+        return s;
     }
 
     size_t UTF8Length(std::string_view input)

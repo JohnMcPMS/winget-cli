@@ -5,6 +5,8 @@
 #include <ostream>
 #include <string>
 #include <string_view>
+#include <tuple>
+#include <utility>
 #include <vector>
 
 namespace AppInstaller::Utility
@@ -17,6 +19,184 @@ namespace AppInstaller::Utility
 
     // Converts the given UTF8 string to UTF32
     std::u32string ConvertToUTF32(std::string_view input);
+
+    // A string-like container that caches the value in various UTFs.
+    struct UTFString
+    {
+        UTFString() = default;
+
+        UTFString(const UTFString&) = default;
+        UTFString& operator=(const UTFString&) = default;
+
+        UTFString(UTFString&&) = default;
+        UTFString& operator=(UTFString&&) = default;
+
+        // Constructors from input
+        template <typename C, size_t Size>
+        UTFString(const C(&s)[Size]) { SetPrimary<C>(std::basic_string<C>{ s }); }
+
+        template <typename C>
+        UTFString(std::basic_string_view<C> sv) { SetPrimary<C>(std::basic_string<C>{ sv }); }
+
+        template <typename C>
+        UTFString(std::basic_string<C>& s) { SetPrimary<C>(s); }
+
+        template <typename C>
+        UTFString(const std::basic_string<C>& s) { SetPrimary<C>(s); }
+
+        template <typename C>
+        UTFString(std::basic_string<C>&& s) noexcept { SetPrimary<C>(s); }
+
+        // Assignment operators
+        template <typename C, size_t Size>
+        UTFString& operator=(const C(&s)[Size])
+        {
+            ClearAndSetPrimary<C>(std::basic_string<C>{ s });
+            return *this;
+        }
+
+        template <typename C>
+        UTFString& operator=(std::basic_string_view<C> sv)
+        {
+            ClearAndSetPrimary<C>(std::basic_string<C>{ sv });
+            return *this;
+        }
+
+        template <typename C>
+        UTFString& operator=(std::basic_string<C>& s)
+        {
+            ClearAndSetPrimary<C>(s);
+            return *this;
+        }
+
+        template <typename C>
+        UTFString& operator=(const std::basic_string<C>& s)
+        {
+            ClearAndSetPrimary<C>(s);
+            return *this;
+        }
+
+        template <typename C>
+        UTFString& operator=(std::basic_string<C>&& s)
+        {
+            ClearAndSetPrimary<C>(s);
+            return *this;
+        }
+
+        void clear() noexcept;
+
+        template <typename C>
+        const std::basic_string<C>& get() const
+        {
+            // If the value is not empty, it is already converted
+            const std::basic_string<C>& cachedResult = Get<C>();
+            if (CharacterTraits<C>::index == m_primary || !cachedResult.empty())
+            {
+                return cachedResult;
+            }
+
+            return ConvertTo<C>();
+        }
+
+        template <typename C>
+        operator const std::basic_string<C>& () const
+        {
+            return get<C>();
+        }
+
+        template <typename C>
+        const C* c_str() const
+        {
+            return get<C>().c_str();
+        }
+
+    private:
+        using StorageType = std::tuple<std::string, std::wstring>;
+
+        template <typename C>
+        void SetSecondary(const std::basic_string<C>& s)
+        {
+            Get<C>() = s;
+        }
+
+        template <typename C>
+        void SetSecondary(std::basic_string<C>&& s)
+        {
+            Get<C>() = std::move(s);
+        }
+
+        template <typename C, typename S>
+        void SetPrimary(S&& s)
+        {
+            m_primary = CharacterTraits<C>::index;
+            SetSecondary<C>(std::forward<S>(s));
+        }
+
+        template <typename C, typename S>
+        void ClearAndSetPrimary(S&& s)
+        {
+            clear();
+            SetPrimary<C>(std::forward<S>(s));
+        }
+
+        template <typename C>
+        const std::basic_string<C>& Get() const
+        {
+            return std::get<CharacterTraits<C>::index>(m_storage);
+        }
+
+        template <typename C>
+        std::basic_string<C>& Get()
+        {
+            return std::get<CharacterTraits<C>::index>(m_storage);
+        }
+
+        template <typename C, std::size_t... Indices>
+        std::basic_string<C> ConvertToHelper(C, std::index_sequence<Indices...>) const
+        {
+            std::basic_string<C> result;
+            ((Indices == m_primary ? void(result = CharacterTraits<C>::ConvertFrom(std::get<Indices>(m_storage))) : void()), ...);
+            return result;
+        }
+
+        template <typename C>
+        const std::basic_string<C>& ConvertTo() const
+        {
+            // Despite being const, store the converted value
+            std::basic_string<C>& result = const_cast<UTFString*>(this)->Get<C>();
+            result = ConvertToHelper(C{}, std::make_index_sequence<std::tuple_size_v<StorageType>>{});
+            return result;
+        }
+
+        static constexpr size_t NotSet = std::numeric_limits<size_t>::max();
+        size_t m_primary = NotSet;
+
+        StorageType m_storage;
+
+        template <typename C>
+        struct CharacterTraits
+        {
+            // static constexpr size_t index; contains tuple index
+        };
+
+        template<>
+        struct CharacterTraits<char>
+        {
+            static constexpr size_t index = 0;
+
+            static std::string ConvertFrom(const std::string& s);
+            static std::string ConvertFrom(const std::wstring& s);
+        };
+
+        template<>
+        struct CharacterTraits<wchar_t>
+        {
+            static constexpr size_t index = 1;
+
+            static std::wstring ConvertFrom(const std::string& s);
+            static std::wstring ConvertFrom(const std::wstring& s);
+        };
+    };
 
     // Normalizes a UTF8 string to the given form.
     std::string Normalize(std::string_view input, NORM_FORM form = NORM_FORM::NormalizationKC);
