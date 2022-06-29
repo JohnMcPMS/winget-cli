@@ -214,6 +214,8 @@ TEST_CASE("UTFString", "[strings]")
     test = "Test";
     REQUIRE(test.get<char>() == "Test");
     REQUIRE(test.get<wchar_t>() == L"Test");
+    REQUIRE(test == "Test");
+    REQUIRE(test == L"Test");
 
     test = L"Again";
     REQUIRE(test.get<char>() == "Again");

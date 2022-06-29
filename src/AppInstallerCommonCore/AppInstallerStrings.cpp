@@ -199,6 +199,26 @@ namespace AppInstaller::Utility
         return result;
     }
 
+    std::string_view CharacterTraits<char>::ConvertFrom(std::string_view s)
+    {
+        return s;
+    }
+
+    std::string CharacterTraits<char>::ConvertFrom(std::wstring_view s)
+    {
+        return ConvertToUTF8(s);
+    }
+
+    std::wstring CharacterTraits<wchar_t>::ConvertFrom(std::string_view s)
+    {
+        return ConvertToUTF16(s);
+    }
+
+    std::wstring_view CharacterTraits<wchar_t>::ConvertFrom(std::wstring_view s)
+    {
+        return s;
+    }
+
     template <std::size_t... Indices, typename Tuple>
     static void ClearHelper(std::index_sequence<Indices...>, Tuple& t)
     {
@@ -209,26 +229,6 @@ namespace AppInstaller::Utility
     {
         ClearHelper(std::make_index_sequence<std::tuple_size_v<StorageType>>{}, m_storage);
         m_primary = NotSet;
-    }
-
-    std::string UTFString::CharacterTraits<char>::ConvertFrom(const std::string& s)
-    {
-        return s;
-    }
-
-    std::string UTFString::CharacterTraits<char>::ConvertFrom(const std::wstring& s)
-    {
-        return ConvertToUTF8(s);
-    }
-
-    std::wstring UTFString::CharacterTraits<wchar_t>::ConvertFrom(const std::string& s)
-    {
-        return ConvertToUTF16(s);
-    }
-
-    std::wstring UTFString::CharacterTraits<wchar_t>::ConvertFrom(const std::wstring& s)
-    {
-        return s;
     }
 
     size_t UTF8Length(std::string_view input)
@@ -245,7 +245,7 @@ namespace AppInstaller::Utility
         return numGraphemeClusters;
     }
 
-    size_t UTF8ColumnWidth(const NormalizedUTF8<NormalizationC>& input)
+    size_t UTF8ColumnWidth(const NormalizedUTF<NormalizationC>& input)
     {
         ICUBreakIterator itr{ input, UBRK_CHARACTER };
 
@@ -290,7 +290,7 @@ namespace AppInstaller::Utility
         return input.substr(utf8Offset, utf8Count);
     }
 
-    std::string UTF8TrimRightToColumnWidth(const NormalizedUTF8<NormalizationC>& input, size_t expectedWidth, size_t& actualWidth)
+    std::string UTF8TrimRightToColumnWidth(const NormalizedUTF<NormalizationC>& input, size_t expectedWidth, size_t& actualWidth)
     {
         ICUBreakIterator itr{ input, UBRK_CHARACTER };
 
@@ -321,7 +321,7 @@ namespace AppInstaller::Utility
 
         actualWidth = columnWidth;
 
-        return input.substr(0, currentBrk);
+        return input->substr(0, currentBrk);
     }
 
     std::string Normalize(std::string_view input, NORM_FORM form)
@@ -427,9 +427,7 @@ namespace AppInstaller::Utility
 
     NormalizedString FoldCase(const NormalizedString& input)
     {
-        NormalizedString result;
-        result.assign(FoldCase(static_cast<std::string_view>(input)));
-        return result;
+        return { FoldCase(static_cast<std::string_view>(input)), NormalizedString::PreNormalized_t{} };
     }
 
     bool IsEmptyOrWhitespace(std::string_view str)
