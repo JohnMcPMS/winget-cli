@@ -219,8 +219,8 @@ namespace AppInstaller::Utility
         return s;
     }
 
-    template <std::size_t... Indices, typename Tuple>
-    static void ClearHelper(std::index_sequence<Indices...>, Tuple& t)
+    template <std::size_t... Indices>
+    static void ClearHelper(std::index_sequence<Indices...>, UTFString::StorageType& t)
     {
         (std::get<Indices>(t).clear(), ...);
     }
@@ -229,6 +229,78 @@ namespace AppInstaller::Utility
     {
         ClearHelper(std::make_index_sequence<std::tuple_size_v<StorageType>>{}, m_storage);
         m_primary = NotSet;
+    }
+
+    template <std::size_t... Indices>
+    static bool EmptyHelper(std::index_sequence<Indices...>, size_t primary, const UTFString::StorageType& t)
+    {
+        // If primary is not set, then it is empty
+        bool result = true;
+        ((Indices == primary ? void(result = std::get<Indices>(t).empty()) : void()), ...);
+        return result;
+    }
+
+    bool UTFString::empty() const noexcept
+    {
+        return (m_primary == NotSet ? true : EmptyHelper(std::make_index_sequence<std::tuple_size_v<StorageType>>{}, m_primary, m_storage));
+    }
+
+    template <std::size_t... Indices>
+    static bool EqualsHelper(std::index_sequence<Indices...>, size_t primary, const UTFString::StorageType& t, const UTFString::StorageType& o)
+    {
+        bool result = false;
+        ((Indices == primary ? void(result = (std::get<Indices>(t) == std::get<Indices>(o))) : void()), ...);
+        return result;
+    }
+
+    template <std::size_t... Indices>
+    static bool EqualsHelper(std::index_sequence<Indices...>, size_t primary, const UTFString& t, const UTFString::StorageType& o)
+    {
+        bool result = false;
+        ((Indices == primary ? void(result = (t.get<std::decay_t<decltype(std::get<Indices>(o)[0])>>() == std::get<Indices>(o))) : void()), ...);
+        return result;
+    }
+
+    bool UTFString::operator==(const UTFString& other) const
+    {
+        if (m_primary == other.m_primary)
+        {
+            return (m_primary == NotSet ? true : EqualsHelper(std::make_index_sequence<std::tuple_size_v<StorageType>>{}, m_primary, m_storage, other.m_storage));
+        }
+        else
+        {
+            // Optimize for writing code like `if (fixed == variable)`, which is more common (said with absolutely no data).
+            // This means using other's primary and converting this so that hopefully the converted value is reused.
+            return EqualsHelper(std::make_index_sequence<std::tuple_size_v<StorageType>>{}, other.m_primary, *this, other.m_storage);
+        }
+    }
+
+    template <std::size_t... Indices>
+    static bool LessThanHelper(std::index_sequence<Indices...>, size_t primary, const UTFString::StorageType& t, const UTFString::StorageType& o)
+    {
+        bool result = false;
+        ((Indices == primary ? void(result = (std::get<Indices>(t) < std::get<Indices>(o))) : void()), ...);
+        return result;
+    }
+
+    template <std::size_t... Indices>
+    static bool LessThanHelper(std::index_sequence<Indices...>, size_t primary, const UTFString& t, const UTFString::StorageType& o)
+    {
+        bool result = false;
+        ((Indices == primary ? void(result = (t.get<std::decay_t<decltype(std::get<Indices>(o)[0])>>() < std::get<Indices>(o))) : void()), ...);
+        return result;
+    }
+
+    bool UTFString::operator<(const UTFString& other) const
+    {
+        if (m_primary == other.m_primary)
+        {
+            return (m_primary == NotSet ? false : LessThanHelper(std::make_index_sequence<std::tuple_size_v<StorageType>>{}, m_primary, m_storage, other.m_storage));
+        }
+        else
+        {
+            return LessThanHelper(std::make_index_sequence<std::tuple_size_v<StorageType>>{}, other.m_primary, *this, other.m_storage);
+        }
     }
 
     size_t UTF8Length(std::string_view input)
@@ -427,7 +499,7 @@ namespace AppInstaller::Utility
 
     NormalizedString FoldCase(const NormalizedString& input)
     {
-        return { FoldCase(static_cast<std::string_view>(input)), NormalizedString::PreNormalized_t{} };
+        return NormalizedString{ FoldCase(static_cast<std::string_view>(input)), NormalizedString::PreNormalized_t{} };
     }
 
     bool IsEmptyOrWhitespace(std::string_view str)

@@ -53,6 +53,8 @@ namespace AppInstaller::Utility
     // A string-like container that caches the value in various unicode transformation formats.
     struct UTFString
     {
+        using StorageType = std::tuple<std::string, std::wstring>;
+
         UTFString() = default;
 
         UTFString(const UTFString&) = default;
@@ -63,19 +65,19 @@ namespace AppInstaller::Utility
 
         // Constructors from input
         template <typename C, size_t Size>
-        UTFString(const C(&s)[Size]) { SetPrimary<C>(std::basic_string<C>{ StringViewFromLiteral(s) }); }
+        explicit UTFString(const C(&s)[Size]) { SetPrimary<C>(std::basic_string<C>{ StringViewFromLiteral(s) }); }
 
         template <typename C>
-        UTFString(std::basic_string_view<C> sv) { SetPrimary<C>(std::basic_string<C>{ sv }); }
+        explicit UTFString(std::basic_string_view<C> sv) { SetPrimary<C>(std::basic_string<C>{ sv }); }
 
         template <typename C>
-        UTFString(std::basic_string<C>& s) { SetPrimary<C>(s); }
+        explicit UTFString(std::basic_string<C>& s) { SetPrimary<C>(s); }
 
         template <typename C>
-        UTFString(const std::basic_string<C>& s) { SetPrimary<C>(s); }
+        explicit UTFString(const std::basic_string<C>& s) { SetPrimary<C>(s); }
 
         template <typename C>
-        UTFString(std::basic_string<C>&& s) noexcept { SetPrimary<C>(std::move(s)); }
+        explicit UTFString(std::basic_string<C>&& s) noexcept { SetPrimary<C>(std::move(s)); }
 
         // Assignment operators
         template <typename C, size_t Size>
@@ -114,6 +116,7 @@ namespace AppInstaller::Utility
         }
 
         void clear() noexcept;
+        bool empty() const noexcept;
 
         template <typename C>
         const std::basic_string<C>& get() const
@@ -164,6 +167,17 @@ namespace AppInstaller::Utility
         template <typename C>
         bool operator==(const std::basic_string<C>& s) const { return get<C>() == s; }
 
+        template <typename S>
+        bool operator!=(S&& s) const { return !(operator==(std::forward<S>(s))); }
+
+        bool operator==(const UTFString& other) const;
+        bool operator!=(const UTFString& other) const { return !(operator==(other)); }
+        bool operator<(const UTFString& other) const;
+
+        // Construction operators
+        template <typename S>
+        auto operator+(S&& s) const { return get() + std::forward<S>(s); }
+
     protected:
         template <typename C>
         void SetSecondary(const std::basic_string<C>& s)
@@ -204,8 +218,6 @@ namespace AppInstaller::Utility
         }
 
     private:
-        using StorageType = std::tuple<std::string, std::wstring>;
-
         template <typename C, std::size_t... Indices>
         std::basic_string<C> ConvertToHelper(C, std::index_sequence<Indices...>) const
         {
@@ -228,6 +240,17 @@ namespace AppInstaller::Utility
 
         StorageType m_storage;
     };
+
+    template <typename S>
+    bool operator==(S&& s, const UTFString& string) { return string.operator==(std::forward<S>(s)); }
+
+    template <typename S>
+    bool operator!=(S&& s, const UTFString& string) { return !(string.operator==(std::forward<S>(s))); }
+
+    template <typename S>
+    auto operator+(S&& s, const UTFString& string) { return std::forward<S>(s) + string.get(); }
+
+    std::ostream& operator<<(std::ostream& out, const UTFString& string) { return (out << string.get()); }
 
     // Normalizes a UTF8 string to the given form.
     std::string Normalize(std::string_view input, NORM_FORM form = NORM_FORM::NormalizationKC);
@@ -262,22 +285,22 @@ namespace AppInstaller::Utility
 
         // Constructors from input
         template <typename C, size_t Size>
-        NormalizedUTF(const C(&s)[Size]) { SetNormalizedPrimary(StringViewFromLiteral(s)); }
+        explicit NormalizedUTF(const C(&s)[Size]) { SetNormalizedPrimary(StringViewFromLiteral(s)); }
 
         template <typename C>
-        NormalizedUTF(std::basic_string_view<C> sv) { SetNormalizedPrimary(sv); }
+        explicit NormalizedUTF(std::basic_string_view<C> sv) { SetNormalizedPrimary(sv); }
 
         template <typename C>
-        NormalizedUTF(std::basic_string<C>& s) { SetNormalizedPrimary(s); }
+        explicit NormalizedUTF(std::basic_string<C>& s) { SetNormalizedPrimary(s); }
 
         template <typename C>
-        NormalizedUTF(const std::basic_string<C>& s) { SetNormalizedPrimary(s); }
+        explicit NormalizedUTF(const std::basic_string<C>& s) { SetNormalizedPrimary(s); }
 
         template <typename C>
-        NormalizedUTF(std::basic_string<C>&& s) noexcept { SetNormalizedPrimary(std::move(s)); }
+        explicit NormalizedUTF(std::basic_string<C>&& s) noexcept { SetNormalizedPrimary(std::move(s)); }
 
         template <typename C>
-        NormalizedUTF(std::basic_string<C>&& s, PreNormalized_t) noexcept { SetPrimary<C>(std::move(s)); }
+        explicit NormalizedUTF(std::basic_string<C>&& s, PreNormalized_t) noexcept { SetPrimary<C>(std::move(s)); }
 
         // Assignment operators
         template <typename C, size_t Size>

@@ -221,7 +221,7 @@ namespace AppInstaller::Manifest
         void ApplyToAll(std::function<void(const Dependency&)> func) const;
         bool Empty() const;
         void Clear();
-        bool HasExactDependency(DependencyType type, string_t id, string_t minVersion = "");
+        bool HasExactDependency(DependencyType type, string_t id, Utility::Version minVersion = {});
         size_t Size();
 
     private:

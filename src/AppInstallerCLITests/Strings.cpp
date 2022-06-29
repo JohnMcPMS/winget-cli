@@ -208,8 +208,10 @@ TEST_CASE("SplitIntoWords", "[strings]")
 TEST_CASE("UTFString", "[strings]")
 {
     UTFString test;
+    REQUIRE(test.empty());
     REQUIRE(test.get<char>().empty());
     REQUIRE(test.get<wchar_t>().empty());
+    REQUIRE(test.empty());
 
     test = "Test";
     REQUIRE(test.get<char>() == "Test");
@@ -222,6 +224,21 @@ TEST_CASE("UTFString", "[strings]")
     REQUIRE(test.get<wchar_t>() == L"Again");
 
     test = "";
+    REQUIRE(test.empty());
     REQUIRE(test.get<char>() == "");
     REQUIRE(test.get<wchar_t>() == L"");
+    REQUIRE(test.empty());
+
+    test = UTFString(L"Construct");
+    REQUIRE(test.get<char>() == "Construct");
+    REQUIRE(test.get<wchar_t>() == L"Construct");
+
+    test.clear();
+    REQUIRE(test.empty());
+
+    test = "Compare";
+    REQUIRE(test == UTFString("Compare"));
+    REQUIRE(test == UTFString(L"Compare"));
+    REQUIRE(test != UTFString("Compared"));
+    REQUIRE(test != UTFString(L"Compared"));
 }

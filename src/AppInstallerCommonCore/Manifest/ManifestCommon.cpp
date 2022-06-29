@@ -622,7 +622,7 @@ namespace AppInstaller::Manifest
     }
 
     // for testing purposes
-    bool DependencyList::HasExactDependency(DependencyType type, string_t id, string_t minVersion)
+    bool DependencyList::HasExactDependency(DependencyType type, string_t id, Utility::Version minVersion)
     {
         for (const auto& dependency : m_dependencies)
         {
