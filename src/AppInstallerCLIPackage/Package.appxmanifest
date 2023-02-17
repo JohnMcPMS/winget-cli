@@ -72,7 +72,7 @@
 		<Extension Category="windows.activatableClass.inProcessServer">
 			<InProcessServer>
 				<Path>WinRT.Host.dll</Path>
-				<ActivatableClass ActivatableClassId="Microsoft.Management.Configuration.Processor.ConfigurationSetProcessorFactor" ThreadingModel="both" />
+				<ActivatableClass ActivatableClassId="Microsoft.Management.Configuration.Processor.ConfigurationSetProcessorFactory" ThreadingModel="both" />
 			</InProcessServer>
 		</Extension>
 	</Extensions>

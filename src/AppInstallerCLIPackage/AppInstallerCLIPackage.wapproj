@@ -111,12 +111,20 @@
       <MicrosoftManagementConfigurationPath>$(OutputPath)\..\Microsoft.Management.Configuration\Microsoft.Management.Configuration.winmd</MicrosoftManagementConfigurationPath>
       <MicrosoftManagementConfigurationPath Condition="!Exists('$(MicrosoftManagementConfigurationPath)')">$(TargetDir)..\..\..\..\$(PlatformTarget)\$(Configuration)\Microsoft.Management.Configuration\Microsoft.Management.Configuration.winmd</MicrosoftManagementConfigurationPath>
       <MicrosoftManagementConfigurationFileName>Microsoft.Management.Configuration.winmd</MicrosoftManagementConfigurationFileName>
+      <WinRTHostPath>$(OutputPath)\..\Microsoft.Management.Configuration.Processor\WinRT.Host.dll</WinRTHostPath>
+      <WinRTHostPath Condition="!Exists('$(WinRTHostPath)')">$(TargetDir)..\..\..\..\$(PlatformTarget)\$(Configuration)\Microsoft.Management.Configuration.Processor\net6.0-windows10.0.22000.0\WinRT.Host.dll</WinRTHostPath>
+      <WinRTHostFileName>WinRT.Host.dll</WinRTHostFileName>
+      <MMCPPath>$(OutputPath)\..\Microsoft.Management.Configuration.Processor\Microsoft.Management.Configuration.Processor.dll</MMCPPath>
+      <MMCPPath Condition="!Exists('$(MMCPPath)')">$(TargetDir)..\..\..\..\$(PlatformTarget)\$(Configuration)\Microsoft.Management.Configuration.Processor\net6.0-windows10.0.22000.0\Microsoft.Management.Configuration.Processor.dll</MMCPPath>
+      <MMCPFileName>Microsoft.Management.Configuration.Processor.dll</MMCPFileName>
     </PropertyGroup>
     <ItemGroup>
       <WindowsPackageManagerItem Include="$(WindowsPackageManagerPath)" />
       <MicrosoftManagementDeploymentWinmd Include="$(MicrosoftManagementDeploymentPath)" />
 	  <ConfigurationDllItem Include="$(ConfigurationDllPath)" />
 	  <MicrosoftManagementConfigurationWinmd Include="$(MicrosoftManagementConfigurationPath)" />
+	  <WinRTHostDllItem Include="$(WinRTHostPath)" />
+	  <MMCPDllItem Include="$(MMCPPath)" />
     </ItemGroup>
     <Error Condition="!Exists('$(WindowsPackageManagerPath)')" Text="$(WindowsPackageManagerPath) was not found" />
     <Error Condition="!Exists('$(MicrosoftManagementDeploymentPath)')" Text="$(MicrosoftManagementDeploymentPath) was not found" />
@@ -138,6 +146,12 @@
       </AppxPackagePayload>
       <AppxPackagePayload Include="@(MicrosoftManagementConfigurationWinmd)" KeepDuplicates="false">
         <TargetPath>$(MicrosoftManagementConfigurationFileName)</TargetPath>
+      </AppxPackagePayload>
+      <AppxPackagePayload Include="@(WinRTHostDllItem)" KeepDuplicates="false">
+        <TargetPath>$(WinRTHostFileName)</TargetPath>
+      </AppxPackagePayload>
+      <AppxPackagePayload Include="@(MMCPDllItem)" KeepDuplicates="false">
+        <TargetPath>$(MMCPFileName)</TargetPath>
       </AppxPackagePayload>
     </ItemGroup>
   </Target>
