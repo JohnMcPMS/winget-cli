@@ -68,6 +68,14 @@
       </Extensions>
     </Application>
   </Applications>
+	<Extensions>
+		<Extension Category="windows.activatableClass.inProcessServer">
+			<InProcessServer>
+				<Path>WinRT.Host.dll</Path>
+				<ActivatableClass ActivatableClassId="Microsoft.Management.Configuration.Processor.ConfigurationSetProcessorFactor" ThreadingModel="both" />
+			</InProcessServer>
+		</Extension>
+	</Extensions>
   <Capabilities>
     <rescap:Capability Name="runFullTrust" />
     <rescap:Capability Name="packageManagement" />

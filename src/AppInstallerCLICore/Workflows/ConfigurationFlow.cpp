@@ -4,6 +4,7 @@
 #include "ConfigurationFlow.h"
 #include "PromptFlow.h"
 #include <winrt/Microsoft.Management.Configuration.h>
+#include <winrt/Microsoft.Management.Configuration.Processor.h>
 
 using namespace AppInstaller::CLI::Execution;
 using namespace winrt::Microsoft::Management::Configuration;
@@ -232,7 +233,7 @@ namespace AppInstaller::CLI::Workflow
     void CreateConfigurationProcessor(Context& context)
     {
         // TODO: Create the real factory
-        IConfigurationSetProcessorFactory factory = nullptr;
+        IConfigurationSetProcessorFactory factory = Processor::ConfigurationSetProcessorFactory(Processor::ConfigurationProcessorType::Hosted, nullptr);
 
         ConfigurationProcessor processor{ factory };
 

@@ -95,7 +95,7 @@ namespace Microsoft.Management.Configuration.Processor.DscModule
                 pwsh.AddParameter(Parameters.Module, moduleSpecification);
             }
 
-            var resources = pwsh.InvokeAndStopOnError();
+            var resources = pwsh.Invoke();
 
             var dscResourceInfos = this.ConvertToDscResourceInfoInternal(resources);
 

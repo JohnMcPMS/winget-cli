@@ -173,7 +173,7 @@ namespace Microsoft.Management.Configuration.Processor.Unit
         /// <summary>
         /// Gets the signing certificate of the module files containing the unit of configuration.
         /// </summary>
-        public IReadOnlyList<object>? Certificates { get; private set; }
+        public IReadOnlyList<Certificate>? Certificates { get; private set; }
 
         /// <summary>
         /// Gets the settings information for the unit of configuration.
