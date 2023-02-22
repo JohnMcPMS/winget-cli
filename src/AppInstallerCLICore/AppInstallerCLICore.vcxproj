@@ -268,6 +268,7 @@
     <ClInclude Include="ContextOrchestrator.h" />
     <ClInclude Include="COMContext.h" />
     <ClInclude Include="Workflows\ConfigurationFlow.h" />
+    <ClInclude Include="Workflows\ConfigurationSetProcessorFactoryRemoting.h" />
     <ClInclude Include="Workflows\DependenciesFlow.h" />
     <ClInclude Include="ExecutionArgs.h" />
     <ClInclude Include="ExecutionContextData.h" />
@@ -316,6 +317,7 @@
     <ClCompile Include="ConfigurationContext.cpp" />
     <ClCompile Include="ContextOrchestrator.cpp" />
     <ClCompile Include="Workflows\ConfigurationFlow.cpp" />
+    <ClCompile Include="Workflows\ConfigurationSetProcessorFactoryRemoting.cpp" />
     <ClCompile Include="Workflows\DependenciesFlow.cpp" />
     <ClCompile Include="PackageCollection.cpp" />
     <ClCompile Include="Argument.cpp" />

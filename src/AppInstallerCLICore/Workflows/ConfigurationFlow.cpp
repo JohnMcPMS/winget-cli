@@ -3,15 +3,16 @@
 #include "pch.h"
 #include "ConfigurationFlow.h"
 #include "PromptFlow.h"
+#include "ConfigurationSetProcessorFactoryRemoting.h"
 #include <winrt/Microsoft.Management.Configuration.h>
 #include <winrt/Microsoft.Management.Configuration.Processor.h>
 
 using namespace AppInstaller::CLI::Execution;
+using namespace AppInstaller::Utility::literals;
 using namespace winrt::Microsoft::Management::Configuration;
 using namespace winrt::Windows::Foundation;
 using namespace winrt::Windows::Foundation::Collections;
 using namespace winrt::Windows::Storage;
-using namespace AppInstaller::Utility::literals;
 
 namespace AppInstaller::CLI::Workflow
 {
@@ -232,8 +233,7 @@ namespace AppInstaller::CLI::Workflow
 
     void CreateConfigurationProcessor(Context& context)
     {
-        // TODO: Create the real factory
-        IConfigurationSetProcessorFactory factory = Processor::ConfigurationSetProcessorFactory(Processor::ConfigurationProcessorType::Hosted, nullptr);
+        IConfigurationSetProcessorFactory factory = ConfigurationRemoting::CreateOutOfProcFactory();
 
         ConfigurationProcessor processor{ factory };
 

@@ -30,6 +30,7 @@
       <OutputItemType>Content</OutputItemType>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <ReferenceOutputAssembly>True</ReferenceOutputAssembly>
+      <PrivateAssets>build</PrivateAssets>
     </ProjectReference>
   </ItemGroup>
 
