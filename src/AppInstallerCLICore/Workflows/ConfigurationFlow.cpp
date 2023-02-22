@@ -341,11 +341,11 @@ namespace AppInstaller::CLI::Workflow
                 }
                 if (details.IsLocal())
                 {
-                    out << "  "_liv << Resource::String::ConfigurationModuleNameOnly(ConvertForOutput(details.ModuleName()), author, Resource::String::ConfigurationLocal) << '\n';
+                    out << "  "_liv << Resource::String::ConfigurationModuleWithDetails(ConvertForOutput(details.ModuleName()), author, Resource::String::ConfigurationLocal) << '\n';
                 }
                 else
                 {
-                    out << "  "_liv << Resource::String::ConfigurationModuleNameOnly(ConvertForOutput(details.ModuleName()), author, ConvertForOutput(details.ModuleSource())) << '\n';
+                    out << "  "_liv << Resource::String::ConfigurationModuleWithDetails(ConvertForOutput(details.ModuleName()), author, ConvertForOutput(details.ModuleSource())) << '\n';
                 }
 
                 // TODO: Signing information after it gets changed
