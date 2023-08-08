@@ -98,35 +98,56 @@ namespace Microsoft.Management.Configuration
     {
         // The name of the setting.
         String Name{ get; };
-        // The description of the setting.
+
+        // A brief description of the setting.
+        String Title{ get; };
+
+        // The detailed description of the setting.
         String Description{ get; };
+
         // Whether the setting is a key. This is used to determine if different settings are in conflict.
         Boolean IsKey{ get; };
+
         // Whether a non-empty value for the setting is required.
         Boolean IsRequired{ get; };
+
         // Whether the setting should be serialized in order to be applied on another system.
         // When the current settings are retrieved from the system, this can be used to exclude settings that are not relevant to a future application of the unit of configuration.
         Boolean IsInformational{ get; };
+
         // The data type for the value of this setting.
-        String Type{ get; };
-        // The semantics to be used for this setting.
-        // The goal is to enable richer conflict detection and authoring scenarios by having a deeper understanding of this value than "String".
-        // TODO: Create the actual semantics of the semantics value...
-        String Semantics{ get; };
+        Windows.Foundation.PropertyType Type{ get; };
+
+        // The schema fragment to be used for this setting.
+        // Using a single entry of the `properties` object from a JSON schema is suggested, for instance:
+        // {
+        // "$schema": "https://json-schema.org/draft/2020-12/schema",
+        // "scope": {
+        //          "title": "Target scope",
+        //          "description": "The scope at which the configuration should be applied.",
+        //          "type": "string",
+        //          "enum": [
+        //              "machine",
+        //              "user"
+        //          ]
+        //      }
+        // }
+        String Schema{ get; };
     }
 
     // Provides information for a specific configuration unit within the runtime.
     [contract(Microsoft.Management.Configuration.Contract, 1)]
     interface IConfigurationUnitProcessorDetails
     {
-        // The name of the unit of configuration.
-        String UnitName{ get; };
+        // The type of configuration unit.
+        String UnitType{ get; };
         // A description of the unit of configuration.
         String UnitDescription{ get; };
         // The URI of the documentation for the unit of configuration.
         Windows.Foundation.Uri UnitDocumentationUri{ get; };
         // The URI of the icon for the unit of configuration.
         Windows.Foundation.Uri UnitIconUri{ get; };
+
         // The name of the module containing the unit of configuration.
         String ModuleName{ get; };
         // The type of the module containing the unit of configuration.
@@ -156,21 +177,7 @@ namespace Microsoft.Management.Configuration
         Windows.Foundation.Collections.IVectorView<IConfigurationUnitSettingDetails> Settings{ get; };
         // Does it comes from a public repository
         Boolean IsPublic{ get; };
-
     }
-
-    // Defines how the configuration unit is to be used within the configuration system.
-    [contract(Microsoft.Management.Configuration.Contract, 1)]
-    enum ConfigurationUnitIntent
-    {
-        // The configuration unit will only be used to Test the current system state.
-        Assert,
-        // The configuration unit will only be used to Get the current system state.
-        Inform,
-        // The configuration unit will be used to Apply the current system state.
-        // The configuration unit will be used to Test and Get the current system state as part of that process.
-        Apply,
-    };
 
     // A single unit of configuration.
     [contract(Microsoft.Management.Configuration.Contract, 1)]
@@ -179,31 +186,34 @@ namespace Microsoft.Management.Configuration
         // Creates an empty configuration unit for authoring purposes.
         ConfigurationUnit();
 
-        // The name of the unit being configured; not a name for this instance.
-        // Can be changed if a mutable unit.
-        String UnitName;
+        // The type of the unit being configured; not a name for this instance.
+        String Type;
 
         // An identifier used to uniquely identify the instance of a configuration unit on the system.
-        // Immutable, although the unit can be removed and an identical unit applied later with a different identifier.
+        // May change upon applying a configuration unit from a historical context if some part of the set changed.
         Guid InstanceIdentifier{ get; };
 
         // The identifier name of this instance within the set.
-        // Can be changed if a mutable unit.
         String Identifier;
 
-        // Describes how this configuration unit will be used.
-        // Can be changed if a mutable unit.
-        ConfigurationUnitIntent Intent;
+        // The `Identifier` values of the configuration units that this unit depends on.
+        Windows.Foundation.Collections.IVector<String> Dependencies{ get; };
 
-        // The configuration units that this unit depends on.
-        // Can be set on a mutable configuration unit; this will copy the items into the internal storage.
-        Windows.Foundation.Collections.IVectorView<String> Dependencies;
+        // The metadata properties associated with the configuration unit.
+        // TODO: This is being used to drive processing decisions when it should not.
+        //       There is ongoing discussion about this at https://github.com/PowerShell/DSC/issues/47 and https://github.com/PowerShell/DSC/issues/92.
+        Windows.Foundation.Collections.ValueSet Metadata{ get; };
 
-        // Contains the values that are for use by the configuration system, related to this unit.
-        Windows.Foundation.Collections.ValueSet Directives{ get; };
+        // Determines if this configuration unit should be treated as a group.
+        // A configuration unit group treats its `Settings` as the definition of child units.
+        Boolean IsGroup;
 
         // Contains the values that are for use by the configuration unit itself.
         Windows.Foundation.Collections.ValueSet Settings{ get; };
+
+        // The configuration units that are part of this unit.
+        // Will be null if `IsGroup` is false; non-null if `IsGroup` is true.
+        Windows.Foundation.Collections.IVector<ConfigurationUnit> Units{ get; };
 
         // Contains information on the origin of the configuration unit.
         // May be null if ConfigurationProcessor.GetDetailsAsync has not been called yet.
@@ -218,17 +228,13 @@ namespace Microsoft.Management.Configuration
         // Allows for control over whether this unit should be applied when the set containing it is applied.
         Boolean ShouldApply;
 
-        // The schema version to use for the unit.
-        // Will be set to the schema version when read in, and default to the latest if created manually.
-        String SchemaVersion;
-
         // Creates a copy of this configuration unit, with the following notes:
         //  InstanceIdentifier will be a new value
         //  Identifier will be empty
-        //  Dependencies, Directives, and Settings will by new containers with identical values inside
+        //  Metadata, Dependencies, Directives, and Settings will by new containers with identical values inside
+        //  If appropriate, Units will be a new container with copied child units
         //  Details will be the same value (not a copy, just another reference)
         //  State, ResultInformation, and ShouldApply will be their default constructed state
-        //  The returned value will be in a writable state
         ConfigurationUnit Copy();
     }
 
@@ -263,26 +269,75 @@ namespace Microsoft.Management.Configuration
         ConfigurationUnit Unit{ get; };
     }
 
+    // The definition of a configuration parameter; a value that may be provided to alter the processing of a configuration set.
+    [contract(Microsoft.Management.Configuration.Contract, 1)]
+    runtimeclass ConfigurationParameter
+    {
+        // The name of the parameter.
+        String Name;
+
+        // The description of the parameter.
+        String Description;
+
+        // The metadata properties associated with the configuration parameter.
+        Windows.Foundation.Collections.ValueSet Metadata{ get; };
+
+        // The value of the parameter should be treated as a secret; not logged our output.
+        Boolean IsSecure;
+
+        // The type of the parameter.
+        Windows.Foundation.PropertyType Type;
+
+        // The default value; may be null if no default is provided.
+        Windows.Foundation.IPropertyValue DefaultValue;
+
+        // The set of allowed values; a null container indicates that the values are not restricted.
+        Windows.Foundation.Collections.IVector<Windows.Foundation.IPropertyValue> AllowedValues;
+
+        // The minimum length for a parameter type with the concept (string, array, etc.).
+        UInt32 MinimumLength;
+
+        // The maximum length for a parameter type with the concept (string, array, etc.).
+        UInt32 MaximumLength;
+
+        // For comparable parameter types, the minimum value allowed (integrals, DateTime, etc.).
+        Windows.Foundation.IPropertyValue MinimumValue;
+
+        // For comparable parameter types, the maximum value allowed (integrals, DateTime, etc.).
+        Windows.Foundation.IPropertyValue MaximumValue;
+
+        // The input value; may be null if no value is provided.
+        Windows.Foundation.IPropertyValue ProvidedValue;
+    }
+
+    // The definition of a configuration variable; a value that can be referenced by configuration units but cannot be changed during processing.
+    [contract(Microsoft.Management.Configuration.Contract, 1)]
+    runtimeclass ConfigurationVariable
+    {
+        // The name of the variable.
+        String Name;
+
+        // The value of the variable.
+        Windows.Foundation.IPropertyValue Value;
+    }
+
     // A configuration set contains a collection of configuration units and details about the set.
     [contract(Microsoft.Management.Configuration.Contract, 1)]
     runtimeclass ConfigurationSet
     {
-        // Creates an empty, mutable configuration set for authoring purposes.
+        // Creates an empty configuration set for authoring purposes.
         ConfigurationSet();
-        
+
         // The name of the set; if from a file this could be the file name.
-        // Can be changed if a mutable set.
         String Name;
         // The origin of the set; if it came from a repository it could be the remote URL (ex. https://github.com/microsoft/winget-cli.git).
-        // Can be changed if a mutable set.
         String Origin;
         // The location of the configuration set on the local filesystem.
         // If this set is from history, the file may no longer exist or it's contents may have been changed.
-        // Can be changed if a mutable set.
         String Path;
 
         // An identifier used to uniquely identify the instance of a configuration set on the system.
-        // Immutable, although the set can be removed and an identical set applied later with a different identifier.
+        // May change upon applying a configuration set from a historical context if some part of the set changed.
         Guid InstanceIdentifier{ get; };
         // The state that the set is in.
         ConfigurationSetState State{ get; };
@@ -293,13 +348,27 @@ namespace Microsoft.Management.Configuration
         // The time that this set was last finished being applied (does not indicate success).
         Windows.Foundation.DateTime ApplyEnded{ get; };
 
+        // The metadata properties associated with the configuration set.
+        Windows.Foundation.Collections.ValueSet Metadata{ get; };
+
+        // The parameters that this configuration set supports.
+        Windows.Foundation.Collections.IVector<ConfigurationParameter> Parameters{ get; };
+
+        // The variables that this configuration set uses.
+        Windows.Foundation.Collections.IVector<ConfigurationVariable> Variables{ get; };
+
         // The configuration units that are part of this set.
-        // Can be set on a mutable configuration set; this will copy the items into the internal storage.
-        Windows.Foundation.Collections.IVectorView<ConfigurationUnit> ConfigurationUnits;
+        Windows.Foundation.Collections.IVector<ConfigurationUnit> Units{ get; };
 
         // The schema version to use for the set.
         // Will be set to the schema version when read in, and default to the latest if created manually.
+        // Setting SchemaVersion to a different value will change SchemaUri.
         String SchemaVersion;
+
+        // The schema URI to use for the set.
+        // Will be set to the schema version when read in, and default to the latest if created manually.
+        // Setting SchemaUri to a different value will change SchemaVersion.
+        Windows.Foundation.Uri SchemaUri;
 
         // Only changes for this set are sent to this event.
         // This includes things like: start/stop of the entire set for application or test, start/stop of a unit for application or test.
@@ -370,9 +439,6 @@ namespace Microsoft.Management.Configuration
         // The configuration unit that the processor was created for.
         ConfigurationUnit Unit{ get; };
 
-        // The directives overlay that the processor was created with.
-        Windows.Foundation.Collections.IMapView<String, Object> DirectivesOverlay{ get; };
-
         // Determines if the system is already in the state described by the configuration unit.
         ITestSettingsResult TestSettings();
 
@@ -391,9 +457,7 @@ namespace Microsoft.Management.Configuration
         IConfigurationUnitProcessorDetails GetUnitProcessorDetails(ConfigurationUnit unit, ConfigurationUnitDetailFlags detailFlags);
 
         // Creates a configuration unit processor for the given unit.
-        // The optional `directivesOverlay` parameter allows for the `ConfigurationProcessor` to alter behavior without needing to change the unit itself.
-        // The overlay is searched first; any value not present there will then fall back to the unit's directives.
-        IConfigurationUnitProcessor CreateUnitProcessor(ConfigurationUnit unit, Windows.Foundation.Collections.IMapView<String, Object> directivesOverlay);
+        IConfigurationUnitProcessor CreateUnitProcessor(ConfigurationUnit unit);
     }
 
     // The level of the diagnostic information.
@@ -666,12 +730,11 @@ namespace Microsoft.Management.Configuration
         // This includes things like: creation of a new set for intent to run, start/stop of a set for application or test, deletion of a not started set.
         event Windows.Foundation.TypedEventHandler<ConfigurationSet, ConfigurationChangeData> ConfigurationChange;
 
-        // Gets the configuration sets that have already been applied or the intent to be applied (this may include in progress sets or those that are waiting on others).
-        // These configuration sets will be marked as immutable.
+        // Gets the configuration sets that have already been applied or with the intent to be applied (this may include in progress sets or those that are waiting on others).
         Windows.Foundation.Collections.IVector<ConfigurationSet> GetConfigurationHistory();
         Windows.Foundation.IAsyncOperation< Windows.Foundation.Collections.IVector<ConfigurationSet> > GetConfigurationHistoryAsync();
 
-        // Loads a mutable configuration set from the given stream.
+        // Loads a configuration set from the given stream.
         OpenConfigurationSetResult OpenConfigurationSet(Windows.Storage.Streams.IInputStream stream);
         Windows.Foundation.IAsyncOperation<OpenConfigurationSetResult> OpenConfigurationSetAsync(Windows.Storage.Streams.IInputStream stream);
 
