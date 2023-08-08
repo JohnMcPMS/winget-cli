@@ -70,8 +70,7 @@ namespace Microsoft.Management.Configuration
         // The system state is causing the error.
         SystemState,
         // The configuration unit was not run due to a precondition not being met.
-        // For example, when an assert in the configuration set is not in the desired state,
-        // all of the units with Apply intent will have this set.
+        // For example, if a dependency fails to be applied, this will be set.
         Precondition,
     };
 
@@ -289,10 +288,10 @@ namespace Microsoft.Management.Configuration
         Windows.Foundation.PropertyType Type;
 
         // The default value; may be null if no default is provided.
-        Windows.Foundation.IPropertyValue DefaultValue;
+        Object DefaultValue;
 
         // The set of allowed values; a null container indicates that the values are not restricted.
-        Windows.Foundation.Collections.IVector<Windows.Foundation.IPropertyValue> AllowedValues;
+        Windows.Foundation.Collections.IVector<Object> AllowedValues;
 
         // The minimum length for a parameter type with the concept (string, array, etc.).
         UInt32 MinimumLength;
@@ -301,13 +300,13 @@ namespace Microsoft.Management.Configuration
         UInt32 MaximumLength;
 
         // For comparable parameter types, the minimum value allowed (integrals, DateTime, etc.).
-        Windows.Foundation.IPropertyValue MinimumValue;
+        Object MinimumValue;
 
         // For comparable parameter types, the maximum value allowed (integrals, DateTime, etc.).
-        Windows.Foundation.IPropertyValue MaximumValue;
+        Object MaximumValue;
 
         // The input value; may be null if no value is provided.
-        Windows.Foundation.IPropertyValue ProvidedValue;
+        Object ProvidedValue;
     }
 
     // The definition of a configuration variable; a value that can be referenced by configuration units but cannot be changed during processing.
@@ -318,7 +317,7 @@ namespace Microsoft.Management.Configuration
         String Name;
 
         // The value of the variable.
-        Windows.Foundation.IPropertyValue Value;
+        Object Value;
     }
 
     // A configuration set contains a collection of configuration units and details about the set.
