@@ -30,9 +30,6 @@
     <ClCompile Include="GetConfigurationUnitSettingsResult.cpp">
       <Filter>API Source</Filter>
     </ClCompile>
-    <ClCompile Include="MutableFlag.cpp">
-      <Filter>Internals</Filter>
-    </ClCompile>
     <ClCompile Include="TestConfigurationSetResult.cpp">
       <Filter>API Source</Filter>
     </ClCompile>
@@ -81,6 +78,15 @@
     <ClCompile Include="DiagnosticInformationInstance.cpp">
       <Filter>Internals</Filter>
     </ClCompile>
+    <ClCompile Include="ConfigurationParameter.cpp">
+      <Filter>API Source</Filter>
+    </ClCompile>
+    <ClCompile Include="ConfigurationVariable.cpp">
+      <Filter>API Source</Filter>
+    </ClCompile>
+    <ClCompile Include="ArgumentValidation.cpp">
+      <Filter>Internals</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="pch.h" />
@@ -111,7 +117,7 @@
     <ClInclude Include="GetConfigurationUnitSettingsResult.h">
       <Filter>API Headers</Filter>
     </ClInclude>
-    <ClInclude Include="MutableFlag.h">
+    <ClInclude Include="ConfigurationIntent.h">
       <Filter>Internals</Filter>
     </ClInclude>
     <ClInclude Include="TestConfigurationSetResult.h">
@@ -166,6 +172,15 @@
       <Filter>API Headers</Filter>
     </ClInclude>
     <ClInclude Include="DiagnosticInformationInstance.h">
+      <Filter>Internals</Filter>
+    </ClInclude>
+    <ClInclude Include="ConfigurationParameter.h">
+      <Filter>API Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="ConfigurationVariable.h">
+      <Filter>API Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="ArgumentValidation.h">
       <Filter>Internals</Filter>
     </ClInclude>
   </ItemGroup>

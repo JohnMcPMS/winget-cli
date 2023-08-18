@@ -230,7 +230,7 @@ namespace Microsoft.Management.Configuration
         // Creates a copy of this configuration unit, with the following notes:
         //  InstanceIdentifier will be a new value
         //  Identifier will be empty
-        //  Metadata, Dependencies, Directives, and Settings will by new containers with identical values inside
+        //  Metadata, Dependencies, and Settings will by new containers with identical values inside
         //  If appropriate, Units will be a new container with copied child units
         //  Details will be the same value (not a copy, just another reference)
         //  State, ResultInformation, and ShouldApply will be their default constructed state
@@ -272,6 +272,8 @@ namespace Microsoft.Management.Configuration
     [contract(Microsoft.Management.Configuration.Contract, 1)]
     runtimeclass ConfigurationParameter
     {
+        ConfigurationParameter();
+
         // The name of the parameter.
         String Name;
 
@@ -313,6 +315,8 @@ namespace Microsoft.Management.Configuration
     [contract(Microsoft.Management.Configuration.Contract, 1)]
     runtimeclass ConfigurationVariable
     {
+        ConfigurationVariable();
+
         // The name of the variable.
         String Name;
 
@@ -384,6 +388,9 @@ namespace Microsoft.Management.Configuration
     [contract(Microsoft.Management.Configuration.Contract, 1)]
     interface IApplySettingsResult
     {
+        // The configuration unit.
+        ConfigurationUnit Unit{ get; };
+
         // Indicates whether a reboot is required after the settings were applied.
         Boolean RebootRequired{ get; };
 
@@ -411,6 +418,9 @@ namespace Microsoft.Management.Configuration
     [contract(Microsoft.Management.Configuration.Contract, 1)]
     interface ITestSettingsResult
     {
+        // The configuration unit.
+        ConfigurationUnit Unit{ get; };
+
         // The result (if any) of running Test on the configuration unit.
         ConfigurationTestResult TestResult{ get; };
 
@@ -423,6 +433,9 @@ namespace Microsoft.Management.Configuration
     [contract(Microsoft.Management.Configuration.Contract, 1)]
     interface IGetSettingsResult
     {
+        // The configuration unit.
+        ConfigurationUnit Unit{ get; };
+
         // The current state of the system for the configuration unit.
         Windows.Foundation.Collections.ValueSet Settings{ get; };
 
@@ -448,6 +461,76 @@ namespace Microsoft.Management.Configuration
         IApplySettingsResult ApplySettings();
     }
 
+    // The result of applying the settings with an IConfigurationGroupProcessor.
+    [contract(Microsoft.Management.Configuration.Contract, 1)]
+    interface IApplySettingsGroupResult
+    {
+        // The configuration unit group.
+        ConfigurationUnit Unit{ get; };
+
+        // Indicates whether a reboot is required after the settings were applied.
+        Boolean RebootRequired{ get; };
+
+        // The result of applying the configuration unit group.
+        IConfigurationUnitResultInformation ResultInformation{ get; };
+
+        // Results for each configuration unit in the group.
+        Windows.Foundation.Collections.IVector<IApplySettingsResult> UnitResults{ get; };
+    }
+
+    // The result of testing the settings with an IConfigurationGroupProcessor.
+    [contract(Microsoft.Management.Configuration.Contract, 1)]
+    interface ITestSettingsGroupResult
+    {
+        // The configuration unit group.
+        ConfigurationUnit Unit{ get; };
+
+        // The result (if any) of running Test on the configuration unit group.
+        ConfigurationTestResult TestResult{ get; };
+
+        // The result of testing the configuration unit group.
+        // This is not the response for the test, but rather contains information about the actual attempt to run the test.
+        IConfigurationUnitResultInformation ResultInformation{ get; };
+
+        // Results for each configuration unit in the group.
+        Windows.Foundation.Collections.IVector<ITestSettingsResult> UnitResults{ get; };
+    }
+
+    // The result of getting the settings with an IConfigurationGroupProcessor.
+    [contract(Microsoft.Management.Configuration.Contract, 1)]
+    interface IGetSettingsGroupResult
+    {
+        // The configuration unit group.
+        ConfigurationUnit Unit{ get; };
+
+        // The current state of the system for the configuration unit group.
+        Windows.Foundation.Collections.ValueSet Settings{ get; };
+
+        // The result of getting the configuration unit group settings.
+        // This is not the response for the retrieval, but rather contains information about the actual attempt to retrieve the settings.
+        IConfigurationUnitResultInformation ResultInformation{ get; };
+
+        // Results for each configuration unit in the group.
+        Windows.Foundation.Collections.IVector<IGetSettingsResult> UnitResults{ get; };
+    }
+
+    // Provides access to a specific configuration unit group within the runtime.
+    [contract(Microsoft.Management.Configuration.Contract, 1)]
+    interface IConfigurationGroupProcessor
+    {
+        // The configuration unit group that the processor was created for.
+        ConfigurationUnit Unit{ get; };
+
+        // Determines if the system is already in the state described by the configuration unit group.
+        Windows.Foundation.IAsyncOperationWithProgress<ITestSettingsGroupResult, ITestSettingsResult> TestSettingsAsync();
+
+        // Gets the current system state for the configuration unit group.
+        Windows.Foundation.IAsyncOperationWithProgress<IGetSettingsGroupResult, IGetSettingsResult> GetSettingsAsync();
+
+        // Applies the state described in the configuration unit group.
+        Windows.Foundation.IAsyncOperationWithProgress<IApplySettingsGroupResult, IApplySettingsResult> ApplySettingsAsync();
+    }
+
     // Controls the lifetime of operations for a single configuration set.
     [contract(Microsoft.Management.Configuration.Contract, 1)]
     interface IConfigurationSetProcessor
@@ -457,6 +540,9 @@ namespace Microsoft.Management.Configuration
 
         // Creates a configuration unit processor for the given unit.
         IConfigurationUnitProcessor CreateUnitProcessor(ConfigurationUnit unit);
+
+        // Creates a configuration group processor for the given unit group.
+        IConfigurationGroupProcessor CreateGroupProcessor(ConfigurationUnit unit);
     }
 
     // The level of the diagnostic information.
@@ -769,8 +855,14 @@ namespace Microsoft.Management.Configuration
         // Creates an empty configuration unit.
         ConfigurationUnit CreateConfigurationUnit();
 
-        // Creates an empty configuration unit.
+        // Creates an empty configuration set.
         ConfigurationSet CreateConfigurationSet();
+
+        // Creates an empty configuration parameter.
+        ConfigurationParameter CreateConfigurationParameter();
+
+        // Creates an empty configuration variable.
+        ConfigurationVariable CreateConfigurationVariable();
 
         // Creates a processor factory for the given handler.
         Windows.Foundation.IAsyncOperation<IConfigurationSetProcessorFactory> CreateConfigurationSetProcessorFactoryAsync(String handler);

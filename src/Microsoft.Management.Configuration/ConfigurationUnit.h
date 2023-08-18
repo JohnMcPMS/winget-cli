@@ -2,7 +2,6 @@
 // Licensed under the MIT License.
 #pragma once
 #include "ConfigurationUnit.g.h"
-#include "MutableFlag.h"
 #include <winget/ILifetimeWatcher.h>
 #include <winrt/Windows.Foundation.Collections.h>
 #include <vector>
@@ -17,23 +16,24 @@ namespace winrt::Microsoft::Management::Configuration::implementation
         ConfigurationUnit(const guid& instanceIdentifier);
 #endif
 
-        hstring UnitName();
-        void UnitName(const hstring& value);
+        hstring Type();
+        void Type(const hstring& value);
 
         guid InstanceIdentifier();
 
         hstring Identifier();
         void Identifier(const hstring& value);
 
-        ConfigurationUnitIntent Intent();
-        void Intent(ConfigurationUnitIntent value);
+        Windows::Foundation::Collections::IVector<hstring> Dependencies();
 
-        Windows::Foundation::Collections::IVectorView<hstring> Dependencies();
-        void Dependencies(const Windows::Foundation::Collections::IVectorView<hstring>& value);
+        Windows::Foundation::Collections::ValueSet Metadata();
 
-        Windows::Foundation::Collections::ValueSet Directives();
+        bool IsGroup();
+        void IsGroup(bool value);
 
         Windows::Foundation::Collections::ValueSet Settings();
+
+        Windows::Foundation::Collections::IVector<Configuration::ConfigurationUnit> Units();
 
         IConfigurationUnitProcessorDetails Details();
 
@@ -44,30 +44,27 @@ namespace winrt::Microsoft::Management::Configuration::implementation
         bool ShouldApply();
         void ShouldApply(bool value);
 
-        hstring SchemaVersion();
-        void SchemaVersion(const hstring& value);
-
         Configuration::ConfigurationUnit Copy();
 
         HRESULT STDMETHODCALLTYPE SetLifetimeWatcher(IUnknown* watcher);
 
 #if !defined(INCLUDE_ONLY_INTERFACE_METHODS)
+        void Dependencies(const Windows::Foundation::Collections::IVector<hstring>& value);
         void Dependencies(std::vector<hstring>&& value);
+        void Units(const Windows::Foundation::Collections::IVector<Configuration::ConfigurationUnit>& value);
         void Details(IConfigurationUnitProcessorDetails&& details);
 
     private:
-        hstring m_unitName;
+        hstring m_type;
         guid m_instanceIdentifier;
         hstring m_identifier;
-        ConfigurationUnitIntent m_intent = ConfigurationUnitIntent::Apply;
         Windows::Foundation::Collections::IVector<hstring> m_dependencies{ winrt::single_threaded_vector<hstring>() };
-        Windows::Foundation::Collections::ValueSet m_directives;
+        Windows::Foundation::Collections::ValueSet m_metadata;
+        bool m_isGroup = false;
         Windows::Foundation::Collections::ValueSet m_settings;
+        Windows::Foundation::Collections::IVector<Configuration::ConfigurationUnit> m_units = nullptr;
         IConfigurationUnitProcessorDetails m_details{ nullptr };
         bool m_shouldApply = true;
-        hstring m_schemaVersion;
-
-        MutableFlag m_mutableFlag;
 #endif
     };
 }

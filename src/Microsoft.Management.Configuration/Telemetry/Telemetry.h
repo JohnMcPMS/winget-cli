@@ -8,6 +8,7 @@
 #include "ConfigurationSet.h"
 #include "TestConfigurationSetResult.h"
 #include "ApplyConfigurationSetResult.h"
+#include "ConfigurationIntent.h"
 
 #include <cguid.h>
 #include <string>
@@ -57,8 +58,8 @@ namespace winrt::Microsoft::Management::Configuration::implementation
             const guid& unitIdentifier,
             hstring unitName,
             hstring moduleName,
-            ConfigurationUnitIntent unitIntent,
-            ConfigurationUnitIntent runIntent,
+            ConfigurationIntent unitIntent,
+            ConfigurationIntent runIntent,
             std::string_view action,
             hresult result,
             ConfigurationUnitResultSource failurePoint,
@@ -68,14 +69,14 @@ namespace winrt::Microsoft::Management::Configuration::implementation
         void LogConfigUnitRunIfAppropriate(
             const guid& setIdentifier,
             const Configuration::ConfigurationUnit& unit,
-            ConfigurationUnitIntent runIntent,
+            ConfigurationIntent runIntent,
             std::string_view action,
             const IConfigurationUnitResultInformation& resultInformation) const noexcept;
 
         // The summary information for a specific unit intent.
         struct ProcessingSummaryForIntent
         {
-            ConfigurationUnitIntent Intent;
+            ConfigurationIntent Intent;
             uint32_t Count;
             uint32_t Run;
             uint32_t Failed;
@@ -85,7 +86,7 @@ namespace winrt::Microsoft::Management::Configuration::implementation
         void LogConfigProcessingSummary(
             const guid& setIdentifier,
             bool fromHistory,
-            ConfigurationUnitIntent runIntent,
+            ConfigurationIntent runIntent,
             hresult result,
             ConfigurationUnitResultSource failurePoint,
             const ProcessingSummaryForIntent& assertSummary,

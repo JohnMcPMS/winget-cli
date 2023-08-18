@@ -16,13 +16,13 @@ namespace winrt::Microsoft::Management::Configuration::implementation
     }
 
     ConfigurationSet::ConfigurationSet(const guid& instanceIdentifier) :
-        m_instanceIdentifier(instanceIdentifier), m_mutableFlag(false)
+        m_instanceIdentifier(instanceIdentifier)
     {
     }
 
     void ConfigurationSet::Initialize(std::vector<Configuration::ConfigurationUnit>&& units)
     {
-        m_configurationUnits = winrt::single_threaded_vector<Configuration::ConfigurationUnit>(std::move(units));
+        m_units = winrt::single_threaded_vector<Configuration::ConfigurationUnit>(std::move(units));
     }
 
     bool ConfigurationSet::IsFromHistory() const
@@ -37,7 +37,6 @@ namespace winrt::Microsoft::Management::Configuration::implementation
 
     void ConfigurationSet::Name(const hstring& value)
     {
-        m_mutableFlag.RequireMutable();
         m_name = value;
     }
 
@@ -48,7 +47,6 @@ namespace winrt::Microsoft::Management::Configuration::implementation
 
     void ConfigurationSet::Origin(const hstring& value)
     {
-        m_mutableFlag.RequireMutable();
         m_origin = value;
     }
 
@@ -59,7 +57,6 @@ namespace winrt::Microsoft::Management::Configuration::implementation
 
     void ConfigurationSet::Path(const hstring& value)
     {
-        m_mutableFlag.RequireMutable();
         m_path = value;
     }
 
@@ -88,18 +85,24 @@ namespace winrt::Microsoft::Management::Configuration::implementation
         return clock::time_point{};
     }
 
-    Windows::Foundation::Collections::IVectorView<Configuration::ConfigurationUnit> ConfigurationSet::ConfigurationUnits()
+    Windows::Foundation::Collections::ValueSet ConfigurationSet::Metadata()
     {
-        return m_configurationUnits.GetView();
+        return m_metadata;
     }
 
-    void ConfigurationSet::ConfigurationUnits(const Windows::Foundation::Collections::IVectorView<ConfigurationUnit>& value)
+    Windows::Foundation::Collections::IVector<ConfigurationParameter> ConfigurationSet::Parameters()
     {
-        m_mutableFlag.RequireMutable();
+        return m_parameters;
+    }
 
-        std::vector<ConfigurationUnit> temp{ value.Size() };
-        value.GetMany(0, temp);
-        m_configurationUnits = winrt::single_threaded_vector<ConfigurationUnit>(std::move(temp));
+    Windows::Foundation::Collections::IVector<ConfigurationVariable> ConfigurationSet::Variables()
+    {
+        return m_variables;
+    }
+
+    Windows::Foundation::Collections::IVector<Configuration::ConfigurationUnit> ConfigurationSet::Units()
+    {
+        return m_units;
     }
 
     hstring ConfigurationSet::SchemaVersion()
@@ -111,6 +114,19 @@ namespace winrt::Microsoft::Management::Configuration::implementation
     {
         THROW_HR_IF(E_INVALIDARG, !ConfigurationSetParser::IsRecognizedSchemaVersion(value));
         m_schemaVersion = value;
+        m_schemaUri = ConfigurationSetParser::GetSchemaUriForVersion(value);
+    }
+
+    Windows::Foundation::Uri ConfigurationSet::SchemaUri()
+    {
+        return m_schemaUri;
+    }
+
+    void ConfigurationSet::SchemaUri(const Windows::Foundation::Uri& value)
+    {
+        THROW_HR_IF(E_INVALIDARG, !ConfigurationSetParser::IsRecognizedSchemaUri(value));
+        m_schemaUri = value;
+        m_schemaVersion = ConfigurationSetParser::GetSchemaVersionForUri(value);
     }
 
     event_token ConfigurationSet::ConfigurationSetChange(const Windows::Foundation::TypedEventHandler<WinRT_Self, ConfigurationSetChangeData>& handler)
