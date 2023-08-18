@@ -16,6 +16,23 @@ using namespace AppInstaller::YAML;
 
 namespace winrt::Microsoft::Management::Configuration::implementation
 {
+    namespace
+    {
+        struct SchemaVersionAndUri
+        {
+            std::wstring_view Version;
+            std::wstring_view Uri;
+        };
+
+        // Please keep in sorted order with the highest version last.
+        SchemaVersionAndUri SchemaVersionAndUriMap[] =
+        {
+            { L"0.1", L"" },
+            { L"0.2", L"" },
+            { L"0.3", L"https://raw.githubusercontent.com/PowerShell/DSC/main/schemas/2023/08/config/document.json" },
+        };
+    }
+
     std::unique_ptr<ConfigurationSetParser> ConfigurationSetParser::Create(std::string_view input)
     {
         AICLI_LOG_LARGE_STRING(Config, Verbose, << "Parsing configuration set:", input);
@@ -86,13 +103,56 @@ namespace winrt::Microsoft::Management::Configuration::implementation
 
         SemanticVersion schemaVersion(ConvertToUTF8(value));
 
-        return (schemaVersion == SemanticVersion{ "0.1" } || schemaVersion == SemanticVersion{ "0.2" });
+        for (const auto& item : SchemaVersionAndUriMap)
+        {
+            if (schemaVersion == SemanticVersion{ ConvertToUTF8(item.Version) })
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
     catch (...) { LOG_CAUGHT_EXCEPTION(); return false; }
 
+    bool ConfigurationSetParser::IsRecognizedSchemaUri(const Windows::Foundation::Uri& value)
+    {
+        return !GetSchemaVersionForUri(value).empty();
+    }
+
+    Windows::Foundation::Uri ConfigurationSetParser::GetSchemaUriForVersion(hstring value)
+    {
+        for (const auto& item : SchemaVersionAndUriMap)
+        {
+            if (value == item.Version)
+            {
+                return item.Uri.empty() ? nullptr : Windows::Foundation::Uri{ item.Uri };
+            }
+        }
+
+        return nullptr;
+    }
+
+    hstring ConfigurationSetParser::GetSchemaVersionForUri(Windows::Foundation::Uri value)
+    {
+        for (const auto& item : SchemaVersionAndUriMap)
+        {
+            if (!item.Uri.empty())
+            {
+                Windows::Foundation::Uri uri{ item.Uri };
+                if (value.Equals(uri))
+                {
+                    return hstring{ item.Version };
+                }
+            }
+        }
+
+        return {};
+    }
+
     hstring ConfigurationSetParser::LatestVersion()
     {
-        return hstring{ L"0.2" };
+        return hstring{ std::rbegin(SchemaVersionAndUriMap)->Version };
     }
 
     void ConfigurationSetParser::SetError(hresult result, std::string_view field, std::string_view value, uint32_t line, uint32_t column)

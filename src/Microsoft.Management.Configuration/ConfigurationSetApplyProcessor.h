@@ -45,6 +45,7 @@ namespace winrt::Microsoft::Management::Configuration::implementation
             decltype(make_self<wil::details::module_count_wrapper<implementation::ConfigurationUnitResultInformation>>()) ResultInformation;
             bool PreProcessed = false;
             bool Processed = false;
+            ConfigurationIntent LastActionIntent = ConfigurationIntent::Assert;
         };
 
         // Builds out some data used during processing and validates the set along the way.
@@ -62,20 +63,9 @@ namespace winrt::Microsoft::Management::Configuration::implementation
         // Runs the processing using the given functions.
         bool ProcessInternal(CheckDependencyPtr checkDependencyFunction, ProcessUnitPtr processUnitFunction, bool sendProgress = false);
 
-        // Processes one of the non-writing intent types, which are fatal if not all successful
-        bool ProcessIntentInternal(
-            std::vector<size_t>& unitsToProcess,
-            CheckDependencyPtr checkDependencyFunction,
-            ProcessUnitPtr processUnitFunction,
-            ConfigurationUnitIntent intent,
-            hresult errorForOtherIntents,
-            hresult errorForFailures,
-            bool sendProgress);
-
         // Determines if the given unit has the given intent and all of its dependencies are satisfied
-        bool HasIntentAndSatisfiedDependencies(
+        bool HasSatisfiedDependencies(
             const UnitInfo& unitInfo,
-            ConfigurationUnitIntent intent,
             CheckDependencyPtr checkDependencyFunction) const;
 
         // Checks a dependency for preprocessing.
@@ -97,7 +87,7 @@ namespace winrt::Microsoft::Management::Configuration::implementation
         void SendProgressIfNotComplete(ConfigurationUnitState state, const UnitInfo& unitInfo);
 
         // For exception telemetry, get our internal status
-        TelemetryTraceLogger::ProcessingSummaryForIntent GetProcessingSummaryFor(ConfigurationUnitIntent intent) const;
+        TelemetryTraceLogger::ProcessingSummaryForIntent GetProcessingSummaryFor(ConfigurationIntent intent) const;
 
         ConfigurationSet m_configurationSet;
         IConfigurationSetProcessor m_setProcessor;

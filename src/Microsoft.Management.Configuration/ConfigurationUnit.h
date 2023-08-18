@@ -41,8 +41,8 @@ namespace winrt::Microsoft::Management::Configuration::implementation
 
         IConfigurationUnitResultInformation ResultInformation();
 
-        bool ShouldApply();
-        void ShouldApply(bool value);
+        bool IsActive();
+        void IsActive(bool value);
 
         Configuration::ConfigurationUnit Copy();
 
@@ -52,6 +52,7 @@ namespace winrt::Microsoft::Management::Configuration::implementation
         void Dependencies(const Windows::Foundation::Collections::IVector<hstring>& value);
         void Dependencies(std::vector<hstring>&& value);
         void Units(const Windows::Foundation::Collections::IVector<Configuration::ConfigurationUnit>& value);
+        void Units(std::vector<Configuration::ConfigurationUnit>&& value);
         void Details(IConfigurationUnitProcessorDetails&& details);
 
     private:
@@ -64,7 +65,7 @@ namespace winrt::Microsoft::Management::Configuration::implementation
         Windows::Foundation::Collections::ValueSet m_settings;
         Windows::Foundation::Collections::IVector<Configuration::ConfigurationUnit> m_units = nullptr;
         IConfigurationUnitProcessorDetails m_details{ nullptr };
-        bool m_shouldApply = true;
+        bool m_isActive = true;
 #endif
     };
 }

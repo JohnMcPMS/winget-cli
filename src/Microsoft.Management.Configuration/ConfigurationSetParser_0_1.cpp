@@ -105,16 +105,84 @@ namespace winrt::Microsoft::Management::Configuration::implementation
 
             return result;
         }
+
+        bool AssignGroupIdentifierIfNotPresent(const std::vector<Configuration::ConfigurationUnit>& units, std::wstring_view identifier)
+        {
+            for (size_t i = 1; i < units.size(); ++i)
+            {
+                if (units[i].Identifier() == identifier)
+                {
+                    return false;
+                }
+            }
+
+            units[0].Identifier(identifier);
+            return true;
+        }
+
+        hstring NewGuid()
+        {
+            GUID newGuid;
+            THROW_IF_FAILED(CoCreateGuid(&newGuid));
+
+            wchar_t buffer[256];
+
+            if (StringFromGUID2(newGuid, buffer, ARRAYSIZE(buffer)))
+            {
+                return buffer;
+            }
+            else
+            {
+                return L"StringFromGUID2/Error";
+            }
+        }
     }
 
     std::vector<Configuration::ConfigurationUnit> ConfigurationSetParser_0_1::GetConfigurationUnits()
     {
         std::vector<Configuration::ConfigurationUnit> result;
         const Node& properties = m_document[GetFieldName(FieldName::Properties)];
-        ParseConfigurationUnitsFromSubsection(properties, "assertions", ConfigurationUnitIntent::Assert, result);
-        ParseConfigurationUnitsFromSubsection(properties, "parameters", ConfigurationUnitIntent::Inform, result);
-        ParseConfigurationUnitsFromSubsection(properties, "resources", ConfigurationUnitIntent::Apply, result);
-        // TODO: Additional semantic validation?
+
+        // Get all assertions and place them into a group
+        std::vector<Configuration::ConfigurationUnit> assertions;
+        bool hasAssertions = false;
+        ParseConfigurationUnitsFromSubsection(properties, "assertions", assertions);
+
+        if (!assertions.empty())
+        {
+            hasAssertions = true;
+            auto assertionsGroup = make_self<wil::details::module_count_wrapper<ConfigurationUnit>>();
+            // This is a sentinel type name for a group that works like the previous assertions.
+            assertionsGroup->Type(L"Microsoft.WinGet.Configuration/AssertionsGroup");
+            assertionsGroup->IsGroup(true);
+            assertionsGroup->Units(std::move(assertions));
+            result.emplace_back(*assertionsGroup);
+        }
+
+        // Since we never really supported the `parameters` resources, just don't bother with them in the back compat mode
+
+        ParseConfigurationUnitsFromSubsection(properties, "resources", result);
+
+        // Ensure that the assertions group has a unique identifier
+        if (hasAssertions)
+        {
+            // Determine the identifier for the assertions group
+            if (!AssignGroupIdentifierIfNotPresent(result, L"assertions"))
+            {
+                if (!AssignGroupIdentifierIfNotPresent(result, L"assertionsGroup"))
+                {
+                    result[0].Identifier(NewGuid());
+                }
+            }
+
+            // Make everything else dependent on the assertions group
+            hstring assertionsGroupIdentifier = result[0].Identifier();
+            for (size_t i = 1; i < result.size(); ++i)
+            {
+                result[i].Dependencies().Append(assertionsGroupIdentifier);
+            }
+        }
+
         return result;
     }
 
@@ -124,7 +192,7 @@ namespace winrt::Microsoft::Management::Configuration::implementation
         return s_schemaVersion;
     }
 
-    void ConfigurationSetParser_0_1::ParseConfigurationUnitsFromSubsection(const Node& document, std::string_view subsection, ConfigurationUnitIntent intent, std::vector<Configuration::ConfigurationUnit>& result)
+    void ConfigurationSetParser_0_1::ParseConfigurationUnitsFromSubsection(const Node& document, std::string_view subsection, std::vector<Configuration::ConfigurationUnit>& result)
     {
         if (FAILED(m_result))
         {
@@ -154,21 +222,19 @@ namespace winrt::Microsoft::Management::Configuration::implementation
             index++;
 
             auto configurationUnit = make_self<wil::details::module_count_wrapper<ConfigurationUnit>>();
-            configurationUnit->SchemaVersion(GetSchemaVersion());
 
-            ParseConfigurationUnit(configurationUnit.get(), item, intent);
+            ParseConfigurationUnit(configurationUnit.get(), item);
 
             result.emplace_back(*configurationUnit);
         }
     }
 
-    void ConfigurationSetParser_0_1::ParseConfigurationUnit(ConfigurationUnit* unit, const Node& unitNode, ConfigurationUnitIntent intent)
+    void ConfigurationSetParser_0_1::ParseConfigurationUnit(ConfigurationUnit* unit, const Node& unitNode)
     {
-        CHECK_ERROR(GetStringValueForUnit(unitNode, GetFieldName(FieldName::Resource), true, unit, &ConfigurationUnit::UnitName));
+        CHECK_ERROR(GetStringValueForUnit(unitNode, GetFieldName(FieldName::Resource), true, unit, &ConfigurationUnit::Type));
         CHECK_ERROR(GetStringValueForUnit(unitNode, "id", false, unit, &ConfigurationUnit::Identifier));
-        unit->Intent(intent);
         CHECK_ERROR(GetStringArrayForUnit(unitNode, "dependsOn", unit, &ConfigurationUnit::Dependencies));
-        CHECK_ERROR(GetValueSet(unitNode, "directives", false, unit->Directives()));
+        CHECK_ERROR(GetValueSet(unitNode, "directives", false, unit->Metadata()));
         CHECK_ERROR(GetValueSet(unitNode, "settings", false, unit->Settings()));
     }
 

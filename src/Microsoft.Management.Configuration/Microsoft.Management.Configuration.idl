@@ -224,8 +224,8 @@ namespace Microsoft.Management.Configuration
         // Contains information on the result of the latest attempt to apply the configuration unit.
         IConfigurationUnitResultInformation ResultInformation{ get; };
 
-        // Allows for control over whether this unit should be applied when the set containing it is applied.
-        Boolean ShouldApply;
+        // Controls whether this unit will be processed when part of a set.
+        Boolean IsActive;
 
         // Creates a copy of this configuration unit, with the following notes:
         //  InstanceIdentifier will be a new value

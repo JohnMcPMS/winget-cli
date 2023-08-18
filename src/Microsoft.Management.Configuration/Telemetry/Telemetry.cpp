@@ -76,9 +76,7 @@ namespace winrt::Microsoft::Management::Configuration::implementation
         {
             hresult Result = S_OK;
             ConfigurationUnitResultSource FailurePoint = ConfigurationUnitResultSource::None;
-            TelemetryTraceLogger::ProcessingSummaryForIntent AssertSummary{ ConfigurationUnitIntent::Assert };
-            TelemetryTraceLogger::ProcessingSummaryForIntent InformSummary{ ConfigurationUnitIntent::Inform };
-            TelemetryTraceLogger::ProcessingSummaryForIntent ApplySummary{ ConfigurationUnitIntent::Apply };
+            TelemetryTraceLogger::ProcessingSummaryForIntent UnitsSummary{};
         };
 
         size_t GetPriority(ConfigurationUnitResultSource source)
@@ -121,34 +119,18 @@ namespace winrt::Microsoft::Management::Configuration::implementation
                 result.FailurePoint = unitFailurePoint;
             }
 
-            TelemetryTraceLogger::ProcessingSummaryForIntent* summaryItem = nullptr;
-            switch (unit.Intent())
-            {
-            case ConfigurationUnitIntent::Assert:
-                summaryItem = &result.AssertSummary;
-                break;
-            case ConfigurationUnitIntent::Inform:
-                summaryItem = &result.InformSummary;
-                break;
-            case ConfigurationUnitIntent::Apply:
-                summaryItem = &result.ApplySummary;
-                break;
-            default:
-                return;
-            }
-
-            summaryItem->Count++;
+            result.UnitsSummary.Count++;
 
             ConfigurationUnitResultSource resultSource = resultInformation.ResultSource();
             if (resultSource != ConfigurationUnitResultSource::Precondition &&
                 resultSource != ConfigurationUnitResultSource::ConfigurationSet)
             {
-                summaryItem->Run++;
+                result.UnitsSummary.Run++;
             }
 
             if (FAILED(resultCode))
             {
-                summaryItem->Failed++;
+                result.UnitsSummary.Failed++;
             }
         }
 
@@ -208,7 +190,7 @@ namespace winrt::Microsoft::Management::Configuration::implementation
         const guid& unitIdentifier,
         hstring unitName,
         hstring moduleName,
-        ConfigurationUnitIntent unitIntent,
+        ConfigurationIntent unitIntent,
         ConfigurationIntent runIntent,
         std::string_view action,
         hresult result,
@@ -282,7 +264,7 @@ namespace winrt::Microsoft::Management::Configuration::implementation
             allSettingsNames.pop_back();
         }
 
-        LogConfigUnitRun(setIdentifier, unit.InstanceIdentifier(), unit.UnitName(), details.ModuleName(), unit.Intent(), runIntent, action, resultInformation.ResultCode(), resultInformation.ResultSource(), allSettingsNames);
+        LogConfigUnitRun(setIdentifier, unit.InstanceIdentifier(), unit.Type(), details.ModuleName(), runIntent, runIntent, action, resultInformation.ResultCode(), resultInformation.ResultSource(), allSettingsNames);
     }
     CATCH_LOG();
 
@@ -338,7 +320,7 @@ namespace winrt::Microsoft::Management::Configuration::implementation
         ConfigRunSummaryData summaryData = ProcessRunResult(result.UnitResults());
 
         LogConfigProcessingSummary(configurationSet.InstanceIdentifier(), configurationSet.IsFromHistory(), ConfigurationIntent::Assert,
-            summaryData.Result, summaryData.FailurePoint, summaryData.AssertSummary, summaryData.InformSummary, summaryData.ApplySummary);
+            summaryData.Result, summaryData.FailurePoint, summaryData.UnitsSummary, {}, {});
     }
     CATCH_LOG();
 
@@ -355,7 +337,7 @@ namespace winrt::Microsoft::Management::Configuration::implementation
         ConfigRunSummaryData summaryData = ProcessRunResult(result.UnitResults());
 
         LogConfigProcessingSummary(configurationSet.InstanceIdentifier(), configurationSet.IsFromHistory(), ConfigurationIntent::Assert,
-            error, ConfigurationUnitResultSource::Internal, summaryData.AssertSummary, summaryData.InformSummary, summaryData.ApplySummary);
+            error, ConfigurationUnitResultSource::Internal, summaryData.UnitsSummary, {}, {});
     }
     CATCH_LOG();
 
@@ -371,7 +353,7 @@ namespace winrt::Microsoft::Management::Configuration::implementation
         ConfigRunSummaryData summaryData = ProcessRunResult(result.UnitResults());
 
         LogConfigProcessingSummary(configurationSet.InstanceIdentifier(), configurationSet.IsFromHistory(), ConfigurationIntent::Apply,
-            result.ResultCode(), summaryData.FailurePoint, summaryData.AssertSummary, summaryData.InformSummary, summaryData.ApplySummary);
+            result.ResultCode(), summaryData.FailurePoint, {}, {}, summaryData.UnitsSummary);
     }
     CATCH_LOG();
 

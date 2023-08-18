@@ -22,6 +22,16 @@ namespace winrt::Microsoft::Management::Configuration::implementation
         // This will only return true for a version that we fully recognize.
         static bool IsRecognizedSchemaVersion(hstring value);
 
+        // Determines if the given value is a recognized schema URI.
+        // This will only return true for a URI that we fully recognize.
+        static bool IsRecognizedSchemaUri(const Windows::Foundation::Uri& value);
+
+        // Gets the schema URI associated with the given version, or null if there is not one.
+        static Windows::Foundation::Uri GetSchemaUriForVersion(hstring value);
+
+        // Gets the schema version associated with the given URI, or null if there is not one.
+        static hstring GetSchemaVersionForUri(Windows::Foundation::Uri value);
+
         // Gets the latest schema version.
         static hstring LatestVersion();
 

@@ -23,6 +23,6 @@ namespace winrt::Microsoft::Management::Configuration::implementation
         hstring GetSchemaVersion() override;
 
     protected:
-        void ParseConfigurationUnit(ConfigurationUnit* unit, const AppInstaller::YAML::Node& unitNode, ConfigurationUnitIntent intent) override;
+        void ParseConfigurationUnit(ConfigurationUnit* unit, const AppInstaller::YAML::Node& unitNode) override;
     };
 }

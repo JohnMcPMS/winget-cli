@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 #pragma once
 #include "ConfigurationSetParser.h"
+#include "ConfigurationIntent.h"
 
 #include <winget/Yaml.h>
 
@@ -26,8 +27,8 @@ namespace winrt::Microsoft::Management::Configuration::implementation
         hstring GetSchemaVersion() override;
 
     protected:
-        void ParseConfigurationUnitsFromSubsection(const AppInstaller::YAML::Node& document, std::string_view subsection, ConfigurationUnitIntent intent, std::vector<Configuration::ConfigurationUnit>& result);
-        virtual void ParseConfigurationUnit(ConfigurationUnit* unit, const AppInstaller::YAML::Node& unitNode, ConfigurationUnitIntent intent);
+        void ParseConfigurationUnitsFromSubsection(const AppInstaller::YAML::Node& document, std::string_view subsection, std::vector<Configuration::ConfigurationUnit>& result);
+        virtual void ParseConfigurationUnit(ConfigurationUnit* unit, const AppInstaller::YAML::Node& unitNode);
         void GetStringValueForUnit(const AppInstaller::YAML::Node& item, std::string_view valueName, bool required, ConfigurationUnit* unit, void(ConfigurationUnit::* propertyFunction)(const hstring& value));
         void GetStringArrayForUnit(const AppInstaller::YAML::Node& item, std::string_view arrayName, ConfigurationUnit* unit, void(ConfigurationUnit::* propertyFunction)(std::vector<hstring>&& value));
         void GetValueSet(const AppInstaller::YAML::Node& item, std::string_view mapName, bool required, const Windows::Foundation::Collections::ValueSet& valueSet);

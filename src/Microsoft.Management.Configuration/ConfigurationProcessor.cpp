@@ -105,12 +105,6 @@ namespace winrt::Microsoft::Management::Configuration::implementation
                 static AttachWilFailureCallback s_callbackAttach;
             }
         };
-
-        // Specifies the set of intents that should execute during a Test request
-        bool ShouldTestDuringTest(ConfigurationUnitIntent intent)
-        {
-            return (intent == ConfigurationUnitIntent::Assert || intent == ConfigurationUnitIntent::Apply);
-        }
     }
 
     ConfigurationProcessor::ConfigurationProcessor()
@@ -343,7 +337,7 @@ namespace winrt::Microsoft::Management::Configuration::implementation
         auto result = make_self<wil::details::module_count_wrapper<implementation::GetConfigurationSetDetailsResult>>();
         progress.Result(*result);
 
-        for (const auto& unit : configurationSet.ConfigurationUnits())
+        for (const auto& unit : configurationSet.Units())
         {
             progress.ThrowIfCancelled();
 
@@ -483,15 +477,15 @@ namespace winrt::Microsoft::Management::Configuration::implementation
 
         try
         {
-            for (const auto& unit : configurationSet.ConfigurationUnits())
+            for (const auto& unit : configurationSet.Units())
             {
-                AICLI_LOG(Config, Info, << "Testing configuration unit: " << AppInstaller::Utility::ConvertToUTF8(unit.UnitName()));
+                AICLI_LOG(Config, Info, << "Testing configuration unit: " << AppInstaller::Utility::ConvertToUTF8(unit.Type()));
 
                 auto testResult = make_self<wil::details::module_count_wrapper<implementation::TestConfigurationUnitResult>>();
                 auto unitResult = make_self<wil::details::module_count_wrapper<implementation::ConfigurationUnitResultInformation>>();
                 testResult->Initialize(unit, *unitResult);
 
-                if (ShouldTestDuringTest(unit.Intent()))
+                if (unit.IsActive())
                 {
                     progress.ThrowIfCancelled();
 
@@ -499,8 +493,7 @@ namespace winrt::Microsoft::Management::Configuration::implementation
 
                     try
                     {
-                        // TODO: Directives overlay to prevent running elevated for test
-                        unitProcessor = setProcessor.CreateUnitProcessor(unit, {});
+                        unitProcessor = setProcessor.CreateUnitProcessor(unit);
                     }
                     catch (...)
                     {
@@ -525,7 +518,7 @@ namespace winrt::Microsoft::Management::Configuration::implementation
                         m_threadGlobals.GetTelemetryLogger().LogConfigUnitRunIfAppropriate(
                             configurationSet.InstanceIdentifier(),
                             unit,
-                            ConfigurationUnitIntent::Assert,
+                            ConfigurationIntent::Assert,
                             TelemetryTraceLogger::TestAction,
                             testResult->ResultInformation());
                     }
@@ -593,8 +586,7 @@ namespace winrt::Microsoft::Management::Configuration::implementation
 
         try
         {
-            // TODO: Directives overlay to prevent running elevated for get
-            unitProcessor = setProcessor.CreateUnitProcessor(unit, {});
+            unitProcessor = setProcessor.CreateUnitProcessor(unit);
         }
         catch (...)
         {
@@ -616,7 +608,7 @@ namespace winrt::Microsoft::Management::Configuration::implementation
                 ExtractUnitResultInformation(std::current_exception(), unitResult);
             }
 
-            m_threadGlobals.GetTelemetryLogger().LogConfigUnitRunIfAppropriate(GUID_NULL, unit, ConfigurationUnitIntent::Inform, TelemetryTraceLogger::GetAction, result->ResultInformation());
+            m_threadGlobals.GetTelemetryLogger().LogConfigUnitRunIfAppropriate(GUID_NULL, unit, ConfigurationIntent::Inform, TelemetryTraceLogger::GetAction, result->ResultInformation());
         }
 
         return *result;

@@ -131,6 +131,11 @@ namespace winrt::Microsoft::Management::Configuration::implementation
         m_units = winrt::single_threaded_vector<Configuration::ConfigurationUnit>(std::move(temp));
     }
 
+    void ConfigurationUnit::Units(std::vector<Configuration::ConfigurationUnit>&& value)
+    {
+        m_units = winrt::single_threaded_vector<Configuration::ConfigurationUnit>(std::move(value));
+    }
+
     IConfigurationUnitProcessorDetails ConfigurationUnit::Details()
     {
         return m_details;
@@ -151,14 +156,14 @@ namespace winrt::Microsoft::Management::Configuration::implementation
         return nullptr;
     }
 
-    bool ConfigurationUnit::ShouldApply()
+    bool ConfigurationUnit::IsActive()
     {
-        return m_shouldApply;
+        return m_isActive;
     }
 
-    void ConfigurationUnit::ShouldApply(bool value)
+    void ConfigurationUnit::IsActive(bool value)
     {
-        m_shouldApply = value;
+        m_isActive = value;
     }
 
     HRESULT STDMETHODCALLTYPE ConfigurationUnit::SetLifetimeWatcher(IUnknown* watcher)
