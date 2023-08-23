@@ -19,7 +19,7 @@ namespace winrt::Microsoft::Management::Configuration::implementation
             SetError(result, field, mark);
         }
 
-        std::vector<Configuration::ConfigurationUnit> GetConfigurationUnits() override { return {}; }
+        ConfigurationSetParser::ConfigurationSetPtr GetConfigurationSet() override { return {}; }
 
         hstring GetSchemaVersion() override { return {}; }
     };

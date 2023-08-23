@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 #include "pch.h"
 #include "ConfigurationSetParser_0_2.h"
+#include "ParsingMacros.h"
 
 #include <AppInstallerErrors.h>
 #include <AppInstallerStrings.h>
@@ -11,12 +12,6 @@
 namespace winrt::Microsoft::Management::Configuration::implementation
 {
     using namespace AppInstaller::YAML;
-
-#define FIELD_TYPE_ERROR(_field_,_mark_) SetError(WINGET_CONFIG_ERROR_INVALID_FIELD_TYPE, (_field_), (_mark_)); return
-#define FIELD_TYPE_ERROR_IF(_condition_,_field_,_mark_) if (_condition_) { FIELD_TYPE_ERROR(_field_,_mark_); }
-
-#define FIELD_VALUE_ERROR(_field_,_value_,_mark_) SetError(WINGET_CONFIG_ERROR_INVALID_FIELD_VALUE, (_field_), (_mark_), (_value_)); return
-#define FIELD_VALUE_ERROR_IF(_condition_,_field_,_value_,_mark_) if (_condition_) { FIELD_VALUE_ERROR(_field_,_value_,_mark_); }
 
     namespace
     {

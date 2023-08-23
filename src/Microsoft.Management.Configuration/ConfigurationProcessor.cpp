@@ -265,15 +265,14 @@ namespace winrt::Microsoft::Management::Configuration::implementation
                 co_return *result;
             }
 
-            auto configurationSet = make_self<wil::details::module_count_wrapper<implementation::ConfigurationSet>>();
-            configurationSet->Initialize(parser->GetConfigurationUnits());
+            parser->Parse();
             if (FAILED(parser->Result()))
             {
                 result->Initialize(parser->Result(), parser->Field(), parser->Value(), parser->Line(), parser->Column());
                 co_return *result;
             }
-            configurationSet->SchemaVersion(parser->GetSchemaVersion());
 
+            auto configurationSet = parser->GetConfigurationSet();
             PropagateLifetimeWatcher(configurationSet.as<Windows::Foundation::IUnknown>());
 
             result->Initialize(*configurationSet);

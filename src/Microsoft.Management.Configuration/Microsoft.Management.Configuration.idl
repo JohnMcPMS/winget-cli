@@ -358,7 +358,7 @@ namespace Microsoft.Management.Configuration
         Windows.Foundation.Collections.IVector<ConfigurationParameter> Parameters{ get; };
 
         // The variables that this configuration set uses.
-        Windows.Foundation.Collections.IVector<ConfigurationVariable> Variables{ get; };
+        Windows.Foundation.Collections.ValueSet Variables{ get; };
 
         // The configuration units that are part of this set.
         Windows.Foundation.Collections.IVector<ConfigurationUnit> Units{ get; };
