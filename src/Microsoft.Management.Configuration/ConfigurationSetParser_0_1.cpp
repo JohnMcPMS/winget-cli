@@ -62,7 +62,7 @@ namespace winrt::Microsoft::Management::Configuration::implementation
             hasAssertions = true;
             auto assertionsGroup = make_self<wil::details::module_count_wrapper<ConfigurationUnit>>();
             // This is a sentinel type name for a group that works like the previous assertions.
-            assertionsGroup->Type(L"Microsoft.WinGet.Configuration/AssertionsGroup");
+            assertionsGroup->Type(hstring{ GetBuiltinAssertionGroupType() });
             assertionsGroup->IsGroup(true);
             assertionsGroup->Units(std::move(assertions));
             units.emplace_back(*assertionsGroup);
@@ -93,7 +93,7 @@ namespace winrt::Microsoft::Management::Configuration::implementation
         }
 
         m_configurationSet = make_self<wil::details::module_count_wrapper<implementation::ConfigurationSet>>();
-        m_configurationSet->Initialize(std::move(units));
+        m_configurationSet->Units(std::move(units));
         m_configurationSet->SchemaVersion(GetSchemaVersion());
     }
 

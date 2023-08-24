@@ -50,15 +50,13 @@ namespace Microsoft.Management.Configuration.Processor.Set
         /// Creates a configuration unit processor for the given unit.
         /// </summary>
         /// <param name="unit">Configuration unit.</param>
-        /// <param name="directivesOverlay">Allows for the ConfigurationProcessor to alter behavior without needing to change the unit itself.</param>
         /// <returns>A configuration unit processor.</returns>
         public IConfigurationUnitProcessor CreateUnitProcessor(
-            ConfigurationUnit unit,
-            IReadOnlyDictionary<string, object>? directivesOverlay)
+            ConfigurationUnit unit)
         {
             try
             {
-                var configurationUnitInternal = new ConfigurationUnitInternal(unit, this.configurationSet.Path, directivesOverlay);
+                var configurationUnitInternal = new ConfigurationUnitInternal(unit, this.configurationSet.Path);
                 this.OnDiagnostics(DiagnosticLevel.Verbose, $"Creating unit processor for: {configurationUnitInternal.ToIdentifyingString()}...");
 
                 var dscResourceInfo = this.PrepareUnitForProcessing(configurationUnitInternal);

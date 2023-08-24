@@ -20,9 +20,14 @@ namespace winrt::Microsoft::Management::Configuration::implementation
     {
     }
 
-    void ConfigurationSet::Initialize(std::vector<Configuration::ConfigurationUnit>&& units)
+    void ConfigurationSet::Units(std::vector<Configuration::ConfigurationUnit>&& value)
     {
-        m_units = winrt::single_threaded_vector<Configuration::ConfigurationUnit>(std::move(units));
+        m_units = winrt::single_threaded_vector<Configuration::ConfigurationUnit>(std::move(value));
+    }
+
+    void ConfigurationSet::Parameters(std::vector<Configuration::ConfigurationParameter>&& value)
+    {
+        m_parameters = winrt::single_threaded_vector<Configuration::ConfigurationParameter>(std::move(value));
     }
 
     bool ConfigurationSet::IsFromHistory() const
@@ -95,7 +100,7 @@ namespace winrt::Microsoft::Management::Configuration::implementation
         return m_parameters;
     }
 
-    Windows::Foundation::Collections::IVector<ConfigurationVariable> ConfigurationSet::Variables()
+    Windows::Foundation::Collections::ValueSet ConfigurationSet::Variables()
     {
         return m_variables;
     }

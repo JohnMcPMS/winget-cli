@@ -12,7 +12,6 @@ namespace winrt::Microsoft::Management::Configuration::implementation
         Configuration::ConfigurationUnit CreateConfigurationUnit();
         Configuration::ConfigurationSet CreateConfigurationSet();
         Configuration::ConfigurationParameter CreateConfigurationParameter();
-        Configuration::ConfigurationVariable CreateConfigurationVariable();
         Windows::Foundation::IAsyncOperation<IConfigurationSetProcessorFactory> CreateConfigurationSetProcessorFactoryAsync(hstring const& handler);
         Configuration::ConfigurationProcessor CreateConfigurationProcessor(IConfigurationSetProcessorFactory const& factory);
     };

@@ -14,13 +14,13 @@ namespace winrt::Microsoft::Management::Configuration::implementation
         using WinRT_Self = ::winrt::Microsoft::Management::Configuration::ConfigurationSet;
         using ConfigurationUnit = ::winrt::Microsoft::Management::Configuration::ConfigurationUnit;
         using ConfigurationParameter = ::winrt::Microsoft::Management::Configuration::ConfigurationParameter;
-        using ConfigurationVariable = ::winrt::Microsoft::Management::Configuration::ConfigurationVariable;
 
         ConfigurationSet();
 
 #if !defined(INCLUDE_ONLY_INTERFACE_METHODS)
         ConfigurationSet(const guid& instanceIdentifier);
-        void Initialize(std::vector<Configuration::ConfigurationUnit>&& units);
+        void Units(std::vector<Configuration::ConfigurationUnit>&& value);
+        void Parameters(std::vector<Configuration::ConfigurationParameter>&& value);
 
         bool IsFromHistory() const;
 #endif
@@ -44,7 +44,7 @@ namespace winrt::Microsoft::Management::Configuration::implementation
 
         Windows::Foundation::Collections::IVector<ConfigurationParameter> Parameters();
 
-        Windows::Foundation::Collections::IVector<ConfigurationVariable> Variables();
+        Windows::Foundation::Collections::ValueSet Variables();
 
         Windows::Foundation::Collections::IVector<ConfigurationUnit> Units();
 
@@ -72,7 +72,7 @@ namespace winrt::Microsoft::Management::Configuration::implementation
         clock::time_point m_firstApply{};
         Windows::Foundation::Collections::ValueSet m_metadata;
         Windows::Foundation::Collections::IVector<ConfigurationParameter> m_parameters{ winrt::single_threaded_vector<ConfigurationParameter>() };
-        Windows::Foundation::Collections::IVector<ConfigurationVariable> m_variables{ winrt::single_threaded_vector<ConfigurationVariable>() };
+        Windows::Foundation::Collections::ValueSet m_variables;
         Windows::Foundation::Collections::IVector<ConfigurationUnit> m_units{ winrt::single_threaded_vector<ConfigurationUnit>() };
         hstring m_schemaVersion;
         Windows::Foundation::Uri m_schemaUri = nullptr;

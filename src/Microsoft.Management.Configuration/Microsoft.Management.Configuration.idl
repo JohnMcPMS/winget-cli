@@ -311,19 +311,6 @@ namespace Microsoft.Management.Configuration
         Object ProvidedValue;
     }
 
-    // The definition of a configuration variable; a value that can be referenced by configuration units but cannot be changed during processing.
-    [contract(Microsoft.Management.Configuration.Contract, 1)]
-    runtimeclass ConfigurationVariable
-    {
-        ConfigurationVariable();
-
-        // The name of the variable.
-        String Name;
-
-        // The value of the variable.
-        Object Value;
-    }
-
     // A configuration set contains a collection of configuration units and details about the set.
     [contract(Microsoft.Management.Configuration.Contract, 1)]
     runtimeclass ConfigurationSet
@@ -860,9 +847,6 @@ namespace Microsoft.Management.Configuration
 
         // Creates an empty configuration parameter.
         ConfigurationParameter CreateConfigurationParameter();
-
-        // Creates an empty configuration variable.
-        ConfigurationVariable CreateConfigurationVariable();
 
         // Creates a processor factory for the given handler.
         Windows.Foundation.IAsyncOperation<IConfigurationSetProcessorFactory> CreateConfigurationSetProcessorFactoryAsync(String handler);

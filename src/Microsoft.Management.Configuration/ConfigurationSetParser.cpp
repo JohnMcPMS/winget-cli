@@ -320,6 +320,12 @@ namespace winrt::Microsoft::Management::Configuration::implementation
 
         case FieldName::Schema: return "$schema"sv;
         case FieldName::Metadata: return "metadata"sv;
+        case FieldName::Parameters: return "parameters"sv;
+        case FieldName::Variables: return "variables"sv;
+        case FieldName::Type: return "type"sv;
+        case FieldName::Description: return "description"sv;
+        case FieldName::Name: return "name"sv;
+        case FieldName::IsGroupMetadata: return "isGroup"sv;
         }
 
         THROW_HR(E_UNEXPECTED);
@@ -356,6 +362,38 @@ namespace winrt::Microsoft::Management::Configuration::implementation
         if (mapNode)
         {
             FillValueSetFromMap(mapNode, valueSet);
+        }
+    }
+
+    void ConfigurationSetParser::ParseMapping(const AppInstaller::YAML::Node& node, FieldName field, bool required, AppInstaller::YAML::Node::Type elementType, std::function<void(std::string, const AppInstaller::YAML::Node&)> operation)
+    {
+        const Node& mapNode = CHECK_ERROR(GetAndEnsureField(node, field, required, Node::Type::Mapping));
+        if (!mapNode)
+        {
+            return;
+        }
+
+        std::ostringstream strstr;
+        strstr << GetFieldName(field);
+        size_t index = 0;
+
+        for (const auto& mapItem : mapNode.Mapping())
+        {
+            std::string name = mapItem.first.as<std::string>();
+            if (name.empty())
+            {
+                strstr << '[' << index << ']';
+                FIELD_VALUE_ERROR(strstr.str(), name, mapItem.first.Mark());
+            }
+
+            if (mapItem.second.GetType() != elementType)
+            {
+                strstr << '[' << index << ']';
+                FIELD_TYPE_ERROR(strstr.str(), mapItem.second.Mark());
+            }
+            index++;
+
+            CHECK_ERROR(operation(std::move(name), mapItem.second));
         }
     }
 
@@ -440,5 +478,10 @@ namespace winrt::Microsoft::Management::Configuration::implementation
         {
             (unit->*propertyFunction)(std::move(arrayValue));
         }
+    }
+
+    std::wstring_view GetBuiltinAssertionGroupType()
+    {
+        return L"Microsoft.WinGet.Configuration/AssertionsGroup";
     }
 }

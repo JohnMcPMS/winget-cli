@@ -81,9 +81,6 @@
     <ClCompile Include="ConfigurationParameter.cpp">
       <Filter>API Source</Filter>
     </ClCompile>
-    <ClCompile Include="ConfigurationVariable.cpp">
-      <Filter>API Source</Filter>
-    </ClCompile>
     <ClCompile Include="ArgumentValidation.cpp">
       <Filter>Internals</Filter>
     </ClCompile>
@@ -178,9 +175,6 @@
       <Filter>Internals</Filter>
     </ClInclude>
     <ClInclude Include="ConfigurationParameter.h">
-      <Filter>API Headers</Filter>
-    </ClInclude>
-    <ClInclude Include="ConfigurationVariable.h">
       <Filter>API Headers</Filter>
     </ClInclude>
     <ClInclude Include="ArgumentValidation.h">

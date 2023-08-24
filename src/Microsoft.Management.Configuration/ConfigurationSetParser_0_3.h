@@ -4,7 +4,6 @@
 #include "ConfigurationSetParser.h"
 #include "ConfigurationIntent.h"
 #include <ConfigurationParameter.h>
-#include <ConfigurationVariable.h>
 
 #include <winget/Yaml.h>
 
@@ -30,13 +29,14 @@ namespace winrt::Microsoft::Management::Configuration::implementation
 
     protected:
         void ParseParameters(ConfigurationSetParser::ConfigurationSetPtr& set);
-        void ParseParameter(ConfigurationParameter* unit, const AppInstaller::YAML::Node& node);
-
-        void ParseVariables(ConfigurationSetParser::ConfigurationSetPtr& set);
-        void ParseVariable(ConfigurationVariable* unit, const AppInstaller::YAML::Node& node);
+        void ParseParameter(ConfigurationParameter* parameter, const AppInstaller::YAML::Node& node);
+        void ParseParameterType(ConfigurationParameter* parameter, const AppInstaller::YAML::Node& node);
+        void GetStringValueForParameter(const AppInstaller::YAML::Node& node, FieldName field, ConfigurationParameter* parameter, void(ConfigurationParameter::* propertyFunction)(const hstring& value));
 
         void ParseConfigurationUnitsFromField(const AppInstaller::YAML::Node& document, FieldName field, std::vector<Configuration::ConfigurationUnit>& result);
         virtual void ParseConfigurationUnit(ConfigurationUnit* unit, const AppInstaller::YAML::Node& unitNode);
+        // Determines if the given unit should be converted to a group.
+        bool ShouldConvertToGroup(ConfigurationUnit* unit);
 
         AppInstaller::YAML::Node m_document;
     };

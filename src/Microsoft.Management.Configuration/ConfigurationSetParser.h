@@ -99,6 +99,12 @@ namespace winrt::Microsoft::Management::Configuration::implementation
             // v0.3+
             Schema,
             Metadata,
+            Parameters,
+            Variables,
+            Type,
+            Description,
+            Name,
+            IsGroupMetadata,
         };
 
         // Gets the value of the field name.
@@ -118,6 +124,9 @@ namespace winrt::Microsoft::Management::Configuration::implementation
         // Parse the ValueSet named `field` from the given `node`.
         void ParseValueSet(const AppInstaller::YAML::Node& node, FieldName field, bool required, const Windows::Foundation::Collections::ValueSet& valueSet);
 
+        // Parse the mapping named `field` from the given `node`.
+        void ParseMapping(const AppInstaller::YAML::Node& node, FieldName field, bool required, AppInstaller::YAML::Node::Type elementType, std::function<void(std::string, const AppInstaller::YAML::Node&)> operation);
+
         // Parse the sequence named `field` from the given `node`.
         void ParseSequence(const AppInstaller::YAML::Node& node, FieldName field, bool required, AppInstaller::YAML::Node::Type elementType, std::function<void(const AppInstaller::YAML::Node&)> operation);
 
@@ -131,4 +140,7 @@ namespace winrt::Microsoft::Management::Configuration::implementation
         // Support older schema parsing.
         static std::unique_ptr<ConfigurationSetParser> GetSchemaVersionFromOldFormat(AppInstaller::YAML::Node& document, std::string& schemaVersionString);
     };
+
+    // Gets the unit type that is used to define the builtin assertion group.
+    std::wstring_view GetBuiltinAssertionGroupType();
 }
