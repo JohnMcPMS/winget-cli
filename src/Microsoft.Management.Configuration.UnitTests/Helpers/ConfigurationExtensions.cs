@@ -6,6 +6,7 @@
 
 namespace Microsoft.Management.Configuration.UnitTests.Helpers
 {
+    using System.Collections.Generic;
     using System.Linq;
     using System.Reflection;
 
@@ -31,6 +32,27 @@ namespace Microsoft.Management.Configuration.UnitTests.Helpers
             }
 
             return unit;
+        }
+
+        /// <summary>
+        /// Assigns the given units to the configuration set.
+        /// </summary>
+        /// <param name="set">The set to assign the units of.</param>
+        /// <param name="values">The units to assign.</param>
+        /// <returns>The given ConfigurationSet.</returns>
+        internal static ConfigurationSet Units(this ConfigurationSet set, IEnumerable<ConfigurationUnit> values)
+        {
+            AssignUnits(set.Units, values);
+            return set;
+        }
+
+        private static void AssignUnits(IList<ConfigurationUnit> target, IEnumerable<ConfigurationUnit> values)
+        {
+            target.Clear();
+            foreach (var value in values)
+            {
+                target.Add(value);
+            }
         }
     }
 }

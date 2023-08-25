@@ -69,7 +69,7 @@ namespace Microsoft.Management.Configuration.UnitTests.Tests
             string sharedIdentifier = "SameIdentifier";
             configurationUnit1.Identifier = sharedIdentifier;
             configurationUnit2.Identifier = sharedIdentifier;
-            configurationSet.Units = new ConfigurationUnit[] { configurationUnit1, configurationUnit2, configurationUnitDifferentIdentifier };
+            configurationSet.Units(new ConfigurationUnit[] { configurationUnit1, configurationUnit2, configurationUnitDifferentIdentifier });
 
             TestConfigurationProcessorFactory factory = new TestConfigurationProcessorFactory();
 
@@ -115,7 +115,7 @@ namespace Microsoft.Management.Configuration.UnitTests.Tests
             ConfigurationUnit configurationUnitMissingDependency = this.ConfigurationUnit();
             configurationUnit.Identifier = "Identifier";
             configurationUnitMissingDependency.Dependencies = new string[] { "Dependency" };
-            configurationSet.Units = new ConfigurationUnit[] { configurationUnit, configurationUnitMissingDependency };
+            configurationSet.Units(new ConfigurationUnit[] { configurationUnit, configurationUnitMissingDependency });
 
             TestConfigurationProcessorFactory factory = new TestConfigurationProcessorFactory();
 
@@ -163,7 +163,7 @@ namespace Microsoft.Management.Configuration.UnitTests.Tests
             configurationUnit1.Dependencies = new string[] { "Identifier3" };
             configurationUnit2.Dependencies = new string[] { "Identifier1" };
             configurationUnit3.Dependencies = new string[] { "Identifier2" };
-            configurationSet.Units = new ConfigurationUnit[] { configurationUnit1, configurationUnit2, configurationUnit3 };
+            configurationSet.Units(new ConfigurationUnit[] { configurationUnit1, configurationUnit2, configurationUnit3 });
 
             TestConfigurationProcessorFactory factory = new TestConfigurationProcessorFactory();
 
@@ -199,14 +199,14 @@ namespace Microsoft.Management.Configuration.UnitTests.Tests
             ConfigurationUnit configurationUnitAssert = this.ConfigurationUnit().Assign(new { Intent = ConfigurationUnitIntent.Assert });
             ConfigurationUnit configurationUnitInform = this.ConfigurationUnit().Assign(new { Intent = ConfigurationUnitIntent.Inform });
             ConfigurationUnit configurationUnitApply = this.ConfigurationUnit().Assign(new { Intent = ConfigurationUnitIntent.Apply });
-            configurationSet.Units = new ConfigurationUnit[] { configurationUnitInform, configurationUnitApply, configurationUnitAssert };
+            configurationSet.Units(new ConfigurationUnit[] { configurationUnitInform, configurationUnitApply, configurationUnitAssert });
 
             TestConfigurationProcessorFactory factory = new TestConfigurationProcessorFactory();
             TestConfigurationSetProcessor setProcessor = factory.CreateTestProcessor(configurationSet);
             TestConfigurationUnitProcessor unitProcessorAssert = setProcessor.CreateTestProcessor(configurationUnitAssert);
             TestConfigurationUnitProcessor unitProcessorInform = setProcessor.CreateTestProcessor(configurationUnitInform);
             TestConfigurationUnitProcessor unitProcessorApply = setProcessor.CreateTestProcessor(configurationUnitApply);
-            unitProcessorApply.TestSettingsDelegate = () => new TestSettingsResultInstance { TestResult = ConfigurationTestResult.Negative };
+            unitProcessorApply.TestSettingsDelegate = () => new TestSettingsResultInstance(configurationUnitApply) { TestResult = ConfigurationTestResult.Negative };
 
             ConfigurationProcessor processor = this.CreateConfigurationProcessorWithDiagnostics(factory);
 
@@ -249,7 +249,7 @@ namespace Microsoft.Management.Configuration.UnitTests.Tests
             ConfigurationSet configurationSet = this.ConfigurationSet();
             ConfigurationUnit configurationUnitAssert = this.ConfigurationUnit().Assign(new { Intent = ConfigurationUnitIntent.Assert });
             ConfigurationUnit configurationUnitApply = this.ConfigurationUnit().Assign(new { Intent = ConfigurationUnitIntent.Apply });
-            configurationSet.Units = new ConfigurationUnit[] { configurationUnitApply, configurationUnitAssert };
+            configurationSet.Units(new ConfigurationUnit[] { configurationUnitApply, configurationUnitAssert });
 
             TestConfigurationProcessorFactory factory = new TestConfigurationProcessorFactory();
             TestConfigurationSetProcessor setProcessor = factory.CreateTestProcessor(configurationSet);
@@ -296,7 +296,7 @@ namespace Microsoft.Management.Configuration.UnitTests.Tests
             ConfigurationSet configurationSet = this.ConfigurationSet();
             ConfigurationUnit configurationUnitAssert = this.ConfigurationUnit().Assign(new { Intent = ConfigurationUnitIntent.Assert });
             ConfigurationUnit configurationUnitApply = this.ConfigurationUnit().Assign(new { Intent = ConfigurationUnitIntent.Apply });
-            configurationSet.Units = new ConfigurationUnit[] { configurationUnitApply, configurationUnitAssert };
+            configurationSet.Units(new ConfigurationUnit[] { configurationUnitApply, configurationUnitAssert });
 
             TestConfigurationProcessorFactory factory = new TestConfigurationProcessorFactory();
             TestConfigurationSetProcessor setProcessor = factory.CreateTestProcessor(configurationSet);
@@ -335,7 +335,7 @@ namespace Microsoft.Management.Configuration.UnitTests.Tests
         {
             ConfigurationSet configurationSet = this.ConfigurationSet();
             ConfigurationUnit configurationUnit = this.ConfigurationUnit().Assign(new { Intent = ConfigurationUnitIntent.Apply });
-            configurationSet.Units = new ConfigurationUnit[] { configurationUnit };
+            configurationSet.Units(new ConfigurationUnit[] { configurationUnit });
 
             TestConfigurationProcessorFactory factory = new TestConfigurationProcessorFactory();
             TestConfigurationSetProcessor setProcessor = factory.CreateTestProcessor(configurationSet);
@@ -375,7 +375,7 @@ namespace Microsoft.Management.Configuration.UnitTests.Tests
             ConfigurationUnit apply3 = this.ConfigurationUnit().Assign(new { Intent = ConfigurationUnitIntent.Apply, Identifier = "Apply3", Dependencies = new string[] { apply1.Identifier, apply2.Identifier } });
             ConfigurationUnit apply4 = this.ConfigurationUnit().Assign(new { Intent = ConfigurationUnitIntent.Apply, Identifier = "Apply4", ShouldApply = false });
             ConfigurationUnit apply5 = this.ConfigurationUnit().Assign(new { Intent = ConfigurationUnitIntent.Apply, Identifier = "Apply5", Dependencies = new string[] { apply4.Identifier } });
-            configurationSet.Units = new ConfigurationUnit[] { assert2, assert1, inform1, apply1, apply3, apply4,  apply2, apply5 };
+            configurationSet.Units(new ConfigurationUnit[] { assert2, assert1, inform1, apply1, apply3, apply4, apply2, apply5 });
 
             ManualResetEvent startProcessing = new ManualResetEvent(false);
 
