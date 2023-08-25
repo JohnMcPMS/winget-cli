@@ -138,6 +138,7 @@ namespace winrt::Microsoft::Management::Configuration::implementation
         CHECK_ERROR(GetStringValueForUnit(unitNode, FieldName::Name, true, unit, &ConfigurationUnit::Identifier));
         CHECK_ERROR(GetStringValueForUnit(unitNode, FieldName::Type, true, unit, &ConfigurationUnit::Type));
         CHECK_ERROR(ParseValueSet(unitNode, FieldName::Metadata, false, unit->Metadata()));
+        CHECK_ERROR(ValidateType(unit, unitNode, FieldName::Type, false, true));
         CHECK_ERROR(GetStringArrayForUnit(unitNode, FieldName::DependsOn, false, unit, &ConfigurationUnit::Dependencies));
 
         // Regardless of being a group or not, parse the settings.

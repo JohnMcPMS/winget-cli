@@ -8,11 +8,12 @@ namespace Microsoft.Management.Configuration.UnitTests.Helpers
 {
     using System;
     using System.Collections.Generic;
+    using Windows.Foundation;
 
     /// <summary>
-    /// A test implementation of IConfigurationProcessorFactory.
+    /// A test implementation of IConfigurationUnitProcessor and IConfigurationGroupProcessor.
     /// </summary>
-    internal class TestConfigurationUnitProcessor : IConfigurationUnitProcessor
+    internal class TestConfigurationUnitProcessor : IConfigurationUnitProcessor, IConfigurationGroupProcessor
     {
         /// <summary>
         /// Initializes a new instance of the <see cref="TestConfigurationUnitProcessor"/> class.
@@ -21,17 +22,6 @@ namespace Microsoft.Management.Configuration.UnitTests.Helpers
         internal TestConfigurationUnitProcessor(ConfigurationUnit unit)
         {
             this.Unit = unit;
-        }
-
-        /// <summary>
-        /// Initializes a new instance of the <see cref="TestConfigurationUnitProcessor"/> class.
-        /// </summary>
-        /// <param name="unit">The unit.</param>
-        /// <param name="directivesOverlay">The directives overlay.</param>
-        internal TestConfigurationUnitProcessor(ConfigurationUnit unit, IReadOnlyDictionary<string, object> directivesOverlay)
-        {
-            this.Unit = unit;
-            this.DirectivesOverlay = directivesOverlay;
         }
 
         /// <summary>
@@ -51,11 +41,6 @@ namespace Microsoft.Management.Configuration.UnitTests.Helpers
         /// </summary>
         /// <returns>The result.</returns>
         internal delegate ITestSettingsResult TestSettingsDelegateType();
-
-        /// <summary>
-        /// Gets or sets the directives overlay.
-        /// </summary>
-        public IReadOnlyDictionary<string, object>? DirectivesOverlay { get; set; }
 
         /// <summary>
         /// Gets the configuration unit.
@@ -105,7 +90,7 @@ namespace Microsoft.Management.Configuration.UnitTests.Helpers
             }
             else
             {
-                return new ApplySettingsResultInstance();
+                return new ApplySettingsResultInstance(this.Unit);
             }
         }
 
@@ -122,7 +107,7 @@ namespace Microsoft.Management.Configuration.UnitTests.Helpers
             }
             else
             {
-                return new GetSettingsResultInstance();
+                return new GetSettingsResultInstance(this.Unit);
             }
         }
 
@@ -139,8 +124,35 @@ namespace Microsoft.Management.Configuration.UnitTests.Helpers
             }
             else
             {
-                return new TestSettingsResultInstance { TestResult = ConfigurationTestResult.Positive };
+                return new TestSettingsResultInstance(this.Unit) { TestResult = ConfigurationTestResult.Positive };
             }
+        }
+
+        /// <summary>
+        /// Calls the ApplySettingsAsyncDelegate if one is provided; returns success for all members if not.
+        /// </summary>
+        /// <returns>An async operation.</returns>
+        public IAsyncOperationWithProgress<IApplySettingsGroupResult, IApplySettingsResult> ApplySettingsAsync()
+        {
+            throw new NotImplementedException();
+        }
+
+        /// <summary>
+        /// Calls the GetSettingsAsyncDelegate if one is provided; returns success for all members if not (with no settings values).
+        /// </summary>
+        /// <returns>An async operation.</returns>
+        public IAsyncOperationWithProgress<IGetSettingsGroupResult, IGetSettingsResult> GetSettingsAsync()
+        {
+            throw new NotImplementedException();
+        }
+
+        /// <summary>
+        /// Calls The TestSettingsAsyncDelegate if one is provided; returns success for all members if not (with a positive test result).
+        /// </summary>
+        /// <returns>An async operation.</returns>
+        public IAsyncOperationWithProgress<ITestSettingsGroupResult, ITestSettingsResult> TestSettingsAsync()
+        {
+            throw new NotImplementedException();
         }
     }
 }

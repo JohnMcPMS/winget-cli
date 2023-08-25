@@ -14,6 +14,7 @@
 #include "ConfigurationSetParser_0_2.h"
 #include "ConfigurationSetParser_0_3.h"
 
+using namespace AppInstaller::Utility;
 using namespace AppInstaller::YAML;
 
 namespace winrt::Microsoft::Management::Configuration::implementation
@@ -28,15 +29,15 @@ namespace winrt::Microsoft::Management::Configuration::implementation
             std::wstring_view UriWide;
         };
 
-#define SCHEMA_VERSION_MAPI_ITEM(_version_,_uri_) _version_, TEXT(_version_), _uri_, TEXT(_uri_)
+#define SCHEMA_VERSION_MAP_ITEM(_version_,_uri_) _version_, TEXT(_version_), _uri_, TEXT(_uri_)
 
         // Please keep in sorted order with the highest version last.
         // Duplicate URIs are supported, but duplicate versions are not. The highest version for a URI will be the one mapped to, the lower versions will be aliases.
         SchemaVersionAndUri SchemaVersionAndUriMap[] =
         {
-            { SCHEMA_VERSION_MAPI_ITEM("0.1", "") },
-            { SCHEMA_VERSION_MAPI_ITEM("0.2", "") },
-            { SCHEMA_VERSION_MAPI_ITEM("0.3", "https://raw.githubusercontent.com/PowerShell/DSC/main/schemas/2023/08/config/document.json") },
+            { SCHEMA_VERSION_MAP_ITEM("0.1", "") },
+            { SCHEMA_VERSION_MAP_ITEM("0.2", "") },
+            { SCHEMA_VERSION_MAP_ITEM("0.3", "https://raw.githubusercontent.com/PowerShell/DSC/main/schemas/2023/08/config/document.json") },
         };
 
         Windows::Foundation::IInspectable GetIInspectableFromNode(const Node& node);
@@ -122,6 +123,29 @@ namespace winrt::Microsoft::Management::Configuration::implementation
 
             return result;
         }
+
+        // Contains the qualified resource name information.
+        struct QualifiedResourceName
+        {
+            QualifiedResourceName(hstring input)
+            {
+                std::wstring_view inputView = input;
+                size_t pos = inputView.find('/');
+
+                if (pos != std::wstring_view::npos)
+                {
+                    Module = inputView.substr(0, pos);
+                    Resource = inputView.substr(pos + 1);
+                }
+                else
+                {
+                    Resource = input;
+                }
+            }
+
+            hstring Module;
+            hstring Resource;
+        };
     }
 
     std::unique_ptr<ConfigurationSetParser> ConfigurationSetParser::Create(std::string_view input)
@@ -185,7 +209,7 @@ namespace winrt::Microsoft::Management::Configuration::implementation
         }
 
         // Create the parser based on the version selected
-        AppInstaller::Utility::SemanticVersion schemaVersion(std::move(schemaVersionString));
+        SemanticVersion schemaVersion(std::move(schemaVersionString));
 
         // TODO: Consider having the version/uri/type information all together in the future
         if (schemaVersion.PartAt(0).Integer == 0 && schemaVersion.PartAt(1).Integer == 1)
@@ -207,8 +231,6 @@ namespace winrt::Microsoft::Management::Configuration::implementation
 
     bool ConfigurationSetParser::IsRecognizedSchemaVersion(hstring value) try
     {
-        using namespace AppInstaller::Utility;
-
         SemanticVersion schemaVersion(ConvertToUTF8(value));
 
         for (const auto& item : SchemaVersionAndUriMap)
@@ -291,8 +313,8 @@ namespace winrt::Microsoft::Management::Configuration::implementation
     {
         AICLI_LOG(Config, Error, << "ConfigurationSetParser error: " << AppInstaller::Logging::SetHRFormat << result << " for " << field << " with value `" << value << "` at [line " << line << ", col " << column << "]");
         m_result = result;
-        m_field = AppInstaller::Utility::ConvertToUTF16(field);
-        m_value = AppInstaller::Utility::ConvertToUTF16(value);
+        m_field = ConvertToUTF16(field);
+        m_value = ConvertToUTF16(value);
         m_line = line;
         m_column = column;
     }
@@ -333,7 +355,7 @@ namespace winrt::Microsoft::Management::Configuration::implementation
 
     hstring ConfigurationSetParser::GetFieldNameHString(FieldName fieldName)
     {
-        return hstring{ AppInstaller::Utility::ConvertToUTF16(GetFieldName(fieldName)) };
+        return hstring{ ConvertToUTF16(GetFieldName(fieldName)) };
     }
 
     const Node& ConfigurationSetParser::GetAndEnsureField(const Node& parent, FieldName field, bool required, Node::Type type)
@@ -477,6 +499,43 @@ namespace winrt::Microsoft::Management::Configuration::implementation
         if (!arrayValue.empty())
         {
             (unit->*propertyFunction)(std::move(arrayValue));
+        }
+    }
+
+    void ConfigurationSetParser::ValidateType(ConfigurationUnit* unit, const Node& unitNode, FieldName typeField, bool moveModuleNameToMetadata, bool moduleNameRequiredInType)
+    {
+        QualifiedResourceName qualifiedName{ unit->Type() };
+
+        const Node& typeNode = CHECK_ERROR(GetAndEnsureField(unitNode, typeField, true, Node::Type::Scalar));
+        FIELD_VALUE_ERROR_IF(qualifiedName.Resource.empty(), GetFieldName(typeField), ConvertToUTF8(unit->Type()), typeNode.Mark());
+
+        if (!qualifiedName.Module.empty())
+        {
+            // If the module is provided in both the resource name and the directives, ensure that it matches
+            hstring moduleDirectiveFieldName = GetFieldNameHString(FieldName::ModuleDirective);
+            auto moduleDirective = unit->Metadata().TryLookup(moduleDirectiveFieldName);
+            if (moduleDirective)
+            {
+                auto moduleProperty = moduleDirective.try_as<Windows::Foundation::IPropertyValue>();
+                FIELD_TYPE_ERROR_IF(!moduleProperty, GetFieldName(FieldName::ModuleDirective), unitNode.Mark());
+                FIELD_TYPE_ERROR_IF(moduleProperty.Type() != Windows::Foundation::PropertyType::String, GetFieldName(FieldName::ModuleDirective), unitNode.Mark());
+                hstring moduleValue = moduleProperty.GetString();
+                FIELD_VALUE_ERROR_IF(qualifiedName.Module != moduleValue, GetFieldName(FieldName::ModuleDirective), ConvertToUTF8(moduleValue), unitNode.Mark());
+            }
+            else if (moveModuleNameToMetadata)
+            {
+                unit->Metadata().Insert(moduleDirectiveFieldName, Windows::Foundation::PropertyValue::CreateString(qualifiedName.Module));
+            }
+
+            if (moveModuleNameToMetadata)
+            {
+                // Set the unit name to be just the resource portion
+                unit->Type(qualifiedName.Resource);
+            }
+        }
+        else if (moduleNameRequiredInType)
+        {
+            FIELD_VALUE_ERROR(GetFieldName(typeField), ConvertToUTF8(unit->Type()), typeNode.Mark());
         }
     }
 

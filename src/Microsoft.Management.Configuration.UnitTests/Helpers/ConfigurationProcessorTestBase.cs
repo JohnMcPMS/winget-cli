@@ -106,7 +106,7 @@ namespace Microsoft.Management.Configuration.UnitTests.Helpers
         /// <param name="resultSource">The result source.</param>
         protected void VerifySummaryEvent(ConfigurationSet configurationSet, ApplyConfigurationSetResult setResult, ConfigurationUnitResultSource resultSource)
         {
-            TelemetryEvent summary = this.VerifySummaryEventShared(configurationSet, ConfigurationUnitIntent.Apply, resultSource == ConfigurationUnitResultSource.None ? 0 : setResult.ResultCode.HResult, resultSource);
+            TelemetryEvent summary = this.VerifySummaryEventShared(configurationSet, ConfigurationIntent.Apply, resultSource == ConfigurationUnitResultSource.None ? 0 : setResult.ResultCode.HResult, resultSource);
 
             int[] counts = new int[3];
             int[] runs = new int[3];
@@ -116,7 +116,7 @@ namespace Microsoft.Management.Configuration.UnitTests.Helpers
             for (int i = 0; i < unitResults.Count; ++i)
             {
                 ApplyConfigurationUnitResult unitResult = unitResults[i];
-                SummaryCountByIntent(counts, runs, failures, unitResult.Unit.Intent, unitResult.ResultInformation);
+                SummaryCountByIntent(counts, runs, failures, ConfigurationIntent.Apply, unitResult.ResultInformation);
             }
 
             VerifySummaryCounts(summary, counts, runs, failures);
@@ -131,7 +131,7 @@ namespace Microsoft.Management.Configuration.UnitTests.Helpers
         /// <param name="resultSource">The result source.</param>
         protected void VerifySummaryEvent(ConfigurationSet configurationSet, TestConfigurationSetResult setResult, int resultCode, ConfigurationUnitResultSource resultSource)
         {
-            TelemetryEvent summary = this.VerifySummaryEventShared(configurationSet, ConfigurationUnitIntent.Assert, resultCode, resultSource);
+            TelemetryEvent summary = this.VerifySummaryEventShared(configurationSet, ConfigurationIntent.Assert, resultCode, resultSource);
 
             int[] counts = new int[3];
             int[] runs = new int[3];
@@ -139,13 +139,13 @@ namespace Microsoft.Management.Configuration.UnitTests.Helpers
 
             foreach (TestConfigurationUnitResult unitResult in setResult.UnitResults)
             {
-                SummaryCountByIntent(counts, runs, failures, unitResult.Unit.Intent, unitResult.ResultInformation);
+                SummaryCountByIntent(counts, runs, failures, ConfigurationIntent.Assert, unitResult.ResultInformation);
             }
 
             VerifySummaryCounts(summary, counts, runs, failures);
         }
 
-        private static void SummaryCountByIntent(int[] counts, int[] runs, int[] failures, ConfigurationUnitIntent intent, IConfigurationUnitResultInformation resultInformation)
+        private static void SummaryCountByIntent(int[] counts, int[] runs, int[] failures, ConfigurationIntent intent, IConfigurationUnitResultInformation resultInformation)
         {
             int index = (int)intent;
 
@@ -164,17 +164,17 @@ namespace Microsoft.Management.Configuration.UnitTests.Helpers
 
         private static void VerifySummaryCounts(TelemetryEvent summary, int[] counts, int[] runs, int[] failures)
         {
-            Assert.Equal(counts[(int)ConfigurationUnitIntent.Assert].ToString(), summary.Properties[TelemetryEvent.AssertCount]);
-            Assert.Equal(runs[(int)ConfigurationUnitIntent.Assert].ToString(), summary.Properties[TelemetryEvent.AssertsRun]);
-            Assert.Equal(failures[(int)ConfigurationUnitIntent.Assert].ToString(), summary.Properties[TelemetryEvent.AssertsFailed]);
+            Assert.Equal(counts[(int)ConfigurationIntent.Assert].ToString(), summary.Properties[TelemetryEvent.AssertCount]);
+            Assert.Equal(runs[(int)ConfigurationIntent.Assert].ToString(), summary.Properties[TelemetryEvent.AssertsRun]);
+            Assert.Equal(failures[(int)ConfigurationIntent.Assert].ToString(), summary.Properties[TelemetryEvent.AssertsFailed]);
 
-            Assert.Equal(counts[(int)ConfigurationUnitIntent.Inform].ToString(), summary.Properties[TelemetryEvent.InformCount]);
-            Assert.Equal(runs[(int)ConfigurationUnitIntent.Inform].ToString(), summary.Properties[TelemetryEvent.InformsRun]);
-            Assert.Equal(failures[(int)ConfigurationUnitIntent.Inform].ToString(), summary.Properties[TelemetryEvent.InformsFailed]);
+            Assert.Equal(counts[(int)ConfigurationIntent.Inform].ToString(), summary.Properties[TelemetryEvent.InformCount]);
+            Assert.Equal(runs[(int)ConfigurationIntent.Inform].ToString(), summary.Properties[TelemetryEvent.InformsRun]);
+            Assert.Equal(failures[(int)ConfigurationIntent.Inform].ToString(), summary.Properties[TelemetryEvent.InformsFailed]);
 
-            Assert.Equal(counts[(int)ConfigurationUnitIntent.Apply].ToString(), summary.Properties[TelemetryEvent.ApplyCount]);
-            Assert.Equal(runs[(int)ConfigurationUnitIntent.Apply].ToString(), summary.Properties[TelemetryEvent.AppliesRun]);
-            Assert.Equal(failures[(int)ConfigurationUnitIntent.Apply].ToString(), summary.Properties[TelemetryEvent.AppliesFailed]);
+            Assert.Equal(counts[(int)ConfigurationIntent.Apply].ToString(), summary.Properties[TelemetryEvent.ApplyCount]);
+            Assert.Equal(runs[(int)ConfigurationIntent.Apply].ToString(), summary.Properties[TelemetryEvent.AppliesRun]);
+            Assert.Equal(failures[(int)ConfigurationIntent.Apply].ToString(), summary.Properties[TelemetryEvent.AppliesFailed]);
         }
 
         /// <summary>
@@ -184,7 +184,7 @@ namespace Microsoft.Management.Configuration.UnitTests.Helpers
         /// <param name="runIntent">The run intent.</param>
         /// <param name="resultCode">The result code.</param>
         /// <param name="resultSource">The result source.</param>
-        private TelemetryEvent VerifySummaryEventShared(ConfigurationSet configurationSet, ConfigurationUnitIntent runIntent, int resultCode, ConfigurationUnitResultSource resultSource)
+        private TelemetryEvent VerifySummaryEventShared(ConfigurationSet configurationSet, ConfigurationIntent runIntent, int resultCode, ConfigurationUnitResultSource resultSource)
         {
             Assert.Single(this.EventSink.Events);
             TelemetryEvent summary = this.EventSink.Events[0];

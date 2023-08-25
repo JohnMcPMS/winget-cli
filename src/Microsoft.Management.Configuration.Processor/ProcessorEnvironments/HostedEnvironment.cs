@@ -121,7 +121,7 @@ namespace Microsoft.Management.Configuration.Processor.Runspaces
         public DscResourceInfoInternal? GetDscResource(ConfigurationUnitInternal unitInternal)
         {
             using PowerShell pwsh = PowerShell.Create(this.Runspace);
-            var result = this.DscModule.GetDscResource(pwsh, unitInternal.Unit.UnitName, unitInternal.Module);
+            var result = this.DscModule.GetDscResource(pwsh, unitInternal.ResourceName, unitInternal.Module);
             this.OnDiagnostics(DiagnosticLevel.Verbose, pwsh);
             return result;
         }
@@ -332,7 +332,7 @@ namespace Microsoft.Management.Configuration.Processor.Runspaces
         {
             var parameters = new Dictionary<string, object>()
             {
-                { Parameters.Name, unitInternal.Unit.UnitName },
+                { Parameters.Name, unitInternal.ResourceName },
             };
 
             // Don't use ModuleSpecification here. Each parameter is independent and

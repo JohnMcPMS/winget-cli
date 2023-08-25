@@ -41,11 +41,6 @@ namespace Microsoft.Management.Configuration.Processor.Unit
         public ConfigurationUnit Unit => this.unitResource.Unit;
 
         /// <summary>
-        /// Gets the directives overlay that the processor was created with.
-        /// </summary>
-        public IReadOnlyDictionary<string, object>? DirectivesOverlay => this.unitResource.DirectivesOverlay;
-
-        /// <summary>
         /// Gets or initializes the set processor factory.
         /// </summary>
         internal PowerShellConfigurationSetProcessorFactory? SetProcessorFactory { get; init; }
@@ -57,9 +52,9 @@ namespace Microsoft.Management.Configuration.Processor.Unit
         /// <returns>A <see cref="IGetSettingsResult"/>.</returns>
         public IGetSettingsResult GetSettings()
         {
-            this.OnDiagnostics(DiagnosticLevel.Verbose, $"Invoking `Get` for resource: {this.unitResource.UnitInternal.ToIdentifyingString()}...");
+            this.OnDiagnostics(DiagnosticLevel.Verbose, $"Invoking `Get` for resource: {this.unitResource.UnitInternal.QualifiedName}...");
 
-            var result = new GetSettingsResult();
+            var result = new GetSettingsResult(this.Unit);
 
             try
             {
@@ -84,15 +79,9 @@ namespace Microsoft.Management.Configuration.Processor.Unit
         /// <returns>A <see cref="ITestSettingsResult"/>.</returns>
         public ITestSettingsResult TestSettings()
         {
-            this.OnDiagnostics(DiagnosticLevel.Verbose, $"Invoking `Test` for resource: {this.unitResource.UnitInternal.ToIdentifyingString()}...");
+            this.OnDiagnostics(DiagnosticLevel.Verbose, $"Invoking `Test` for resource: {this.unitResource.UnitInternal.QualifiedName}...");
 
-            if (this.Unit.Intent == ConfigurationUnitIntent.Inform)
-            {
-                this.OnDiagnostics(DiagnosticLevel.Error, "`Test` should not be called on a unit with intent of `Inform`");
-                throw new NotSupportedException();
-            }
-
-            var result = new TestSettingsResult();
+            var result = new TestSettingsResult(this.Unit);
             result.TestResult = ConfigurationTestResult.Failed;
             try
             {
@@ -119,16 +108,9 @@ namespace Microsoft.Management.Configuration.Processor.Unit
         /// <returns>A <see cref="IApplySettingsResult"/>.</returns>
         public IApplySettingsResult ApplySettings()
         {
-            this.OnDiagnostics(DiagnosticLevel.Verbose, $"Invoking `Apply` for resource: {this.unitResource.UnitInternal.ToIdentifyingString()}...");
+            this.OnDiagnostics(DiagnosticLevel.Verbose, $"Invoking `Apply` for resource: {this.unitResource.UnitInternal.QualifiedName}...");
 
-            if (this.Unit.Intent == ConfigurationUnitIntent.Inform ||
-                this.Unit.Intent == ConfigurationUnitIntent.Assert)
-            {
-                this.OnDiagnostics(DiagnosticLevel.Error, $"`Apply` should not be called on a unit with intent of `{this.Unit.Intent}`");
-                throw new NotSupportedException();
-            }
-
-            var result = new ApplySettingsResult();
+            var result = new ApplySettingsResult(this.Unit);
             try
             {
                 result.RebootRequired = this.processorEnvironment.InvokeSetResource(

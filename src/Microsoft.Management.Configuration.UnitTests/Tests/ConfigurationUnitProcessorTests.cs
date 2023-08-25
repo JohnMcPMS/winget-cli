@@ -42,45 +42,6 @@ namespace Microsoft.Management.Configuration.UnitTests.Tests
         }
 
         /// <summary>
-        /// Call GetSettings with all intents should succeed.
-        /// </summary>
-        /// <param name="intent">Intent.</param>
-        [Theory]
-        [InlineData(ConfigurationUnitIntent.Inform)]
-        [InlineData(ConfigurationUnitIntent.Assert)]
-        [InlineData(ConfigurationUnitIntent.Apply)]
-        public void GetSettings_Test(ConfigurationUnitIntent intent)
-        {
-            string theKey = "key";
-            string theValue = "value";
-            var valueGetResult = new ValueSet
-            {
-                { theKey, theValue },
-            };
-
-            var processorEnvMock = new Mock<IProcessorEnvironment>();
-            processorEnvMock.Setup(m => m.InvokeGetResource(
-                It.IsAny<ValueSet>(),
-                It.IsAny<string>(),
-                It.IsAny<ModuleSpecification?>()))
-                .Returns(valueGetResult)
-                .Verifiable();
-
-            var unitResource = this.CreateUnitResource(intent);
-
-            var unitProcessor = new ConfigurationUnitProcessor(processorEnvMock.Object, unitResource);
-
-            var result = unitProcessor.GetSettings();
-
-            processorEnvMock.Verify();
-
-            Assert.True(result.Settings.Count == 1);
-            Assert.True(result.Settings.ContainsKey(theKey));
-            Assert.True(result.Settings.TryGetValue(theKey, out object keyValue));
-            Assert.Equal(theValue, keyValue as string);
-        }
-
-        /// <summary>
         /// Tests GetSettings when a System.Management.Automation.RuntimeException is thrown.
         /// </summary>
         [Fact]
@@ -95,7 +56,7 @@ namespace Microsoft.Management.Configuration.UnitTests.Tests
                 .Throws(() => thrownException)
                 .Verifiable();
 
-            var unitResource = this.CreateUnitResource(ConfigurationUnitIntent.Inform);
+            var unitResource = this.CreateUnitResource();
 
             var unitProcessor = new ConfigurationUnitProcessor(processorEnvMock.Object, unitResource);
 
@@ -124,7 +85,7 @@ namespace Microsoft.Management.Configuration.UnitTests.Tests
                 .Throws(() => thrownException)
                 .Verifiable();
 
-            var unitResource = this.CreateUnitResource(ConfigurationUnitIntent.Inform);
+            var unitResource = this.CreateUnitResource();
 
             var unitProcessor = new ConfigurationUnitProcessor(processorEnvMock.Object, unitResource);
 
@@ -145,48 +106,11 @@ namespace Microsoft.Management.Configuration.UnitTests.Tests
         public void TestSettings_InformIntent()
         {
             var processorEnvMock = new Mock<IProcessorEnvironment>();
-            var unitResource = this.CreateUnitResource(ConfigurationUnitIntent.Inform);
+            var unitResource = this.CreateUnitResource();
 
             var unitProcessor = new ConfigurationUnitProcessor(processorEnvMock.Object, unitResource);
 
             Assert.Throws<NotSupportedException>(() => unitProcessor.TestSettings());
-        }
-
-        /// <summary>
-        /// Call TestSettings with Assert and Apply should work.
-        /// </summary>
-        /// <param name="intent">Intent.</param>
-        /// <param name="invokeTestResult">Invoke test result.</param>
-        [Theory]
-        [InlineData(ConfigurationUnitIntent.Assert, false)]
-        [InlineData(ConfigurationUnitIntent.Apply, false)]
-        [InlineData(ConfigurationUnitIntent.Assert, true)]
-        [InlineData(ConfigurationUnitIntent.Apply, true)]
-        public void TestSettings_TestSucceeded(ConfigurationUnitIntent intent, bool invokeTestResult)
-        {
-            var processorEnvMock = new Mock<IProcessorEnvironment>();
-            processorEnvMock.Setup(m => m.InvokeTestResource(
-                It.IsAny<ValueSet>(),
-                It.IsAny<string>(),
-                It.IsAny<ModuleSpecification?>()))
-                .Returns(invokeTestResult)
-                .Verifiable();
-
-            var unitResource = this.CreateUnitResource(intent);
-
-            var unitProcessor = new ConfigurationUnitProcessor(processorEnvMock.Object, unitResource);
-
-            var testResult = unitProcessor.TestSettings();
-
-            processorEnvMock.Verify();
-
-            var expectedConfigTestResult = ConfigurationTestResult.Negative;
-            if (invokeTestResult)
-            {
-                expectedConfigTestResult = ConfigurationTestResult.Positive;
-            }
-
-            Assert.Equal(expectedConfigTestResult, testResult.TestResult);
         }
 
         /// <summary>
@@ -204,7 +128,7 @@ namespace Microsoft.Management.Configuration.UnitTests.Tests
                 .Throws(() => thrownException)
                 .Verifiable();
 
-            var unitResource = this.CreateUnitResource(ConfigurationUnitIntent.Assert);
+            var unitResource = this.CreateUnitResource();
 
             var unitProcessor = new ConfigurationUnitProcessor(processorEnvMock.Object, unitResource);
 
@@ -235,7 +159,7 @@ namespace Microsoft.Management.Configuration.UnitTests.Tests
                 .Throws(() => thrownException)
                 .Verifiable();
 
-            var unitResource = this.CreateUnitResource(ConfigurationUnitIntent.Assert);
+            var unitResource = this.CreateUnitResource();
 
             var unitProcessor = new ConfigurationUnitProcessor(processorEnvMock.Object, unitResource);
 
@@ -249,23 +173,6 @@ namespace Microsoft.Management.Configuration.UnitTests.Tests
             Assert.Equal(thrownException.HResult, result.ResultInformation.ResultCode.HResult);
             Assert.True(!string.IsNullOrWhiteSpace(result.ResultInformation.Description));
             Assert.Equal(ConfigurationUnitResultSource.Internal, result.ResultInformation.ResultSource);
-        }
-
-        /// <summary>
-        /// Call ApplySettings with invalid intents.
-        /// </summary>
-        /// <param name="intent">Intent.</param>
-        [Theory]
-        [InlineData(ConfigurationUnitIntent.Inform)]
-        [InlineData(ConfigurationUnitIntent.Assert)]
-        public void ApplySettings_InvalidIntent(ConfigurationUnitIntent intent)
-        {
-            var processorEnvMock = new Mock<IProcessorEnvironment>();
-            var unitResource = this.CreateUnitResource(intent);
-
-            var unitProcessor = new ConfigurationUnitProcessor(processorEnvMock.Object, unitResource);
-
-            Assert.Throws<NotSupportedException>(() => unitProcessor.ApplySettings());
         }
 
         /// <summary>
@@ -285,7 +192,7 @@ namespace Microsoft.Management.Configuration.UnitTests.Tests
                 .Returns(rebootRequired)
                 .Verifiable();
 
-            var unitResource = this.CreateUnitResource(ConfigurationUnitIntent.Apply);
+            var unitResource = this.CreateUnitResource();
 
             var unitProcessor = new ConfigurationUnitProcessor(processorEnvMock.Object, unitResource);
 
@@ -309,7 +216,7 @@ namespace Microsoft.Management.Configuration.UnitTests.Tests
                 .Throws(() => thrownException)
                 .Verifiable();
 
-            var unitResource = this.CreateUnitResource(ConfigurationUnitIntent.Apply);
+            var unitResource = this.CreateUnitResource();
 
             var unitProcessor = new ConfigurationUnitProcessor(processorEnvMock.Object, unitResource);
 
@@ -338,7 +245,7 @@ namespace Microsoft.Management.Configuration.UnitTests.Tests
                 .Throws(() => thrownException)
                 .Verifiable();
 
-            var unitResource = this.CreateUnitResource(ConfigurationUnitIntent.Apply);
+            var unitResource = this.CreateUnitResource();
 
             var unitProcessor = new ConfigurationUnitProcessor(processorEnvMock.Object, unitResource);
 
@@ -352,18 +259,16 @@ namespace Microsoft.Management.Configuration.UnitTests.Tests
             Assert.Equal(ConfigurationUnitResultSource.Internal, result.ResultInformation.ResultSource);
         }
 
-        private ConfigurationUnitAndResource CreateUnitResource(ConfigurationUnitIntent intent)
+        private ConfigurationUnitAndResource CreateUnitResource()
         {
             string resourceName = "xResourceName";
             return new ConfigurationUnitAndResource(
                 new ConfigurationUnitInternal(
                     new ConfigurationUnit
                     {
-                        UnitName = resourceName,
-                        Intent = intent,
+                        Type = resourceName,
                     },
-                    string.Empty,
-                    new Dictionary<string, object>()),
+                    string.Empty),
                 new DscResourceInfoInternal(resourceName, null, null));
         }
     }

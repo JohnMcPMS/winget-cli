@@ -136,6 +136,9 @@ namespace winrt::Microsoft::Management::Configuration::implementation
         // Gets the string array in `field` from the given `node`, setting this value on `unit` using the `propertyFunction`.
         void GetStringArrayForUnit(const AppInstaller::YAML::Node& node, FieldName field, bool required, ConfigurationUnit* unit, void(ConfigurationUnit::* propertyFunction)(std::vector<hstring>&& value));
 
+        // Validates the unit's Type propery for correctness and consistency with the metadata. Should be called after parsing the Metadata value.
+        void ValidateType(ConfigurationUnit* unit, const AppInstaller::YAML::Node& unitNode, FieldName typeField, bool moveModuleNameToMetadata, bool moduleNameRequiredInType);
+
     private:
         // Support older schema parsing.
         static std::unique_ptr<ConfigurationSetParser> GetSchemaVersionFromOldFormat(AppInstaller::YAML::Node& document, std::string& schemaVersionString);

@@ -56,8 +56,8 @@ namespace Microsoft.Management.Configuration.Processor.Set
         {
             try
             {
-                var configurationUnitInternal = new ConfigurationUnitInternal(unit, this.configurationSet.Path);
-                this.OnDiagnostics(DiagnosticLevel.Verbose, $"Creating unit processor for: {configurationUnitInternal.ToIdentifyingString()}...");
+                var configurationUnitInternal = new ConfigurationUnitInternal(unit, this.configurationSet.Path) { UnitTypeIsResourceName = this.configurationSet.SchemaVersion == "0.1" };
+                this.OnDiagnostics(DiagnosticLevel.Verbose, $"Creating unit processor for: {configurationUnitInternal.QualifiedName}...");
 
                 var dscResourceInfo = this.PrepareUnitForProcessing(configurationUnitInternal);
 
@@ -75,6 +75,17 @@ namespace Microsoft.Management.Configuration.Processor.Set
         }
 
         /// <summary>
+        /// Creates a configuration unit processor for the given group.
+        /// </summary>
+        /// <param name="unit">The group unit.</param>
+        /// <returns>A configuration group processor.</returns>
+        public IConfigurationGroupProcessor CreateGroupProcessor(
+            ConfigurationUnit unit)
+        {
+            throw new NotImplementedException();
+        }
+
+        /// <summary>
         /// Gets the configuration unit processor details for the given unit.
         /// </summary>
         /// <param name="unit">Configuration unit.</param>
@@ -86,8 +97,8 @@ namespace Microsoft.Management.Configuration.Processor.Set
         {
             try
             {
-                var unitInternal = new ConfigurationUnitInternal(unit, this.configurationSet.Path);
-                this.OnDiagnostics(DiagnosticLevel.Verbose, $"Getting unit details [{detailFlags}] for: {unitInternal.ToIdentifyingString()}");
+                var unitInternal = new ConfigurationUnitInternal(unit, this.configurationSet.Path) { UnitTypeIsResourceName = this.configurationSet.SchemaVersion == "0.1" };
+                this.OnDiagnostics(DiagnosticLevel.Verbose, $"Getting unit details [{detailFlags}] for: {unitInternal.QualifiedName}");
 
                 // (Local | Download | Load) will all work off of local files, so if any one is an option just use the local module info if found.
                 DscResourceInfoInternal? dscResourceInfo = null;
@@ -159,7 +170,7 @@ namespace Microsoft.Management.Configuration.Processor.Set
                     {
                         // Well, this is awkward.
                         throw new InstallDscResourceException(
-                            unit.UnitName,
+                            unitInternal.ResourceName,
                             PowerShellHelpers.CreateModuleSpecification(foundModuleInfo.Name, foundModuleInfo.Version));
                     }
 
@@ -192,7 +203,7 @@ namespace Microsoft.Management.Configuration.Processor.Set
                 foundModule = this.ProcessorEnvironment.FindModule(unitInternal);
                 if (foundModule != null)
                 {
-                    resourceName = unitInternal.Unit.UnitName;
+                    resourceName = unitInternal.ResourceName;
                 }
             }
             else
@@ -235,7 +246,7 @@ namespace Microsoft.Management.Configuration.Processor.Set
 
                 if (findUnitModuleResult is null)
                 {
-                    throw new FindDscResourceNotFoundException(unitInternal.Unit.UnitName, unitInternal.Module);
+                    throw new FindDscResourceNotFoundException(unitInternal.ResourceName, unitInternal.Module);
                 }
 
                 this.ProcessorEnvironment.InstallModule(findUnitModuleResult.Value.Module);
@@ -244,7 +255,7 @@ namespace Microsoft.Management.Configuration.Processor.Set
                 dscResourceInfo = this.ProcessorEnvironment.GetDscResource(unitInternal);
                 if (dscResourceInfo is null)
                 {
-                    throw new InstallDscResourceException(unitInternal.Unit.UnitName, unitInternal.Module);
+                    throw new InstallDscResourceException(unitInternal.ResourceName, unitInternal.Module);
                 }
             }
 

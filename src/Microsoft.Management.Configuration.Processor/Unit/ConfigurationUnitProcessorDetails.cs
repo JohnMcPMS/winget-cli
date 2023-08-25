@@ -28,13 +28,13 @@ namespace Microsoft.Management.Configuration.Processor.Unit
         /// <summary>
         /// Initializes a new instance of the <see cref="ConfigurationUnitProcessorDetails"/> class.
         /// </summary>
-        /// <param name="unitName">Unit name.</param>
+        /// <param name="unitType">Unit type.</param>
         /// <param name="dscResourceInfo">DSC Resource Info.</param>
         /// <param name="psModuleInfo">PSModuleInfo.</param>
         /// <param name="getModuleInfo">GetModuleInfo.</param>
         /// <param name="certs">List of certificates..</param>
         public ConfigurationUnitProcessorDetails(
-            string unitName,
+            string unitType,
             DscResourceInfoInternal? dscResourceInfo,
             PSModuleInfo? psModuleInfo,
             PSObject? getModuleInfo,
@@ -47,7 +47,7 @@ namespace Microsoft.Management.Configuration.Processor.Unit
                 throw new ArgumentException();
             }
 
-            this.UnitName = unitName;
+            this.UnitType = unitType;
 
             if (dscResourceInfo is not null)
             {
@@ -112,9 +112,9 @@ namespace Microsoft.Management.Configuration.Processor.Unit
         }
 
         /// <summary>
-        /// Gets the name of the unit of configuration.
+        /// Gets the type of the unit of configuration.
         /// </summary>
-        public string UnitName { get; private set; }
+        public string UnitType { get; private set; }
 
         /// <summary>
         /// Gets the description of the unit of configuration.

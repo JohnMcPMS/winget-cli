@@ -160,7 +160,7 @@ namespace Microsoft.Management.Configuration.UnitTests.Tests
             testObjects.Processor = this.CreateConfigurationProcessorWithDiagnostics(testObjects.Factory);
             testObjects.CreateDetails();
 
-            testObjects.Unit.UnitName = "TestUnitName";
+            testObjects.Unit.Type = "TestUnitName";
             testObjects.UnitDetails.ModuleName = "TestModuleName";
 
             string setting1 = "setting1";
@@ -179,10 +179,10 @@ namespace Microsoft.Management.Configuration.UnitTests.Tests
             Assert.Equal(string.Empty, runEvent.Caller);
             Assert.Equal(Guid.Empty, Guid.Parse(runEvent.Properties[TelemetryEvent.SetID]));
             Assert.NotEqual(Guid.Empty, Guid.Parse(runEvent.Properties[TelemetryEvent.UnitID]));
-            Assert.Equal(testObjects.Unit.UnitName, runEvent.Properties[TelemetryEvent.UnitName]);
+            Assert.Equal(testObjects.Unit.Type, runEvent.Properties[TelemetryEvent.UnitName]);
             Assert.Equal(testObjects.UnitDetails.ModuleName, runEvent.Properties[TelemetryEvent.ModuleName]);
-            Assert.Equal(((int)testObjects.Unit.Intent).ToString(), runEvent.Properties[TelemetryEvent.UnitIntent]);
-            Assert.Equal(((int)ConfigurationUnitIntent.Inform).ToString(), runEvent.Properties[TelemetryEvent.RunIntent]);
+            Assert.Equal(((int)ConfigurationIntent.Inform).ToString(), runEvent.Properties[TelemetryEvent.UnitIntent]);
+            Assert.Equal(((int)ConfigurationIntent.Inform).ToString(), runEvent.Properties[TelemetryEvent.RunIntent]);
             Assert.NotEqual(string.Empty, runEvent.Properties[TelemetryEvent.Action]);
             Assert.Equal(testObjects.GetResult.ResultInformation.ResultCode.HResult.ToString(), runEvent.Properties[TelemetryEvent.Result]);
             Assert.Equal(((int)testObjects.GetResult.ResultInformation.ResultSource).ToString(), runEvent.Properties[TelemetryEvent.FailurePoint]);
@@ -203,7 +203,7 @@ namespace Microsoft.Management.Configuration.UnitTests.Tests
 
                 if (getFails)
                 {
-                    var getResult = new GetSettingsResultInstance();
+                    var getResult = new GetSettingsResultInstance(this.Unit);
                     getResult.InternalResult.ResultCode = new NullReferenceException();
                     getResult.InternalResult.ResultSource = ConfigurationUnitResultSource.UnitProcessing;
                     this.GetResult = getResult;
