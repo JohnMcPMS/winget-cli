@@ -100,20 +100,6 @@ namespace Microsoft.Management.Configuration.UnitTests.Tests
         }
 
         /// <summary>
-        /// Call TestSettings with Inform intent is not allowed.
-        /// </summary>
-        [Fact]
-        public void TestSettings_InformIntent()
-        {
-            var processorEnvMock = new Mock<IProcessorEnvironment>();
-            var unitResource = this.CreateUnitResource();
-
-            var unitProcessor = new ConfigurationUnitProcessor(processorEnvMock.Object, unitResource);
-
-            Assert.Throws<NotSupportedException>(() => unitProcessor.TestSettings());
-        }
-
-        /// <summary>
         /// Tests TestSettings when a System.Management.Automation.RuntimeException is thrown.
         /// </summary>
         [Fact]

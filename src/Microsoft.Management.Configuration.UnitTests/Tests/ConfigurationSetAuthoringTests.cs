@@ -67,7 +67,6 @@ namespace Microsoft.Management.Configuration.UnitTests.Tests
         {
             string testName = "Test Name";
             string testIdentifier = "Test Identifier";
-            ConfigurationUnitIntent testIntent = ConfigurationUnitIntent.Assert;
 
             ConfigurationUnit testUnit = this.ConfigurationUnit();
 
@@ -79,7 +78,7 @@ namespace Microsoft.Management.Configuration.UnitTests.Tests
             Assert.NotEqual(Guid.Empty, testUnit.InstanceIdentifier);
 
             Assert.Empty(testUnit.Dependencies);
-            testUnit.Dependencies = new string[] { "dependency1", "dependency2" };
+            testUnit.Dependencies(new string[] { "dependency1", "dependency2" });
             Assert.Equal(2, testUnit.Dependencies.Count);
 
             Assert.Empty(testUnit.Metadata);

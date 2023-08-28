@@ -97,7 +97,7 @@ namespace Microsoft.Management.Configuration.UnitTests.Tests
             Assert.Null(result.Set);
             Assert.NotNull(result.ResultCode);
             Assert.Equal(Errors.WINGET_CONFIG_ERROR_MISSING_FIELD, result.ResultCode.HResult);
-            Assert.Equal("properties", result.Field);
+            Assert.Equal("$schema", result.Field);
             Assert.Equal(0U, result.Line);
             Assert.Equal(0U, result.Column);
         }
@@ -144,10 +144,10 @@ properties:
         }
 
         /// <summary>
-        /// Has one of each type of intent to ensure that it is set properly.
+        /// Has one of each type of intent to ensure that they are mapped properly to the new layout
         /// </summary>
         [Fact]
-        public void EnsureIntent()
+        public void EnsureIntentMapping()
         {
             ConfigurationProcessor processor = this.CreateConfigurationProcessorWithDiagnostics();
 
@@ -166,27 +166,37 @@ properties:
             Assert.Null(result.ResultCode);
             Assert.Equal(string.Empty, result.Field);
 
-            var units = result.Set.ConfigurationUnits;
-            Assert.Equal(3, units.Count);
-            bool sawAssert = false;
-            bool sawInform = false;
-            bool sawApply = false;
+            var units = result.Set.Units;
+            Assert.Equal(2, units.Count);
+            ConfigurationUnit? asserts = null;
+            ConfigurationUnit? apply = null;
 
             foreach (var unit in units)
             {
-                Assert.Equal(unit.UnitName, unit.Intent.ToString());
-                switch (unit.Intent)
+                if (unit.Dependencies.Count == 0)
                 {
-                    case ConfigurationUnitIntent.Assert: sawAssert = true; break;
-                    case ConfigurationUnitIntent.Inform: sawInform = true; break;
-                    case ConfigurationUnitIntent.Apply: sawApply = true; break;
-                    default: Assert.Fail("Unknown intent"); break;
+                    asserts = unit;
+                }
+                else
+                {
+                    apply = unit;
                 }
             }
 
-            Assert.True(sawAssert);
-            Assert.True(sawInform);
-            Assert.True(sawApply);
+            Assert.NotNull(asserts);
+            Assert.NotNull(apply);
+
+            Assert.Equal(Helpers.Constants.BuiltinAssertionsGroupTypeName, asserts.Type);
+            Assert.True(asserts.IsGroup);
+            var assertUnits = asserts.Units;
+            Assert.Single(assertUnits);
+
+            ConfigurationUnit assertUnit = assertUnits[0];
+            Assert.Equal("Assert", assertUnit.Type);
+            Assert.False(assertUnit.IsGroup);
+
+            Assert.Equal("Apply", apply.Type);
+            Assert.False(apply.IsGroup);
         }
 
         /// <summary>
@@ -262,16 +272,15 @@ properties:
 
             Assert.NotEqual(Guid.Empty, result.Set.InstanceIdentifier);
 
-            var units = result.Set.ConfigurationUnits;
+            var units = result.Set.Units;
             Assert.NotNull(units);
             Assert.Equal(1, units.Count);
 
             ConfigurationUnit unit = units[0];
             Assert.NotNull(unit);
-            Assert.Equal("Resource", unit.UnitName);
+            Assert.Equal("Resource", unit.Type);
             Assert.NotEqual(Guid.Empty, unit.InstanceIdentifier);
             Assert.Equal("Identifier", unit.Identifier);
-            Assert.Equal(ConfigurationUnitIntent.Apply, unit.Intent);
 
             var dependencies = unit.Dependencies;
             Assert.NotNull(dependencies);
@@ -279,7 +288,7 @@ properties:
             Assert.Contains("Dependency1", dependencies);
             Assert.Contains("Dependency2", dependencies);
 
-            var directives = unit.Directives;
+            var directives = unit.Metadata;
             Assert.NotNull(directives);
             Assert.Equal(2, directives.Count);
             Assert.Contains("Directive1", directives);
@@ -298,7 +307,7 @@ properties:
             Assert.Null(unit.Details);
             Assert.Equal(ConfigurationUnitState.Unknown, unit.State);
             Assert.Null(unit.ResultInformation);
-            Assert.True(unit.ShouldApply);
+            Assert.True(unit.IsActive);
         }
 
         /// <summary>
@@ -324,7 +333,7 @@ properties:
             Assert.NotNull(result.Set);
             Assert.Null(result.ResultCode);
 
-            var units = result.Set.ConfigurationUnits;
+            var units = result.Set.Units;
             Assert.NotNull(units);
             Assert.Equal(1, units.Count);
 
@@ -366,13 +375,12 @@ properties:
             Assert.Null(result.ResultCode);
 
             Assert.Equal("0.1", result.Set.SchemaVersion);
-            Assert.Single(result.Set.ConfigurationUnits);
+            Assert.Single(result.Set.Units);
 
-            var unit = result.Set.ConfigurationUnits[0];
+            var unit = result.Set.Units[0];
             Assert.NotNull(unit);
-            Assert.Equal("0.1", unit.SchemaVersion);
-            Assert.Equal("Module/Resource", unit.UnitName);
-            Assert.Empty(unit.Directives);
+            Assert.Equal("Module/Resource", unit.Type);
+            Assert.Empty(unit.Metadata);
         }
 
         /// <summary>
@@ -399,15 +407,14 @@ properties:
             Assert.Null(result.ResultCode);
 
             Assert.Equal("0.2", result.Set.SchemaVersion);
-            Assert.Single(result.Set.ConfigurationUnits);
+            Assert.Single(result.Set.Units);
 
-            var unit = result.Set.ConfigurationUnits[0];
+            var unit = result.Set.Units[0];
             Assert.NotNull(unit);
-            Assert.Equal("0.2", unit.SchemaVersion);
-            Assert.Equal("Resource", unit.UnitName);
-            Assert.Single(unit.Directives);
-            Assert.True(unit.Directives.ContainsKey(ModuleDirective));
-            Assert.Equal("Module", unit.Directives[ModuleDirective]);
+            Assert.Equal("Resource", unit.Type);
+            Assert.Single(unit.Metadata);
+            Assert.True(unit.Metadata.ContainsKey(ModuleDirective));
+            Assert.Equal("Module", unit.Metadata[ModuleDirective]);
         }
 
         /// <summary>

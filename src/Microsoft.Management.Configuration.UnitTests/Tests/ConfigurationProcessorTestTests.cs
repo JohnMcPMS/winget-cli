@@ -195,7 +195,7 @@ namespace Microsoft.Management.Configuration.UnitTests.Tests
         [Fact]
         public void TestSet_ResultTypes()
         {
-            this.RunTestSetTestForResultTypes(new ConfigurationTestResult[] { ConfigurationTestResult.Positive, ConfigurationTestResult.Negative, ConfigurationTestResult.Failed, ConfigurationTestResult.NotRun }, ConfigurationTestResult.Failed);
+            this.RunTestSetTestForResultTypes(new ConfigurationTestResult[] { ConfigurationTestResult.Positive, ConfigurationTestResult.Negative, ConfigurationTestResult.Failed }, ConfigurationTestResult.Failed);
         }
 
         /// <summary>
@@ -204,7 +204,7 @@ namespace Microsoft.Management.Configuration.UnitTests.Tests
         [Fact]
         public void TestSet_Negative()
         {
-            this.RunTestSetTestForResultTypes(new ConfigurationTestResult[] { ConfigurationTestResult.Positive, ConfigurationTestResult.Negative, ConfigurationTestResult.Positive, ConfigurationTestResult.NotRun }, ConfigurationTestResult.Negative);
+            this.RunTestSetTestForResultTypes(new ConfigurationTestResult[] { ConfigurationTestResult.Positive, ConfigurationTestResult.Negative, ConfigurationTestResult.Positive }, ConfigurationTestResult.Negative);
         }
 
         /// <summary>
@@ -213,7 +213,7 @@ namespace Microsoft.Management.Configuration.UnitTests.Tests
         [Fact]
         public void TestSet_Positive()
         {
-            this.RunTestSetTestForResultTypes(new ConfigurationTestResult[] { ConfigurationTestResult.Positive, ConfigurationTestResult.Positive, ConfigurationTestResult.Positive, ConfigurationTestResult.NotRun }, ConfigurationTestResult.Positive);
+            this.RunTestSetTestForResultTypes(new ConfigurationTestResult[] { ConfigurationTestResult.Positive, ConfigurationTestResult.Positive, ConfigurationTestResult.Positive }, ConfigurationTestResult.Positive);
         }
 
         /// <summary>
@@ -256,8 +256,7 @@ namespace Microsoft.Management.Configuration.UnitTests.Tests
                         unitProcessor.TestSettingsDelegate = () => negativeResult;
                         break;
                     case ConfigurationTestResult.NotRun:
-                        configurationUnits[i].Intent = ConfigurationUnitIntent.Inform;
-                        break;
+                        throw new NotImplementedException("This scenario is not yet supported.");
                     case ConfigurationTestResult.Failed:
                         unitProcessor.TestSettingsDelegate = () => failedResult;
                         break;

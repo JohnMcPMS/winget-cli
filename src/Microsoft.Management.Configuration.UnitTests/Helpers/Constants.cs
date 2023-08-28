@@ -20,5 +20,10 @@ namespace Microsoft.Management.Configuration.UnitTests.Helpers
         /// The namespace where xUnit traits will be defined.
         /// </summary>
         public const string NamespaceNameForTraits = "Microsoft.Management.Configuration.UnitTests.Helpers";
+
+        /// <summary>
+        /// The built-in assertions group type name.
+        /// </summary>
+        public const string BuiltinAssertionsGroupTypeName = "Microsoft.WinGet.Configuration/AssertionsGroup";
     }
 }

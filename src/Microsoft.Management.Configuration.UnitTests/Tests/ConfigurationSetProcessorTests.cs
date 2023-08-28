@@ -702,7 +702,6 @@ namespace Microsoft.Management.Configuration.UnitTests.Tests
             var unit = new ConfigurationUnit
             {
                 Type = "SimpleTestResourceTypes",
-                Intent = ConfigurationUnitIntent.Assert,
             };
 
             unit.Metadata.Add("module", "xSimpleTestResource");

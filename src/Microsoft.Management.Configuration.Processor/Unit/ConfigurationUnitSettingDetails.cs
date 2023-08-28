@@ -8,6 +8,7 @@ namespace Microsoft.Management.Configuration.Processor.Unit
 {
     using Microsoft.Management.Configuration;
     using Microsoft.Management.Configuration.Processor.DscResourcesInfo;
+    using Windows.Foundation.Metadata;
 
     /// <summary>
     /// Provides information for a specific configuration unit setting.
@@ -23,11 +24,6 @@ namespace Microsoft.Management.Configuration.Processor.Unit
             this.Name = dscResourceInfo.Name;
             this.IsRequired = dscResourceInfo.IsMandatory;
             this.Type = GetPropertyType(dscResourceInfo.PropertyType);
-
-            // We don't have this information right now.
-            this.Description = null;
-            this.IsKey = false;
-            this.IsInformational = false;
         }
 
         /// <summary>
@@ -38,17 +34,17 @@ namespace Microsoft.Management.Configuration.Processor.Unit
         /// <summary>
         /// Gets the title of the setting.
         /// </summary>
-        public string? Title { get; }
+        public string Title { get; } = string.Empty;
 
         /// <summary>
         /// Gets the description of the setting.
         /// </summary>
-        public string? Description { get; }
+        public string Description { get; } = string.Empty;
 
         /// <summary>
         /// Gets a value indicating whether the setting is a key. This is used to determine if different settings are in conflict.
         /// </summary>
-        public bool IsKey { get; }
+        public bool IsKey { get; } = false;
 
         /// <summary>
         /// Gets a value indicating whether a non-empty value for the setting is required.
@@ -58,7 +54,7 @@ namespace Microsoft.Management.Configuration.Processor.Unit
         /// <summary>
         /// Gets a value indicating whether the setting should be serialized in order to be applied on another system.
         /// </summary>
-        public bool IsInformational { get; }
+        public bool IsInformational { get; } = false;
 
         /// <summary>
         /// Gets the data type for the value of this setting.
@@ -69,7 +65,7 @@ namespace Microsoft.Management.Configuration.Processor.Unit
         /// Gets the semantics to be used for this setting. The goal is to enable richer conflict detection and authoring
         /// scenarios by having a deeper understanding of this value than "String".
         /// </summary>
-        public string? Schema { get; }
+        public string Schema { get; } = string.Empty;
 
         private static Windows.Foundation.PropertyType GetPropertyType(string propertyType)
         {

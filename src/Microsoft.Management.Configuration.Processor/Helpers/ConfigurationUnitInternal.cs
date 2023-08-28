@@ -240,6 +240,7 @@ namespace Microsoft.Management.Configuration.Processor.Helpers
             {
                 this.ResourceName = unitType;
                 this.QualifiedName = this.ConstructQualifiedName(moduleDirective);
+                return;
             }
 
             int unitTypeDividerPosition = unitType.IndexOf('/');

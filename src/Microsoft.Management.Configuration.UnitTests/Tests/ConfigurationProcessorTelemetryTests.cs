@@ -194,7 +194,7 @@ namespace Microsoft.Management.Configuration.UnitTests.Tests
         {
             public TelemetryTestObjects(bool getFails = true)
             {
-                this.Unit = new ConfigurationUnit { Intent = ConfigurationUnitIntent.Apply };
+                this.Unit = new ConfigurationUnit();
 
                 this.Factory = new TestConfigurationProcessorFactory();
                 this.Factory.NullProcessor = new TestConfigurationSetProcessor(null);

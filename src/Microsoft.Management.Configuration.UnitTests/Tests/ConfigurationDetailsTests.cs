@@ -132,7 +132,7 @@ namespace Microsoft.Management.Configuration.UnitTests.Tests
                     Assert.NotNull(ensureSetting);
                     Assert.Equal(Windows.Foundation.PropertyType.String, ensureSetting.Type);
                     Assert.False(ensureSetting.IsRequired);
-                    Assert.Equal("Absent, Present", ensureSetting.Schema);
+                    Assert.Equal(string.Empty, ensureSetting.Schema);
 
                     var psDscRunAsCredentialSetting = details.Settings.Where(s => s.Name == "PsDscRunAsCredential").FirstOrDefault();
                     Assert.NotNull(psDscRunAsCredentialSetting);
