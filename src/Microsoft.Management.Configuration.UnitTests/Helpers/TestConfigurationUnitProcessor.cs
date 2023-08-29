@@ -11,9 +11,9 @@ namespace Microsoft.Management.Configuration.UnitTests.Helpers
     using Windows.Foundation;
 
     /// <summary>
-    /// A test implementation of IConfigurationUnitProcessor and IConfigurationGroupProcessor.
+    /// A test implementation of IConfigurationUnitProcessor.
     /// </summary>
-    internal class TestConfigurationUnitProcessor : IConfigurationUnitProcessor, IConfigurationGroupProcessor
+    internal class TestConfigurationUnitProcessor : IConfigurationUnitProcessor
     {
         /// <summary>
         /// Initializes a new instance of the <see cref="TestConfigurationUnitProcessor"/> class.
@@ -126,33 +126,6 @@ namespace Microsoft.Management.Configuration.UnitTests.Helpers
             {
                 return new TestSettingsResultInstance(this.Unit) { TestResult = ConfigurationTestResult.Positive };
             }
-        }
-
-        /// <summary>
-        /// Calls the ApplySettingsAsyncDelegate if one is provided; returns success for all members if not.
-        /// </summary>
-        /// <returns>An async operation.</returns>
-        public IAsyncOperationWithProgress<IApplySettingsGroupResult, IApplySettingsResult> ApplySettingsAsync()
-        {
-            throw new NotImplementedException();
-        }
-
-        /// <summary>
-        /// Calls the GetSettingsAsyncDelegate if one is provided; returns success for all members if not (with no settings values).
-        /// </summary>
-        /// <returns>An async operation.</returns>
-        public IAsyncOperationWithProgress<IGetSettingsGroupResult, IGetSettingsResult> GetSettingsAsync()
-        {
-            throw new NotImplementedException();
-        }
-
-        /// <summary>
-        /// Calls The TestSettingsAsyncDelegate if one is provided; returns success for all members if not (with a positive test result).
-        /// </summary>
-        /// <returns>An async operation.</returns>
-        public IAsyncOperationWithProgress<ITestSettingsGroupResult, ITestSettingsResult> TestSettingsAsync()
-        {
-            throw new NotImplementedException();
         }
     }
 }

@@ -75,17 +75,6 @@ namespace Microsoft.Management.Configuration.Processor.Set
         }
 
         /// <summary>
-        /// Creates a configuration unit processor for the given group.
-        /// </summary>
-        /// <param name="unit">The group unit.</param>
-        /// <returns>A configuration group processor.</returns>
-        public IConfigurationGroupProcessor CreateGroupProcessor(
-            ConfigurationUnit unit)
-        {
-            throw new NotImplementedException();
-        }
-
-        /// <summary>
         /// Gets the configuration unit processor details for the given unit.
         /// </summary>
         /// <param name="unit">Configuration unit.</param>

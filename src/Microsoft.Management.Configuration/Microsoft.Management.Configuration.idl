@@ -146,6 +146,8 @@ namespace Microsoft.Management.Configuration
         Windows.Foundation.Uri UnitDocumentationUri{ get; };
         // The URI of the icon for the unit of configuration.
         Windows.Foundation.Uri UnitIconUri{ get; };
+        // Determines if this configuration unit should be treated as a group.
+        Boolean IsGroup{ get; };
 
         // The name of the module containing the unit of configuration.
         String ModuleName{ get; };
@@ -452,8 +454,8 @@ namespace Microsoft.Management.Configuration
     [contract(Microsoft.Management.Configuration.Contract, 1)]
     interface IApplySettingsGroupResult
     {
-        // The configuration unit group.
-        ConfigurationUnit Unit{ get; };
+        // The configuration group object (set or unit).
+        Object Group{ get; };
 
         // Indicates whether a reboot is required after the settings were applied.
         Boolean RebootRequired{ get; };
@@ -469,8 +471,8 @@ namespace Microsoft.Management.Configuration
     [contract(Microsoft.Management.Configuration.Contract, 1)]
     interface ITestSettingsGroupResult
     {
-        // The configuration unit group.
-        ConfigurationUnit Unit{ get; };
+        // The configuration group object (set or unit).
+        Object Group{ get; };
 
         // The result (if any) of running Test on the configuration unit group.
         ConfigurationTestResult TestResult{ get; };
@@ -487,8 +489,8 @@ namespace Microsoft.Management.Configuration
     [contract(Microsoft.Management.Configuration.Contract, 1)]
     interface IGetSettingsGroupResult
     {
-        // The configuration unit group.
-        ConfigurationUnit Unit{ get; };
+        // The configuration group object (set or unit).
+        Object Group{ get; };
 
         // The current state of the system for the configuration unit group.
         Windows.Foundation.Collections.ValueSet Settings{ get; };
@@ -505,17 +507,17 @@ namespace Microsoft.Management.Configuration
     [contract(Microsoft.Management.Configuration.Contract, 1)]
     interface IConfigurationGroupProcessor
     {
-        // The configuration unit group that the processor was created for.
-        ConfigurationUnit Unit{ get; };
+        // The configuration group object (set or unit).
+        Object Group{ get; };
 
         // Determines if the system is already in the state described by the configuration unit group.
-        Windows.Foundation.IAsyncOperationWithProgress<ITestSettingsGroupResult, ITestSettingsResult> TestSettingsAsync();
+        Windows.Foundation.IAsyncOperationWithProgress<ITestSettingsGroupResult, ITestSettingsResult> TestGroupSettingsAsync();
 
         // Gets the current system state for the configuration unit group.
-        Windows.Foundation.IAsyncOperationWithProgress<IGetSettingsGroupResult, IGetSettingsResult> GetSettingsAsync();
+        Windows.Foundation.IAsyncOperationWithProgress<IGetSettingsGroupResult, IGetSettingsResult> GetGroupSettingsAsync();
 
         // Applies the state described in the configuration unit group.
-        Windows.Foundation.IAsyncOperationWithProgress<IApplySettingsGroupResult, IApplySettingsResult> ApplySettingsAsync();
+        Windows.Foundation.IAsyncOperationWithProgress<IApplySettingsGroupResult, IApplySettingsResult> ApplyGroupSettingsAsync();
     }
 
     // Controls the lifetime of operations for a single configuration set.
@@ -527,9 +529,6 @@ namespace Microsoft.Management.Configuration
 
         // Creates a configuration unit processor for the given unit.
         IConfigurationUnitProcessor CreateUnitProcessor(ConfigurationUnit unit);
-
-        // Creates a configuration group processor for the given unit group.
-        IConfigurationGroupProcessor CreateGroupProcessor(ConfigurationUnit unit);
     }
 
     // The level of the diagnostic information.

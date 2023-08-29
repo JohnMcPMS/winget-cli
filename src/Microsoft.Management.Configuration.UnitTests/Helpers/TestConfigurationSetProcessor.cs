@@ -64,26 +64,6 @@ namespace Microsoft.Management.Configuration.UnitTests.Helpers
         }
 
         /// <summary>
-        /// Creates a new unit processor for the given group.
-        /// </summary>
-        /// <param name="unit">The unit.</param>
-        /// <returns>The configuration unit processor.</returns>
-        public IConfigurationGroupProcessor CreateGroupProcessor(ConfigurationUnit unit)
-        {
-            if (this.Exceptions.ContainsKey(unit))
-            {
-                throw this.Exceptions[unit];
-            }
-
-            if (!this.Processors.ContainsKey(unit))
-            {
-                this.Processors.Add(unit, new TestConfigurationUnitProcessor(unit));
-            }
-
-            return this.Processors[unit];
-        }
-
-        /// <summary>
         /// Gets the unit processor details for the given unit.
         /// </summary>
         /// <param name="unit">The unit.</param>

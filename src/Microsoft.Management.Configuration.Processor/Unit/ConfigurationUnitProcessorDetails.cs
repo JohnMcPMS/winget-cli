@@ -132,6 +132,11 @@ namespace Microsoft.Management.Configuration.Processor.Unit
         public Uri? UnitIconUri { get; private set; }
 
         /// <summary>
+        /// Gets a value indicating whether the unit is a group.
+        /// </summary>
+        public bool IsGroup { get; private set; } = false;
+
+        /// <summary>
         /// Gets the name of the module containing the unit of configuration.
         /// </summary>
         public string? ModuleName { get; private set; }

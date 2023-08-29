@@ -326,6 +326,28 @@ namespace winrt::Microsoft::Management::Configuration::implementation
         // As the process of creating the unit processor could take a while, check for cancellation again
         m_progress.ThrowIfCancelled();
 
+        // Check for group handling capability for this unit if we think it is a group.
+        // If it is a group but we don't think it is one, the only option we would have is to convert it to one
+        // and create new configuration units dynamically. Without the child unit objects, there is no reason
+        // to process it any differently than a normal unit.
+        IConfigurationGroupProcessor groupProcessor = nullptr;
+        if (unitInfo.Unit.IsGroup())
+        {
+            groupProcessor = unitProcessor.try_as<IConfigurationGroupProcessor>();
+        }
+
+        if (groupProcessor)
+        {
+            return ProcessGroup(unitInfo, groupProcessor);
+        }
+        else
+        {
+            return ProcessUnit(unitInfo, unitProcessor);
+        }
+    }
+
+    bool ConfigurationSetApplyProcessor::ProcessUnit(UnitInfo & unitInfo, IConfigurationUnitProcessor& processor)
+    {
         bool result = false;
         std::string_view action;
 
@@ -333,7 +355,7 @@ namespace winrt::Microsoft::Management::Configuration::implementation
         {
             action = TelemetryTraceLogger::TestAction;
             unitInfo.LastActionIntent = ConfigurationIntent::Assert;
-            ITestSettingsResult testSettingsResult = unitProcessor.TestSettings();
+            ITestSettingsResult testSettingsResult = processor.TestSettings();
 
             if (testSettingsResult.TestResult() == ConfigurationTestResult::Positive)
             {
@@ -347,7 +369,63 @@ namespace winrt::Microsoft::Management::Configuration::implementation
 
                 action = TelemetryTraceLogger::ApplyAction;
                 unitInfo.LastActionIntent = ConfigurationIntent::Apply;
-                IApplySettingsResult applySettingsResult = unitProcessor.ApplySettings();
+                IApplySettingsResult applySettingsResult = processor.ApplySettings();
+                if (SUCCEEDED(applySettingsResult.ResultInformation().ResultCode()))
+                {
+                    unitInfo.Result->RebootRequired(applySettingsResult.RebootRequired());
+                    result = true;
+                }
+                else
+                {
+                    unitInfo.ResultInformation->Initialize(applySettingsResult.ResultInformation());
+                }
+            }
+            else if (testSettingsResult.TestResult() == ConfigurationTestResult::Failed)
+            {
+                unitInfo.ResultInformation->Initialize(testSettingsResult.ResultInformation());
+            }
+            else
+            {
+                unitInfo.ResultInformation->Initialize(E_UNEXPECTED, ConfigurationUnitResultSource::Internal);
+            }
+        }
+        catch (...)
+        {
+            ExtractUnitResultInformation(std::current_exception(), unitInfo.ResultInformation);
+        }
+
+        m_telemetry.LogConfigUnitRunIfAppropriate(m_configurationSet.InstanceIdentifier(), unitInfo.Unit, ConfigurationIntent::Apply, action, *unitInfo.ResultInformation);
+        return result;
+    }
+
+    bool ConfigurationSetApplyProcessor::ProcessGroup(UnitInfo& unitInfo, IConfigurationGroupProcessor& processor)
+    {
+        bool result = false;
+        std::string_view action;
+
+        try
+        {
+            action = TelemetryTraceLogger::TestAction;
+            unitInfo.LastActionIntent = ConfigurationIntent::Assert;
+            auto testOperation = processor.TestGroupSettingsAsync();
+            testOperation.Progress([&]()
+                {
+
+                });
+
+            if (testSettingsResult.TestResult() == ConfigurationTestResult::Positive)
+            {
+                unitInfo.Result->PreviouslyInDesiredState(true);
+                result = true;
+            }
+            else if (testSettingsResult.TestResult() == ConfigurationTestResult::Negative)
+            {
+                // Just in case testing took a while, check for cancellation before moving on to applying
+                m_progress.ThrowIfCancelled();
+
+                action = TelemetryTraceLogger::ApplyAction;
+                unitInfo.LastActionIntent = ConfigurationIntent::Apply;
+                IApplySettingsResult applySettingsResult = processor.ApplySettings();
                 if (SUCCEEDED(applySettingsResult.ResultInformation().ResultCode()))
                 {
                     unitInfo.Result->RebootRequired(applySettingsResult.RebootRequired());

@@ -65,6 +65,8 @@ namespace Microsoft.Management.Configuration.UnitTests.Helpers
         public string? Version { get; internal set; }
 
         public bool IsPublic { get; internal set; }
+
+        public bool IsGroup { get; internal set; }
 #pragma warning restore SA1600 // Elements should be documented
     }
 }

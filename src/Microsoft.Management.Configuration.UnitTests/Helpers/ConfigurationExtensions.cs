@@ -48,9 +48,9 @@ namespace Microsoft.Management.Configuration.UnitTests.Helpers
                         {
                             throw new ArgumentException($"ConfigurationUnit does not have property: {property.Name}");
                         }
+
                         break;
                 }
-
             }
 
             return unit;

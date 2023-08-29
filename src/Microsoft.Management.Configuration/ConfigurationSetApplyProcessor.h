@@ -77,8 +77,14 @@ namespace winrt::Microsoft::Management::Configuration::implementation
         // Checks a dependency for having processed successfully.
         static bool HasProcessedSuccessfully(const UnitInfo& unitInfo);
 
-        // Processes a configuration unit per its intent.
+        // Processes a configuration unit.
         bool ProcessUnit(UnitInfo& unitInfo);
+
+        // Processes a configuration unit.
+        bool ProcessUnit(UnitInfo& unitInfo, IConfigurationUnitProcessor& processor);
+
+        // Processes a configuration group.
+        bool ProcessGroup(UnitInfo& unitInfo, IConfigurationGroupProcessor& processor);
 
         // Sends progress
         // TODO: Eventually these functions/call sites will be used for history
