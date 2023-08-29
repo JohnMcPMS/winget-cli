@@ -13,7 +13,7 @@ namespace winrt::Microsoft::Management::Configuration::implementation
         ApplyConfigurationSetResult();
 
 #if !defined(INCLUDE_ONLY_INTERFACE_METHODS)
-        const Windows::Foundation::Collections::IVector<ApplyConfigurationUnitResult>& UnitResultsVector();
+        void UnitResults(std::vector<ApplyConfigurationUnitResult>&& value);
         void ResultCode(hresult value);
 #endif
 

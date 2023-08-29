@@ -15,9 +15,9 @@ namespace winrt::Microsoft::Management::Configuration::implementation
         return m_unitResults.GetView();
     }
 
-    const Windows::Foundation::Collections::IVector<ApplyConfigurationUnitResult>& ApplyConfigurationSetResult::UnitResultsVector()
+    void ApplyConfigurationSetResult::UnitResults(std::vector<ApplyConfigurationUnitResult>&& value)
     {
-        return m_unitResults;
+        m_unitResults = single_threaded_vector<ApplyConfigurationUnitResult>(std::move(value));
     }
 
     hresult ApplyConfigurationSetResult::ResultCode() const

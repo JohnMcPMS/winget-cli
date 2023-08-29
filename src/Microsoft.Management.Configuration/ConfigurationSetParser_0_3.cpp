@@ -3,6 +3,7 @@
 #include "pch.h"
 #include "ConfigurationSetParser_0_3.h"
 #include "ParsingMacros.h"
+#include "AssertionsGroup.h"
 
 #include <AppInstallerErrors.h>
 #include <AppInstallerStrings.h>
@@ -175,7 +176,7 @@ namespace winrt::Microsoft::Management::Configuration::implementation
 
         // Check for known types
         hstring unitType = unit->Type();
-        if (unitType == GetBuiltinAssertionGroupType())
+        if (unitType == AssertionsGroup::Type())
         {
             return true;
         }

@@ -4,6 +4,7 @@
 #include "ConfigurationSetApplyProcessor.h"
 #include "ConfigurationSetChangeData.h"
 #include "ExceptionResultHelpers.h"
+#include "AssertionsGroup.h"
 
 #include <AppInstallerErrors.h>
 #include <AppInstallerLogging.h>
@@ -20,29 +21,150 @@ namespace winrt::Microsoft::Management::Configuration::implementation
         }
     }
 
+    namespace details
+    {
+        UnitInfoBase::UnitInfo::UnitInfo(Configuration::ConfigurationUnit&& unit) :
+            Unit(std::move(unit)),
+            Result(make_self<wil::details::module_count_wrapper<implementation::ApplyConfigurationUnitResult>>()),
+            ResultInformation(make_self<wil::details::module_count_wrapper<implementation::ConfigurationUnitResultInformation>>())
+        {
+            Result->Unit(Unit);
+            Result->ResultInformation(*ResultInformation);
+        }
+
+        UnitInfoBase::UnitInfoBase(const ConfigurationSet& configurationSet)
+        {
+            AddUnitInfos(configurationSet.Units(), true);
+        }
+
+        std::vector<Configuration::ApplyConfigurationUnitResult> UnitInfoBase::GetUnitResults()
+        {
+            std::vector<Configuration::ApplyConfigurationUnitResult> result;
+
+            for (const UnitInfo& info : m_unitInfo)
+            {
+                result.emplace_back(*info.Result);
+            }
+
+            return result;
+        }
+
+        size_t UnitInfoBase::Count(const hstring& identifier)
+        {
+            return m_idToUnitInfoIndex.count(GetNormalizedIdentifier(identifier));
+        }
+
+        std::optional<std::reference_wrapper<UnitInfoBase::UnitInfo>> UnitInfoBase::TryGetUnitInfo(const hstring& identifier)
+        {
+            auto equalRange = m_idToUnitInfoIndex.equal_range(GetNormalizedIdentifier(identifier));
+
+            // No match, return empty optional
+            if (equalRange.first == equalRange.second)
+            {
+                return std::nullopt;
+            }
+
+            std::reference_wrapper<UnitInfo> result = m_unitInfo[equalRange.first->second];
+            ++equalRange.first;
+
+            // Only a single value in range, return it
+            if (equalRange.first == equalRange.second)
+            {
+                return result;
+            }
+            else
+            {
+                // We should always be checking for this first, but if we mess that up just throw it.
+                THROW_HR(WINGET_CONFIG_ERROR_DUPLICATE_IDENTIFIER);
+            }
+        }
+
+        UnitInfoBase::UnitInfo& UnitInfoBase::GetUnitInfo(const guid& instanceIdentifier)
+        {
+            auto itr = m_instanceIdToUnitInfoIndex.find(instanceIdentifier);
+            THROW_HR_IF(E_NOT_SET, itr == m_instanceIdToUnitInfoIndex.end());
+            return m_unitInfo[itr->second];
+        }
+
+        std::vector<UnitInfoBase::UnitInfo>& UnitInfoBase::GetAllUnitInfos()
+        {
+            return m_unitInfo;
+        }
+
+        const std::vector<UnitInfoBase::UnitInfo>& UnitInfoBase::GetAllUnitInfos() const
+        {
+            return m_unitInfo;
+        }
+
+        std::vector<std::reference_wrapper<UnitInfoBase::UnitInfo>> UnitInfoBase::GetAllTopLevelUnitInfoReferences()
+        {
+            std::vector<std::reference_wrapper<UnitInfoBase::UnitInfo>> result;
+
+            for (size_t index : m_topLevelUnitInfos)
+            {
+                result.emplace_back(m_unitInfo[index]);
+            }
+
+            return result;
+        }
+
+        void UnitInfoBase::AddUnitInfos(const Windows::Foundation::Collections::IVector<ConfigurationUnit>& units, bool isTopLevel)
+        {
+            // Create a copy of the set of configuration units
+            std::vector<ConfigurationUnit> unitsToProcess{ units.Size() };
+            units.GetMany(0, unitsToProcess);
+
+            // Create the unit info vector from these units
+            for (auto& unit : unitsToProcess)
+            {
+                if (unit.IsGroup())
+                {
+                    AddUnitInfos(unit.Units());
+                }
+
+                m_unitInfo.emplace_back(std::move(unit));
+                size_t index = m_unitInfo.size() - 1;
+                AddToMaps(m_unitInfo.back(), index);
+                if (isTopLevel)
+                {
+                    m_topLevelUnitInfos.emplace_back(index);
+                }
+            }
+        }
+
+        void UnitInfoBase::AddToMaps(const UnitInfo& info, size_t index)
+        {
+            // Add to instance identifier lookup
+            m_instanceIdToUnitInfoIndex.emplace(std::move(info.Unit.InstanceIdentifier()), index);
+
+            // Add to identifier lookup
+            hstring originalIdentifier = info.Unit.Identifier();
+            if (!originalIdentifier.empty())
+            {
+                m_idToUnitInfoIndex.emplace(GetNormalizedIdentifier(originalIdentifier), index);
+            }
+        }
+
+        UnitInfoBase::UnitInfo& UnitInfoBase::GetUnitInfo(size_t index)
+        {
+            return m_unitInfo[index];
+        }
+    }
+
     ConfigurationSetApplyProcessor::ConfigurationSetApplyProcessor(
         const Configuration::ConfigurationSet& configurationSet,
         const TelemetryTraceLogger& telemetry,
         IConfigurationSetProcessor&& setProcessor,
-        AppInstaller::WinRT::AsyncProgress<ApplyConfigurationSetResult, ConfigurationSetChangeData>&& progress) :
+        AppInstaller::WinRT::AsyncProgress<ApplyConfigurationSetResult,
+        ConfigurationSetChangeData>&& progress) :
+            UnitInfoBase(configurationSet),
             m_configurationSet(configurationSet),
             m_setProcessor(std::move(setProcessor)),
             m_telemetry(telemetry),
             m_result(make_self<wil::details::module_count_wrapper<implementation::ApplyConfigurationSetResult>>()),
             m_progress(std::move(progress))
     {
-        // Create a copy of the set of configuration units
-        auto unitsView = configurationSet.Units();
-        std::vector<ConfigurationUnit> unitsToProcess{ unitsView.Size() };
-        unitsView.GetMany(0, unitsToProcess);
-
-        // Create the unit info vector from these units
-        for (const auto& unit : unitsToProcess)
-        {
-            m_unitInfo.emplace_back(unit);
-            m_result->UnitResultsVector().Append(*m_unitInfo.back().Result);
-        }
-
+        m_result->UnitResults(GetUnitResults());
         m_progress.Result(*m_result);
     }
 
@@ -92,50 +214,54 @@ namespace winrt::Microsoft::Management::Configuration::implementation
         return *m_result;
     }
 
-    ConfigurationSetApplyProcessor::UnitInfo::UnitInfo(const Configuration::ConfigurationUnit& unit) :
-        Unit(unit), Result(make_self<wil::details::module_count_wrapper<implementation::ApplyConfigurationUnitResult>>()),
-        ResultInformation(make_self<wil::details::module_count_wrapper<implementation::ConfigurationUnitResultInformation>>())
-    {
-        Result->Unit(unit);
-        Result->ResultInformation(*ResultInformation);
-    }
-
     bool ConfigurationSetApplyProcessor::PreProcess()
     {
         bool result = true;
 
-        for (size_t i = 0; i < m_unitInfo.size(); ++i)
+        // Error to indicate that parameters and variables are not yet implemented.
+        if (m_configurationSet.Parameters().Size() != 0 || m_configurationSet.Variables().Size() != 0)
         {
-            if (!AddUnitToMap(m_unitInfo[i], i))
+            m_result->ResultCode(E_NOTIMPL);
+            return false;
+        }
+
+        // Check for duplicate identifier values
+        for (UnitInfo& unitInfo : GetAllUnitInfos())
+        {
+            hstring identifier = unitInfo.Unit.Identifier();
+
+            if (Count(identifier) > 1)
             {
+                AICLI_LOG(Config, Error, << "Found duplicate identifier: " << AppInstaller::Utility::ConvertToUTF8(identifier));
+                unitInfo.ResultInformation->Initialize(WINGET_CONFIG_ERROR_DUPLICATE_IDENTIFIER, ConfigurationUnitResultSource::ConfigurationSet);
+                SendProgress(ConfigurationUnitState::Completed, unitInfo);
                 result = false;
             }
         }
 
         if (!result)
         {
-            // This is the only error that adding to the map can produce
             m_result->ResultCode(WINGET_CONFIG_ERROR_DUPLICATE_IDENTIFIER);
             return false;
         }
 
-        for (UnitInfo& unitInfo : m_unitInfo)
+        // Check for missing dependency references
+        for (UnitInfo& unitInfo : GetAllUnitInfos())
         {
-            for (hstring dependencyHstring : unitInfo.Unit.Dependencies())
+            for (hstring dependency : unitInfo.Unit.Dependencies())
             {
                 // Throw out empty dependency strings
-                if (dependencyHstring.empty())
+                if (dependency.empty())
                 {
                     continue;
                 }
 
-                std::string dependency = GetNormalizedIdentifier(dependencyHstring);
-                auto itr = m_idToUnitInfoIndex.find(dependency);
-                if (itr == m_idToUnitInfoIndex.end())
+                auto dependencyInfo = TryGetUnitInfo(dependency);
+                if (!dependencyInfo)
                 {
-                    AICLI_LOG(Config, Error, << "Found missing dependency: " << dependency);
+                    AICLI_LOG(Config, Error, << "Found missing dependency: " << AppInstaller::Utility::ConvertToUTF8(dependency));
                     unitInfo.ResultInformation->Initialize(WINGET_CONFIG_ERROR_MISSING_DEPENDENCY, ConfigurationUnitResultSource::ConfigurationSet);
-                    unitInfo.ResultInformation->Details(dependencyHstring);
+                    unitInfo.ResultInformation->Details(dependency);
                     SendProgress(ConfigurationUnitState::Completed, unitInfo);
                     result = false;
                     // TODO: Consider collecting all missing dependencies, for now just the first
@@ -143,14 +269,13 @@ namespace winrt::Microsoft::Management::Configuration::implementation
                 }
                 else
                 {
-                    unitInfo.DependencyIndices.emplace_back(itr->second);
+                    unitInfo.DependencyUnitInfos.emplace_back(dependencyInfo.value());
                 }
             }
         }
 
         if (!result)
         {
-            // This is the only error that adding to the map can produce
             m_result->ResultCode(WINGET_CONFIG_ERROR_MISSING_DEPENDENCY);
             return false;
         }
@@ -167,44 +292,10 @@ namespace winrt::Microsoft::Management::Configuration::implementation
         return true;
     }
 
-    bool ConfigurationSetApplyProcessor::AddUnitToMap(UnitInfo& unitInfo, size_t unitInfoIndex)
-    {
-        hstring originalIdentifier = unitInfo.Unit.Identifier();
-        if (originalIdentifier.empty())
-        {
-            return true;
-        }
-
-        std::string identifier = GetNormalizedIdentifier(originalIdentifier);
-
-        auto itr = m_idToUnitInfoIndex.find(identifier);
-        if (itr != m_idToUnitInfoIndex.end())
-        {
-            AICLI_LOG(Config, Error, << "Found duplicate identifier: " << identifier);
-            // Found a duplicate identifier, mark both as such
-            m_unitInfo[itr->second].ResultInformation->Initialize(WINGET_CONFIG_ERROR_DUPLICATE_IDENTIFIER, ConfigurationUnitResultSource::ConfigurationSet);
-            SendProgressIfNotComplete(ConfigurationUnitState::Completed, m_unitInfo[itr->second]);
-            unitInfo.ResultInformation->Initialize(WINGET_CONFIG_ERROR_DUPLICATE_IDENTIFIER, ConfigurationUnitResultSource::ConfigurationSet);
-            SendProgress(ConfigurationUnitState::Completed, unitInfo);
-            return false;
-        }
-        else
-        {
-            m_idToUnitInfoIndex.emplace(std::move(identifier), unitInfoIndex);
-            return true;
-        }
-    }
-
     bool ConfigurationSetApplyProcessor::ProcessInternal(CheckDependencyPtr checkDependencyFunction, ProcessUnitPtr processUnitFunction, bool sendProgress)
     {
         // Create the set of units that need to be processed
-        std::vector<size_t> unitsToProcess;
-        for (size_t i = 0, size = m_unitInfo.size(); i < size; ++i)
-        {
-            unitsToProcess.emplace_back(i);
-        }
-
-        // TODO: Make it possible for an assertion failure to bubble up out of a group somehow...
+        auto unitsToProcess = GetAllTopLevelUnitInfoReferences();
 
         // Always process the first item in the list that is available to be processed
         bool hasProcessed = true;
@@ -214,7 +305,7 @@ namespace winrt::Microsoft::Management::Configuration::implementation
             hasProcessed = false;
             for (auto itr = unitsToProcess.begin(), end = unitsToProcess.end(); itr != end; ++itr)
             {
-                UnitInfo& unitInfo = m_unitInfo[*itr];
+                UnitInfo& unitInfo = *itr;
                 if (HasSatisfiedDependencies(unitInfo, checkDependencyFunction))
                 {
                     if (!(this->*processUnitFunction)(unitInfo))
@@ -230,9 +321,8 @@ namespace winrt::Microsoft::Management::Configuration::implementation
 
         // Mark all remaining items with intent as failed due to dependency
         bool hasRemainingDependencies = !unitsToProcess.empty();
-        for (size_t index : unitsToProcess)
+        for (UnitInfo& unitInfo : unitsToProcess)
         {
-            UnitInfo& unitInfo = m_unitInfo[index];
             unitInfo.ResultInformation->Initialize(WINGET_CONFIG_ERROR_DEPENDENCY_UNSATISFIED, ConfigurationUnitResultSource::Precondition);
             if (sendProgress)
             {
@@ -263,9 +353,9 @@ namespace winrt::Microsoft::Management::Configuration::implementation
     {
         bool result = true;
 
-        for (size_t dependencyIndex : unitInfo.DependencyIndices)
+        for (UnitInfo& dependency : unitInfo.DependencyUnitInfos)
         {
-            if (!checkDependencyFunction(m_unitInfo[dependencyIndex]))
+            if (!checkDependencyFunction(dependency))
             {
                 result = false;
                 break;
@@ -330,11 +420,7 @@ namespace winrt::Microsoft::Management::Configuration::implementation
         // If it is a group but we don't think it is one, the only option we would have is to convert it to one
         // and create new configuration units dynamically. Without the child unit objects, there is no reason
         // to process it any differently than a normal unit.
-        IConfigurationGroupProcessor groupProcessor = nullptr;
-        if (unitInfo.Unit.IsGroup())
-        {
-            groupProcessor = unitProcessor.try_as<IConfigurationGroupProcessor>();
-        }
+        IConfigurationGroupProcessor groupProcessor = CreateGroupProcessor(unitInfo.Unit, unitProcessor);
 
         if (groupProcessor)
         {
@@ -398,6 +484,27 @@ namespace winrt::Microsoft::Management::Configuration::implementation
         return result;
     }
 
+    IConfigurationGroupProcessor ConfigurationSetApplyProcessor::CreateGroupProcessor(const ConfigurationUnit& unit, IConfigurationUnitProcessor& processor)
+    {
+        if (unit.IsGroup())
+        {
+            std::wstring groupType = AppInstaller::Utility::ToLower(unit.Type());
+
+            if (AppInstaller::Utility::ToLower(AssertionsGroup::Type()) == groupType)
+            {
+                return *make_self<wil::details::module_count_wrapper<AssertionsGroup>>(unit);
+            }
+            else
+            {
+                return processor.try_as<IConfigurationGroupProcessor>();
+            }
+        }
+        else
+        {
+            return nullptr;
+        }
+    }
+
     bool ConfigurationSetApplyProcessor::ProcessGroup(UnitInfo& unitInfo, IConfigurationGroupProcessor& processor)
     {
         bool result = false;
@@ -407,11 +514,8 @@ namespace winrt::Microsoft::Management::Configuration::implementation
         {
             action = TelemetryTraceLogger::TestAction;
             unitInfo.LastActionIntent = ConfigurationIntent::Assert;
-            auto testOperation = processor.TestGroupSettingsAsync();
-            testOperation.Progress([&]()
-                {
-
-                });
+            ITestGroupSettingsResult testSettingsResult = processor.TestGroupSettingsAsync().get();
+            RecordUnitResults(testSettingsResult.UnitResults());
 
             if (testSettingsResult.TestResult() == ConfigurationTestResult::Positive)
             {
@@ -425,7 +529,18 @@ namespace winrt::Microsoft::Management::Configuration::implementation
 
                 action = TelemetryTraceLogger::ApplyAction;
                 unitInfo.LastActionIntent = ConfigurationIntent::Apply;
-                IApplySettingsResult applySettingsResult = processor.ApplySettings();
+                using ApplySettingsOperationType = Windows::Foundation::IAsyncOperationWithProgress<IApplyGroupSettingsResult, IApplySettingsResult>;
+                ApplySettingsOperationType applySettingsOperation = processor.ApplyGroupSettingsAsync();
+
+                applySettingsOperation.Progress([&](const ApplySettingsOperationType&, const IApplySettingsResult& applyResult)
+                    {
+                        RecordUnitResult(applyResult);
+                    });
+
+                IApplyGroupSettingsResult applySettingsResult = applySettingsOperation.get();
+                RecordUnitResults(applySettingsResult.UnitResults());
+                RecordSkippedUnits(unitInfo.Unit.Units());
+
                 if (SUCCEEDED(applySettingsResult.ResultInformation().ResultCode()))
                 {
                     unitInfo.Result->RebootRequired(applySettingsResult.RebootRequired());
@@ -452,6 +567,105 @@ namespace winrt::Microsoft::Management::Configuration::implementation
 
         m_telemetry.LogConfigUnitRunIfAppropriate(m_configurationSet.InstanceIdentifier(), unitInfo.Unit, ConfigurationIntent::Apply, action, *unitInfo.ResultInformation);
         return result;
+    }
+
+    void ConfigurationSetApplyProcessor::RecordUnitResults(const Windows::Foundation::Collections::IVector<ITestSettingsResult>& results)
+    {
+        for (const ITestSettingsResult& result : results)
+        {
+            UnitInfo& unitInfo = GetUnitInfo(result.Unit().InstanceIdentifier());
+            unitInfo.LastActionIntent = ConfigurationIntent::Assert;
+
+            if (result.TestResult() == ConfigurationTestResult::Positive)
+            {
+                unitInfo.Result->PreviouslyInDesiredState(true);
+            }
+            else if (result.TestResult() == ConfigurationTestResult::Negative)
+            {
+                // A negative test result just means we are going to apply shortly
+            }
+            else if (result.TestResult() == ConfigurationTestResult::Failed)
+            {
+                unitInfo.ResultInformation->Initialize(result.ResultInformation());
+            }
+            else
+            {
+                unitInfo.ResultInformation->Initialize(E_UNEXPECTED, ConfigurationUnitResultSource::Internal);
+            }
+
+            m_telemetry.LogConfigUnitRunIfAppropriate(m_configurationSet.InstanceIdentifier(), unitInfo.Unit, ConfigurationIntent::Apply, TelemetryTraceLogger::TestAction, *unitInfo.ResultInformation);
+        }
+    }
+
+    void ConfigurationSetApplyProcessor::RecordUnitResult(const IApplySettingsResult& result)
+    {
+        UnitInfo& unitInfo = GetUnitInfo(result.Unit().InstanceIdentifier());
+
+        if (unitInfo.Processed)
+        {
+            return;
+        }
+
+        unitInfo.Processed = true;
+
+        if (SUCCEEDED(result.ResultInformation().ResultCode()))
+        {
+            unitInfo.Result->RebootRequired(result.RebootRequired());
+        }
+        else
+        {
+            unitInfo.ResultInformation->Initialize(result.ResultInformation());
+        }
+
+        m_telemetry.LogConfigUnitRunIfAppropriate(m_configurationSet.InstanceIdentifier(), unitInfo.Unit, ConfigurationIntent::Apply, TelemetryTraceLogger::ApplyAction, *unitInfo.ResultInformation);
+        SendProgress(ConfigurationUnitState::Completed, unitInfo);
+    }
+
+    void ConfigurationSetApplyProcessor::RecordUnitResults(const Windows::Foundation::Collections::IVector<IApplySettingsResult>& results)
+    {
+        for (const IApplySettingsResult& result : results)
+        {
+            RecordUnitResult(result);
+        }
+    }
+
+    void ConfigurationSetApplyProcessor::RecordSkippedUnits(const Windows::Foundation::Collections::IVector<ConfigurationUnit>& units)
+    {
+        // Create a copy of the set of configuration units
+        std::vector<ConfigurationUnit> unitsToProcess{ units.Size() };
+        units.GetMany(0, unitsToProcess);
+
+        // Create the unit info vector from these units
+        for (auto& unit : unitsToProcess)
+        {
+            if (unit.IsGroup())
+            {
+                RecordSkippedUnits(unit.Units());
+            }
+
+            UnitInfo& unitInfo = GetUnitInfo(unit.InstanceIdentifier());
+
+            if (!unit.IsActive())
+            {
+                if (unitInfo.Processed)
+                {
+                    AICLI_LOG(Config, Crit, << "Inactive unit was processed: " << AppInstaller::Utility::ConvertToUTF8(unit.Identifier()));
+                }
+                else
+                {
+                    unitInfo.Processed = true;
+                    unitInfo.ResultInformation->Initialize(WINGET_CONFIG_ERROR_MANUALLY_SKIPPED, ConfigurationUnitResultSource::Precondition);
+                    SendProgress(ConfigurationUnitState::Skipped, unitInfo);
+                }
+            }
+            else
+            {
+                if (!unitInfo.Processed)
+                {
+                    AICLI_LOG(Config, Warning, << "Unit a group was not processed: " << AppInstaller::Utility::ConvertToUTF8(unit.Identifier()));
+                }
+            }
+        }
     }
 
     void ConfigurationSetApplyProcessor::SendProgress(ConfigurationSetState state)
@@ -486,7 +700,7 @@ namespace winrt::Microsoft::Management::Configuration::implementation
     {
         TelemetryTraceLogger::ProcessingSummaryForIntent result{ intent, 0, 0, 0 };
 
-        for (const auto& unitInfo : m_unitInfo)
+        for (const auto& unitInfo : GetAllUnitInfos())
         {
             if (unitInfo.LastActionIntent == intent)
             {

@@ -3,6 +3,7 @@
 #include "pch.h"
 #include "ConfigurationSetParser_0_1.h"
 #include "ParsingMacros.h"
+#include "AssertionsGroup.h"
 
 #include <AppInstallerErrors.h>
 #include <AppInstallerStrings.h>
@@ -62,7 +63,7 @@ namespace winrt::Microsoft::Management::Configuration::implementation
             hasAssertions = true;
             auto assertionsGroup = make_self<wil::details::module_count_wrapper<ConfigurationUnit>>();
             // This is a sentinel type name for a group that works like the previous assertions.
-            assertionsGroup->Type(hstring{ GetBuiltinAssertionGroupType() });
+            assertionsGroup->Type(hstring{ AssertionsGroup::Type() });
             assertionsGroup->IsGroup(true);
             assertionsGroup->Units(std::move(assertions));
             units.emplace_back(*assertionsGroup);

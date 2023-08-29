@@ -452,7 +452,7 @@ namespace Microsoft.Management.Configuration
 
     // The result of applying the settings with an IConfigurationGroupProcessor.
     [contract(Microsoft.Management.Configuration.Contract, 1)]
-    interface IApplySettingsGroupResult
+    interface IApplyGroupSettingsResult
     {
         // The configuration group object (set or unit).
         Object Group{ get; };
@@ -469,7 +469,7 @@ namespace Microsoft.Management.Configuration
 
     // The result of testing the settings with an IConfigurationGroupProcessor.
     [contract(Microsoft.Management.Configuration.Contract, 1)]
-    interface ITestSettingsGroupResult
+    interface ITestGroupSettingsResult
     {
         // The configuration group object (set or unit).
         Object Group{ get; };
@@ -487,7 +487,7 @@ namespace Microsoft.Management.Configuration
 
     // The result of getting the settings with an IConfigurationGroupProcessor.
     [contract(Microsoft.Management.Configuration.Contract, 1)]
-    interface IGetSettingsGroupResult
+    interface IGetGroupSettingsResult
     {
         // The configuration group object (set or unit).
         Object Group{ get; };
@@ -511,13 +511,13 @@ namespace Microsoft.Management.Configuration
         Object Group{ get; };
 
         // Determines if the system is already in the state described by the configuration unit group.
-        Windows.Foundation.IAsyncOperationWithProgress<ITestSettingsGroupResult, ITestSettingsResult> TestGroupSettingsAsync();
+        Windows.Foundation.IAsyncOperationWithProgress<ITestGroupSettingsResult, ITestSettingsResult> TestGroupSettingsAsync();
 
         // Gets the current system state for the configuration unit group.
-        Windows.Foundation.IAsyncOperationWithProgress<IGetSettingsGroupResult, IGetSettingsResult> GetGroupSettingsAsync();
+        Windows.Foundation.IAsyncOperationWithProgress<IGetGroupSettingsResult, IGetSettingsResult> GetGroupSettingsAsync();
 
         // Applies the state described in the configuration unit group.
-        Windows.Foundation.IAsyncOperationWithProgress<IApplySettingsGroupResult, IApplySettingsResult> ApplyGroupSettingsAsync();
+        Windows.Foundation.IAsyncOperationWithProgress<IApplyGroupSettingsResult, IApplySettingsResult> ApplyGroupSettingsAsync();
     }
 
     // Controls the lifetime of operations for a single configuration set.
@@ -699,7 +699,7 @@ namespace Microsoft.Management.Configuration
         // Forces a new configuration set instance to be recorded when the set being applied matches a previous set's origin.
         // The default behavior is to assume that the incoming set is an update to the existing set and overwrite it.
         DoNotOverwriteMatchingOriginSet = 0x1,
-        // Does not apply the configuration set, instead check the configuration set for internal consistency.
+        // Does not apply the configuration set; only checks the configuration set for internal consistency.
         PerformConsistencyCheckOnly = 0x2,
     };
 

@@ -143,7 +143,4 @@ namespace winrt::Microsoft::Management::Configuration::implementation
         // Support older schema parsing.
         static std::unique_ptr<ConfigurationSetParser> GetSchemaVersionFromOldFormat(AppInstaller::YAML::Node& document, std::string& schemaVersionString);
     };
-
-    // Gets the unit type that is used to define the builtin assertion group.
-    std::wstring_view GetBuiltinAssertionGroupType();
 }

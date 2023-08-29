@@ -538,9 +538,4 @@ namespace winrt::Microsoft::Management::Configuration::implementation
             FIELD_VALUE_ERROR(GetFieldName(typeField), ConvertToUTF8(unit->Type()), typeNode.Mark());
         }
     }
-
-    std::wstring_view GetBuiltinAssertionGroupType()
-    {
-        return L"Microsoft.WinGet.Configuration/AssertionsGroup";
-    }
 }

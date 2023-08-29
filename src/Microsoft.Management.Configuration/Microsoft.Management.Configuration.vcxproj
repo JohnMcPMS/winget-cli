@@ -195,6 +195,7 @@
     <ClInclude Include="ApplyConfigurationSetResult.h" />
     <ClInclude Include="ApplyConfigurationUnitResult.h" />
     <ClInclude Include="ArgumentValidation.h" />
+    <ClInclude Include="AssertionsGroup.h" />
     <ClInclude Include="ConfigThreadGlobals.h" />
     <ClInclude Include="ConfigurationChangeData.h" />
     <ClInclude Include="ConfigurationConflict.h" />
@@ -230,6 +231,7 @@
     <ClCompile Include="ApplyConfigurationSetResult.cpp" />
     <ClCompile Include="ApplyConfigurationUnitResult.cpp" />
     <ClCompile Include="ArgumentValidation.cpp" />
+    <ClCompile Include="AssertionsGroup.cpp" />
     <ClCompile Include="ConfigThreadGlobals.cpp" />
     <ClCompile Include="ConfigurationChangeData.cpp" />
     <ClCompile Include="ConfigurationConflict.cpp" />
