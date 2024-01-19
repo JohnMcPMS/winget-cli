@@ -1,14 +1,6 @@
-LIBRARY     WindowsPackageManager
+LIBRARY
 EXPORTS
-    WindowsPackageManagerCLIMain
-    WindowsPackageManagerServerInitialize
-    WindowsPackageManagerServerModuleCreate
-    WindowsPackageManagerServerModuleRegister
-    WindowsPackageManagerServerModuleUnregister
-    WindowsPackageManagerServerWilResultLoggingCallback
-    WindowsPackageManagerServerCreateInstance
-    WindowsPackageManagerInProcModuleInitialize
-    WindowsPackageManagerInProcModuleTerminate
-    WindowsPackageManagerInProcModuleGetClassObject
-    WindowsPackageManagerInProcModuleGetActivationFactory
-    WindowsPackageManagerConfigurationCompleteOutOfProcessFactoryInitialization
+    DllGetClassObject      PRIVATE
+    DllCanUnloadNow        PRIVATE
+    DllRegisterServer      PRIVATE
+    DllUnregisterServer    PRIVATE

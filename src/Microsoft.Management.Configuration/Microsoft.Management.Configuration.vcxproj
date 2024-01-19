@@ -295,6 +295,6 @@
   </Target>
   <Target Name="ConvertWinMDtoIDL" AfterTargets="CppWinRTCopyWinMDToOutputDirectory">
     <!-- Run winmdidl on the output winmd for Microsoft.Management.Configuration.ProxyStub -->
-    <Exec Command="winmdidl.exe /outdir:$(ProjectDir)\..\Microsoft.Management.Configuration.ProxyStub\generated $(OutDir)$(ProjectName).winmd" />
+    <Exec Command="winmdidl.exe /nosystemdeclares /outdir:$(ProjectDir)\..\Microsoft.Management.Configuration.ProxyStub\generated $(OutDir)$(ProjectName).winmd" />
   </Target>
 </Project>

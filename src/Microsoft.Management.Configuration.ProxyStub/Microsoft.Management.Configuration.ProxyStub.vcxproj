@@ -213,7 +213,7 @@
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'">
     <ClCompile>
       <Optimization>Disabled</Optimization>
-      <PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions);REGISTER_PROXY_DLL</PreprocessorDefinitions>
       <TreatWarningAsError Condition="'$(Configuration)|$(Platform)'=='Debug|ARM'">true</TreatWarningAsError>
       <TreatWarningAsError Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">true</TreatWarningAsError>
       <TreatWarningAsError Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</TreatWarningAsError>
@@ -232,6 +232,12 @@
       <RuntimeTypeInfo Condition="'$(Configuration)|$(Platform)'=='Debug|ARM'">false</RuntimeTypeInfo>
       <RuntimeTypeInfo Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">false</RuntimeTypeInfo>
       <RuntimeTypeInfo Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</RuntimeTypeInfo>
+      <DisableSpecificWarnings Condition="'$(Configuration)|$(Platform)'=='Debug|ARM'">28251</DisableSpecificWarnings>
+      <DisableSpecificWarnings Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">28251</DisableSpecificWarnings>
+      <DisableSpecificWarnings Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">28251</DisableSpecificWarnings>
+      <ForcedIncludeFiles Condition="'$(Configuration)|$(Platform)'=='Debug|ARM'">Microsoft.Management.Configuration_h.h;%(ForcedIncludeFiles)</ForcedIncludeFiles>
+      <ForcedIncludeFiles Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">Microsoft.Management.Configuration_h.h;%(ForcedIncludeFiles)</ForcedIncludeFiles>
+      <ForcedIncludeFiles Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Microsoft.Management.Configuration_h.h;%(ForcedIncludeFiles)</ForcedIncludeFiles>
     </ClCompile>
     <Link>
       <GenerateWindowsMetadata>false</GenerateWindowsMetadata>
@@ -243,6 +249,9 @@
       <ModuleDefinitionFile Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Source.def</ModuleDefinitionFile>
       <ModuleDefinitionFile Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">Source.def</ModuleDefinitionFile>
       <ModuleDefinitionFile Condition="'$(Configuration)|$(Platform)'=='Debug|ARM'">Source.def</ModuleDefinitionFile>
+      <AdditionalDependencies Condition="'$(Configuration)|$(Platform)'=='Debug|ARM'">rpcrt4.lib;runtimeobject.lib;ole32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">rpcrt4.lib;runtimeobject.lib;ole32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">rpcrt4.lib;runtimeobject.lib;ole32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <Manifest>
       <AdditionalManifestFiles Condition="'$(Configuration)|$(Platform)'=='Debug|ARM'">$(ProjectDir)..\manifest\shared.manifest %(AdditionalManifestFiles)</AdditionalManifestFiles>
@@ -254,46 +263,67 @@
       <AdditionalManifestFiles Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(ProjectDir)..\manifest\shared.manifest %(AdditionalManifestFiles)</AdditionalManifestFiles>
     </Manifest>
     <Midl>
-      <EnableWindowsRuntime Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</EnableWindowsRuntime>
+      <EnableWindowsRuntime Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</EnableWindowsRuntime>
       <OutputDirectory Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(ProjectDir)\generated</OutputDirectory>
       <GenerateTypeLibrary Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</GenerateTypeLibrary>
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">/nomd</AdditionalOptions>
+      <PrependWithABINamepsace Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</PrependWithABINamepsace>
+      <TypeLibraryName Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" />
+      <MinimumTargetSystem Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NT100</MinimumTargetSystem>
     </Midl>
     <Midl>
-      <EnableWindowsRuntime Condition="'$(Configuration)|$(Platform)'=='Debug|ARM'">false</EnableWindowsRuntime>
+      <EnableWindowsRuntime Condition="'$(Configuration)|$(Platform)'=='Debug|ARM'">true</EnableWindowsRuntime>
       <OutputDirectory Condition="'$(Configuration)|$(Platform)'=='Debug|ARM'">$(ProjectDir)\generated</OutputDirectory>
       <GenerateTypeLibrary Condition="'$(Configuration)|$(Platform)'=='Debug|ARM'">false</GenerateTypeLibrary>
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Debug|ARM'">/nomd</AdditionalOptions>
+      <PrependWithABINamepsace Condition="'$(Configuration)|$(Platform)'=='Debug|ARM'">true</PrependWithABINamepsace>
+      <TypeLibraryName Condition="'$(Configuration)|$(Platform)'=='Debug|ARM'" />
+      <MinimumTargetSystem Condition="'$(Configuration)|$(Platform)'=='Debug|ARM'">NT100</MinimumTargetSystem>
     </Midl>
     <Midl>
-      <EnableWindowsRuntime Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">false</EnableWindowsRuntime>
+      <EnableWindowsRuntime Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">true</EnableWindowsRuntime>
       <OutputDirectory Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">$(ProjectDir)\generated</OutputDirectory>
       <GenerateTypeLibrary Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">false</GenerateTypeLibrary>
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">/nomd</AdditionalOptions>
+      <PrependWithABINamepsace Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">true</PrependWithABINamepsace>
+      <TypeLibraryName Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'" />
+      <MinimumTargetSystem Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">NT100</MinimumTargetSystem>
     </Midl>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Platform)'=='Win32'">
     <ClCompile>
-      <PreprocessorDefinitions>WIN32;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>WIN32;%(PreprocessorDefinitions);REGISTER_PROXY_DLL</PreprocessorDefinitions>
       <TreatWarningAsError Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</TreatWarningAsError>
       <ControlFlowGuard Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">false</ControlFlowGuard>
       <LanguageStandard Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">stdcpp17</LanguageStandard>
       <SDLCheck Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</SDLCheck>
       <EnablePREfast Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</EnablePREfast>
       <RuntimeTypeInfo Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">false</RuntimeTypeInfo>
+      <DisableSpecificWarnings Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">28251</DisableSpecificWarnings>
+      <ForcedIncludeFiles Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Microsoft.Management.Configuration_h.h;%(ForcedIncludeFiles)</ForcedIncludeFiles>
     </ClCompile>
     <Manifest>
       <AdditionalManifestFiles Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">$(ProjectDir)..\manifest\shared.manifest %(AdditionalManifestFiles)</AdditionalManifestFiles>
     </Manifest>
     <Midl>
-      <EnableWindowsRuntime Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">false</EnableWindowsRuntime>
+      <EnableWindowsRuntime Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</EnableWindowsRuntime>
       <OutputDirectory Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">$(ProjectDir)\generated</OutputDirectory>
       <GenerateTypeLibrary Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">false</GenerateTypeLibrary>
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">/nomd</AdditionalOptions>
+      <PrependWithABINamepsace Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</PrependWithABINamepsace>
+      <TypeLibraryName Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" />
+      <MinimumTargetSystem Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">NT100</MinimumTargetSystem>
     </Midl>
+    <Link>
+      <AdditionalDependencies Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">rpcrt4.lib;runtimeobject.lib;ole32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Release'">
     <ClCompile>
       <Optimization>MaxSpeed</Optimization>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
-      <PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions);REGISTER_PROXY_DLL</PreprocessorDefinitions>
       <TreatWarningAsError Condition="'$(Configuration)|$(Platform)'=='Release|ARM'">true</TreatWarningAsError>
       <TreatWarningAsError Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">true</TreatWarningAsError>
       <TreatWarningAsError Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</TreatWarningAsError>
@@ -318,6 +348,14 @@
       <RuntimeTypeInfo Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">false</RuntimeTypeInfo>
       <RuntimeTypeInfo Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">false</RuntimeTypeInfo>
       <RuntimeTypeInfo Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</RuntimeTypeInfo>
+      <DisableSpecificWarnings Condition="'$(Configuration)|$(Platform)'=='Release|ARM'">28251</DisableSpecificWarnings>
+      <DisableSpecificWarnings Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">28251</DisableSpecificWarnings>
+      <DisableSpecificWarnings Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">28251</DisableSpecificWarnings>
+      <DisableSpecificWarnings Condition="'$(Configuration)|$(Platform)'=='Release|x64'">28251</DisableSpecificWarnings>
+      <ForcedIncludeFiles Condition="'$(Configuration)|$(Platform)'=='Release|ARM'">Microsoft.Management.Configuration_h.h;%(ForcedIncludeFiles)</ForcedIncludeFiles>
+      <ForcedIncludeFiles Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">Microsoft.Management.Configuration_h.h;%(ForcedIncludeFiles)</ForcedIncludeFiles>
+      <ForcedIncludeFiles Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Microsoft.Management.Configuration_h.h;%(ForcedIncludeFiles)</ForcedIncludeFiles>
+      <ForcedIncludeFiles Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Microsoft.Management.Configuration_h.h;%(ForcedIncludeFiles)</ForcedIncludeFiles>
     </ClCompile>
     <Link>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
@@ -335,6 +373,10 @@
       <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">/debug:full /debugtype:cv,fixup /incremental:no %(AdditionalOptions)</AdditionalOptions>
       <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">/debug:full /debugtype:cv,fixup /incremental:no %(AdditionalOptions)</AdditionalOptions>
       <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Release|x64'">/debug:full /debugtype:cv,fixup /incremental:no %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalDependencies Condition="'$(Configuration)|$(Platform)'=='Release|ARM'">rpcrt4.lib;runtimeobject.lib;ole32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">rpcrt4.lib;runtimeobject.lib;ole32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">rpcrt4.lib;runtimeobject.lib;ole32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies Condition="'$(Configuration)|$(Platform)'=='Release|x64'">rpcrt4.lib;runtimeobject.lib;ole32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <Manifest>
       <AdditionalManifestFiles Condition="'$(Configuration)|$(Platform)'=='Release|ARM'">$(ProjectDir)..\manifest\shared.manifest %(AdditionalManifestFiles)</AdditionalManifestFiles>
@@ -349,24 +391,40 @@
       <AdditionalManifestFiles Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(ProjectDir)..\manifest\shared.manifest %(AdditionalManifestFiles)</AdditionalManifestFiles>
     </Manifest>
     <Midl>
-      <EnableWindowsRuntime Condition="'$(Configuration)|$(Platform)'=='Release|ARM'">false</EnableWindowsRuntime>
+      <EnableWindowsRuntime Condition="'$(Configuration)|$(Platform)'=='Release|ARM'">true</EnableWindowsRuntime>
       <OutputDirectory Condition="'$(Configuration)|$(Platform)'=='Release|ARM'">$(ProjectDir)\generated</OutputDirectory>
       <GenerateTypeLibrary Condition="'$(Configuration)|$(Platform)'=='Release|ARM'">false</GenerateTypeLibrary>
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Release|ARM'">/nomd</AdditionalOptions>
+      <PrependWithABINamepsace Condition="'$(Configuration)|$(Platform)'=='Release|ARM'">true</PrependWithABINamepsace>
+      <TypeLibraryName Condition="'$(Configuration)|$(Platform)'=='Release|ARM'" />
+      <MinimumTargetSystem Condition="'$(Configuration)|$(Platform)'=='Release|ARM'">NT100</MinimumTargetSystem>
     </Midl>
     <Midl>
-      <EnableWindowsRuntime Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">false</EnableWindowsRuntime>
+      <EnableWindowsRuntime Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">true</EnableWindowsRuntime>
       <OutputDirectory Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">$(ProjectDir)\generated</OutputDirectory>
       <GenerateTypeLibrary Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">false</GenerateTypeLibrary>
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">/nomd</AdditionalOptions>
+      <PrependWithABINamepsace Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">true</PrependWithABINamepsace>
+      <TypeLibraryName Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'" />
+      <MinimumTargetSystem Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">NT100</MinimumTargetSystem>
     </Midl>
     <Midl>
-      <EnableWindowsRuntime Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">false</EnableWindowsRuntime>
+      <EnableWindowsRuntime Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</EnableWindowsRuntime>
       <OutputDirectory Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">$(ProjectDir)\generated</OutputDirectory>
       <GenerateTypeLibrary Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">false</GenerateTypeLibrary>
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">/nomd</AdditionalOptions>
+      <PrependWithABINamepsace Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</PrependWithABINamepsace>
+      <TypeLibraryName Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" />
+      <MinimumTargetSystem Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">NT100</MinimumTargetSystem>
     </Midl>
     <Midl>
-      <EnableWindowsRuntime Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</EnableWindowsRuntime>
+      <EnableWindowsRuntime Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</EnableWindowsRuntime>
       <OutputDirectory Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(ProjectDir)\generated</OutputDirectory>
       <GenerateTypeLibrary Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</GenerateTypeLibrary>
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Release|x64'">/nomd</AdditionalOptions>
+      <PrependWithABINamepsace Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</PrependWithABINamepsace>
+      <TypeLibraryName Condition="'$(Configuration)|$(Platform)'=='Release|x64'" />
+      <MinimumTargetSystem Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NT100</MinimumTargetSystem>
     </Midl>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)'=='ReleaseStatic'">
@@ -374,7 +432,7 @@
       <Optimization>MaxSpeed</Optimization>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
-      <PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions);REGISTER_PROXY_DLL</PreprocessorDefinitions>
       <TreatWarningAsError Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|ARM'">true</TreatWarningAsError>
       <TreatWarningAsError Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|ARM64'">true</TreatWarningAsError>
       <TreatWarningAsError Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|Win32'">true</TreatWarningAsError>
@@ -403,6 +461,14 @@
       <RuntimeTypeInfo Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|ARM64'">false</RuntimeTypeInfo>
       <RuntimeTypeInfo Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|Win32'">false</RuntimeTypeInfo>
       <RuntimeTypeInfo Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|x64'">false</RuntimeTypeInfo>
+      <DisableSpecificWarnings Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|ARM'">28251</DisableSpecificWarnings>
+      <DisableSpecificWarnings Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|ARM64'">28251</DisableSpecificWarnings>
+      <DisableSpecificWarnings Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|Win32'">28251</DisableSpecificWarnings>
+      <DisableSpecificWarnings Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|x64'">28251</DisableSpecificWarnings>
+      <ForcedIncludeFiles Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|ARM'">Microsoft.Management.Configuration_h.h;%(ForcedIncludeFiles)</ForcedIncludeFiles>
+      <ForcedIncludeFiles Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|ARM64'">Microsoft.Management.Configuration_h.h;%(ForcedIncludeFiles)</ForcedIncludeFiles>
+      <ForcedIncludeFiles Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|Win32'">Microsoft.Management.Configuration_h.h;%(ForcedIncludeFiles)</ForcedIncludeFiles>
+      <ForcedIncludeFiles Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|x64'">Microsoft.Management.Configuration_h.h;%(ForcedIncludeFiles)</ForcedIncludeFiles>
     </ClCompile>
     <Link>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
@@ -420,6 +486,10 @@
       <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|ARM64'">/debug:full /debugtype:cv,fixup /incremental:no %(AdditionalOptions)</AdditionalOptions>
       <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|Win32'">/debug:full /debugtype:cv,fixup /incremental:no %(AdditionalOptions)</AdditionalOptions>
       <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|x64'">/debug:full /debugtype:cv,fixup /incremental:no %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalDependencies Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|ARM'">rpcrt4.lib;runtimeobject.lib;ole32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|ARM64'">rpcrt4.lib;runtimeobject.lib;ole32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|Win32'">rpcrt4.lib;runtimeobject.lib;ole32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|x64'">rpcrt4.lib;runtimeobject.lib;ole32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <Manifest>
       <AdditionalManifestFiles Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|ARM'">$(ProjectDir)..\manifest\shared.manifest %(AdditionalManifestFiles)</AdditionalManifestFiles>
@@ -434,24 +504,40 @@
       <AdditionalManifestFiles Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|x64'">$(ProjectDir)..\manifest\shared.manifest %(AdditionalManifestFiles)</AdditionalManifestFiles>
     </Manifest>
     <Midl>
-      <EnableWindowsRuntime Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|ARM'">false</EnableWindowsRuntime>
+      <EnableWindowsRuntime Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|ARM'">true</EnableWindowsRuntime>
       <OutputDirectory Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|ARM'">$(ProjectDir)\generated</OutputDirectory>
       <GenerateTypeLibrary Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|ARM'">false</GenerateTypeLibrary>
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|ARM'">/nomd</AdditionalOptions>
+      <PrependWithABINamepsace Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|ARM'">true</PrependWithABINamepsace>
+      <TypeLibraryName Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|ARM'" />
+      <MinimumTargetSystem Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|ARM'">NT100</MinimumTargetSystem>
     </Midl>
     <Midl>
-      <EnableWindowsRuntime Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|ARM64'">false</EnableWindowsRuntime>
+      <EnableWindowsRuntime Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|ARM64'">true</EnableWindowsRuntime>
       <OutputDirectory Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|ARM64'">$(ProjectDir)\generated</OutputDirectory>
       <GenerateTypeLibrary Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|ARM64'">false</GenerateTypeLibrary>
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|ARM64'">/nomd</AdditionalOptions>
+      <PrependWithABINamepsace Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|ARM64'">true</PrependWithABINamepsace>
+      <TypeLibraryName Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|ARM64'" />
+      <MinimumTargetSystem Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|ARM64'">NT100</MinimumTargetSystem>
     </Midl>
     <Midl>
-      <EnableWindowsRuntime Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|Win32'">false</EnableWindowsRuntime>
+      <EnableWindowsRuntime Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|Win32'">true</EnableWindowsRuntime>
       <OutputDirectory Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|Win32'">$(ProjectDir)\generated</OutputDirectory>
       <GenerateTypeLibrary Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|Win32'">false</GenerateTypeLibrary>
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|Win32'">/nomd</AdditionalOptions>
+      <PrependWithABINamepsace Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|Win32'">true</PrependWithABINamepsace>
+      <TypeLibraryName Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|Win32'" />
+      <MinimumTargetSystem Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|Win32'">NT100</MinimumTargetSystem>
     </Midl>
     <Midl>
-      <EnableWindowsRuntime Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|x64'">false</EnableWindowsRuntime>
+      <EnableWindowsRuntime Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|x64'">true</EnableWindowsRuntime>
       <OutputDirectory Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|x64'">$(ProjectDir)\generated</OutputDirectory>
       <GenerateTypeLibrary Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|x64'">false</GenerateTypeLibrary>
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|x64'">/nomd</AdditionalOptions>
+      <PrependWithABINamepsace Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|x64'">true</PrependWithABINamepsace>
+      <TypeLibraryName Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|x64'" />
+      <MinimumTargetSystem Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|x64'">NT100</MinimumTargetSystem>
     </Midl>
   </ItemDefinitionGroup>
   <!--
@@ -471,6 +557,19 @@
   <ItemGroup>
     <Midl Include="generated\Microsoft.Management.Configuration.idl" />
     <Midl Include="generated\Microsoft.Management.Configuration.SetProcessorFactory.idl" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="generated\dlldata.c" />
+    <ClCompile Include="generated\Microsoft.Management.Configuration.SetProcessorFactory_i.c" />
+    <ClCompile Include="generated\Microsoft.Management.Configuration.SetProcessorFactory_p.c" />
+    <ClCompile Include="generated\Microsoft.Management.Configuration_i.c" />
+    <ClCompile Include="generated\Microsoft.Management.Configuration_p.c" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="generated\Microsoft.Management.Configuration.SetProcessorFactory_h.h" />
+    <ClInclude Include="generated\Microsoft.Management.Configuration.SetProcessorFactory_h_p.h" />
+    <ClInclude Include="generated\Microsoft.Management.Configuration_h.h" />
+    <ClInclude Include="generated\Microsoft.Management.Configuration_h_p.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>

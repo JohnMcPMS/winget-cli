@@ -23,4 +23,35 @@
       <Filter>Source Files</Filter>
     </None>
   </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="generated\dlldata.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="generated\Microsoft.Management.Configuration.SetProcessorFactory_i.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="generated\Microsoft.Management.Configuration.SetProcessorFactory_p.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="generated\Microsoft.Management.Configuration_i.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="generated\Microsoft.Management.Configuration_p.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="generated\Microsoft.Management.Configuration.SetProcessorFactory_h.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="generated\Microsoft.Management.Configuration.SetProcessorFactory_h_p.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="generated\Microsoft.Management.Configuration_h.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="generated\Microsoft.Management.Configuration_h_p.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+  </ItemGroup>
 </Project>
