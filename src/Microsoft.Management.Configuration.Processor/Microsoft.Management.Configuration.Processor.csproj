@@ -1,9 +1,9 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <DotNetVersion>net6.0</DotNetVersion>
     <!-- Keep in sync with attributes in AssemblyInfo.cs -->
-    <TargetFramework>$(DotNetVersion)-windows10.0.19041.0</TargetFramework>
+    <TargetFramework>$(DotNetVersion)-windows10.0.22000.0</TargetFramework>
     <Nullable>enable</Nullable>
     <!-- Keep in sync with attributes in AssemblyInfo.cs -->
     <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
@@ -18,6 +18,11 @@
     <NoWarn>1591,8785</NoWarn>
     <Configurations>Debug;Release;ReleaseStatic</Configurations>
     <CsWinRTEnableLogging>true</CsWinRTEnableLogging>
+    <!--
+    Forcing this version to continue using an older CsWinRT release while issues are resolved.
+    !!! Remove this on the next Microsoft.Windows.CsWinRT package version update. !!!
+    -->
+    <WindowsSdkPackageVersion>10.0.22000.34</WindowsSdkPackageVersion>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)'=='Release'">
@@ -30,7 +35,7 @@
 
   <PropertyGroup>
     <CsWinRTComponent>true</CsWinRTComponent>
-    <CsWinRTWindowsMetadata>10.0.19041.0</CsWinRTWindowsMetadata>
+    <CsWinRTWindowsMetadata>10.0.22000.0</CsWinRTWindowsMetadata>
   </PropertyGroup>
 
   <ItemGroup>
@@ -45,9 +50,12 @@
     <PackageReference Include="StyleCop.Analyzers" Version="1.1.118">
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
+    <PackageReference Include="System.Data.SqlClient" Version="4.8.6" />
+    <PackageReference Include="System.IO.Packaging" Version="6.0.1" />
     <PackageReference Include="System.Security.Cryptography.Pkcs" Version="6.0.3" />
     <PackageReference Include="Microsoft.Windows.Compatibility" Version="6.0.6" />
     <PackageReference Include="System.Security.Cryptography.Xml" Version="6.0.1" />
+    <PackageReference Include="System.Formats.Asn1" Version="6.0.1" />
   </ItemGroup>
 
   <ItemGroup>

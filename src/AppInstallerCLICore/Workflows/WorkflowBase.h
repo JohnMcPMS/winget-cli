@@ -6,6 +6,7 @@
 #include <winget/ExperimentalFeature.h>
 #include <winget/RepositorySearch.h>
 #include <winget/RepositorySource.h>
+#include <winget/Authentication.h>
 
 #include <string>
 #include <string_view>
@@ -41,6 +42,7 @@ namespace AppInstaller::CLI::Workflow
         Uninstall,
         Upgrade,
         Download,
+        Repair,
     };
 
     // A task in the workflow.
@@ -67,6 +69,7 @@ namespace AppInstaller::CLI::Workflow
         bool IsFunction() const { return m_isFunc; }
         Func Function() const { return m_func; }
         bool ExecuteAlways() const { return m_executeAlways; }
+        void Log() const;
 
     private:
         bool m_isFunc = false;
@@ -77,6 +80,13 @@ namespace AppInstaller::CLI::Workflow
 
     // Helper to determine installed source to use based on context input.
     Repository::PredefinedSource DetermineInstalledSource(const Execution::Context& context);
+
+    // Helper to create authentication arguments from context input.
+    Authentication::AuthenticationArguments GetAuthenticationArguments(const Execution::Context& context);
+
+    // Helper to report exceptions and return the HRESULT.
+    // If context is null, no output will be attempted.
+    HRESULT HandleException(Execution::Context* context, std::exception_ptr exception);
 
     // Helper to report exceptions and return the HRESULT.
     HRESULT HandleException(Execution::Context& context, std::exception_ptr exception);
@@ -347,6 +357,12 @@ namespace AppInstaller::CLI::Workflow
     // Inputs: Package
     // Outputs: None
     void ReportPackageIdentity(Execution::Context& context);
+
+    // Reports the installed package version identity.
+    // Required Args: None
+    // Inputs: InstalledPackageVersion
+    // Outputs: None
+    void ReportInstalledPackageVersionIdentity(Execution::Context& context);
 
     // Reports the manifest's identity.
     // Required Args: None

@@ -15,6 +15,7 @@ namespace Microsoft.Management.Configuration.UnitTests.Fixtures
     using Microsoft.Management.Configuration.Processor.ProcessorEnvironments;
     using Microsoft.Management.Configuration.Processor.Runspaces;
     using Moq;
+    using WinRT;
     using Xunit.Abstractions;
     using static Microsoft.Management.Configuration.Processor.Constants.PowerShellConstants;
 
@@ -40,16 +41,22 @@ namespace Microsoft.Management.Configuration.UnitTests.Fixtures
                 throw new DirectoryNotFoundException(this.TestModulesPath);
             }
 
-            string? gitSearchPath = Path.GetDirectoryName(assemblyPath);
+            // Use the environment variable if present, which is how ADO pipelines will find it.
+            string? gitSearchPath = Environment.GetEnvironmentVariable("BUILD_SOURCESDIRECTORY");
 
-            while (!string.IsNullOrEmpty(gitSearchPath))
+            if (string.IsNullOrWhiteSpace(gitSearchPath))
             {
-                if (Directory.Exists(Path.Combine(gitSearchPath, ".git")))
-                {
-                    break;
-                }
+                gitSearchPath = Path.GetDirectoryName(assemblyPath);
 
-                gitSearchPath = Path.GetDirectoryName(gitSearchPath);
+                while (!string.IsNullOrEmpty(gitSearchPath))
+                {
+                    if (Directory.Exists(Path.Combine(gitSearchPath, ".git")))
+                    {
+                        break;
+                    }
+
+                    gitSearchPath = Path.GetDirectoryName(gitSearchPath);
+                }
             }
 
             this.GitRootPath = gitSearchPath ?? throw new DirectoryNotFoundException("git root path");
@@ -60,7 +67,7 @@ namespace Microsoft.Management.Configuration.UnitTests.Fixtures
                 throw new DirectoryNotFoundException(this.ExternalModulesPath);
             }
 
-            this.ConfigurationStatics = new ConfigurationStaticFunctions();
+            this.ConfigurationStatics = new ConfigurationStaticFunctions().As<IConfigurationStatics2>();
         }
 
         /// <summary>
@@ -86,7 +93,7 @@ namespace Microsoft.Management.Configuration.UnitTests.Fixtures
         /// <summary>
         /// Gets the configuration statics object to use.
         /// </summary>
-        public IConfigurationStatics ConfigurationStatics { get; private init; }
+        public IConfigurationStatics2 ConfigurationStatics { get; private init; }
 
         /// <summary>
         /// Creates a runspace adding the test module path.

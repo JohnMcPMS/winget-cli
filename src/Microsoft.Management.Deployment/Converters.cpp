@@ -185,8 +185,9 @@ namespace winrt::Microsoft::Management::Deployment::implementation
             break;
         case APPINSTALLER_CLI_ERROR_UNSUPPORTED_RESTSOURCE:
         case APPINSTALLER_CLI_ERROR_RESTSOURCE_INVALID_DATA:
-        case APPINSTALLER_CLI_ERROR_RESTSOURCE_INTERNAL_ERROR:
-        case APPINSTALLER_CLI_ERROR_RESTSOURCE_UNSUPPORTED_MIME_TYPE:
+        case APPINSTALLER_CLI_ERROR_RESTAPI_ENDPOINT_NOT_FOUND:
+        case APPINSTALLER_CLI_ERROR_RESTAPI_INTERNAL_ERROR:
+        case APPINSTALLER_CLI_ERROR_RESTAPI_UNSUPPORTED_MIME_TYPE:
         case APPINSTALLER_CLI_ERROR_RESTSOURCE_INVALID_VERSION:
         case APPINSTALLER_CLI_ERROR_SOURCE_DATA_INTEGRITY_FAILURE:
             resultStatus = winrt::Microsoft::Management::Deployment::FindPackagesResultStatus::CatalogError;
@@ -194,6 +195,18 @@ namespace winrt::Microsoft::Management::Deployment::implementation
         case E_INVALIDARG:
         case APPINSTALLER_CLI_ERROR_INVALID_CL_ARGUMENTS:
             resultStatus = winrt::Microsoft::Management::Deployment::FindPackagesResultStatus::InvalidOptions;
+            break;
+        case APPINSTALLER_CLI_ERROR_INVALID_AUTHENTICATION_INFO:
+        case APPINSTALLER_CLI_ERROR_AUTHENTICATION_TYPE_NOT_SUPPORTED:
+        case APPINSTALLER_CLI_ERROR_AUTHENTICATION_FAILED:
+        case APPINSTALLER_CLI_ERROR_AUTHENTICATION_INTERACTIVE_REQUIRED:
+        case APPINSTALLER_CLI_ERROR_AUTHENTICATION_CANCELLED_BY_USER:
+        case APPINSTALLER_CLI_ERROR_AUTHENTICATION_INCORRECT_ACCOUNT:
+            resultStatus = winrt::Microsoft::Management::Deployment::FindPackagesResultStatus::AuthenticationError;
+            break;
+        case HTTP_E_STATUS_DENIED:
+        case HTTP_E_STATUS_FORBIDDEN:
+            resultStatus = winrt::Microsoft::Management::Deployment::FindPackagesResultStatus::AccessDenied;
             break;
         case APPINSTALLER_CLI_ERROR_COMMAND_FAILED:
         case APPINSTALLER_CLI_ERROR_CANNOT_WRITE_TO_UPLEVEL_INDEX:
@@ -207,21 +220,7 @@ namespace winrt::Microsoft::Management::Deployment::implementation
 
     std::optional<::AppInstaller::Utility::Architecture> GetUtilityArchitecture(winrt::Windows::System::ProcessorArchitecture architecture)
     {
-        switch (architecture)
-        {
-        case winrt::Windows::System::ProcessorArchitecture::X86:
-            return ::AppInstaller::Utility::Architecture::X86;
-        case winrt::Windows::System::ProcessorArchitecture::Arm:
-            return ::AppInstaller::Utility::Architecture::Arm;
-        case winrt::Windows::System::ProcessorArchitecture::X64:
-            return ::AppInstaller::Utility::Architecture::X64;
-        case winrt::Windows::System::ProcessorArchitecture::Neutral:
-            return ::AppInstaller::Utility::Architecture::Neutral;
-        case winrt::Windows::System::ProcessorArchitecture::Arm64:
-            return ::AppInstaller::Utility::Architecture::Arm64;
-        }
-
-        return {};
+        return ::AppInstaller::Utility::ConvertToArchitectureEnum(architecture);
     }
 
     std::optional<winrt::Windows::System::ProcessorArchitecture> GetWindowsSystemProcessorArchitecture(::AppInstaller::Utility::Architecture architecture)
@@ -354,6 +353,21 @@ namespace winrt::Microsoft::Management::Deployment::implementation
         return ::AppInstaller::Manifest::ScopeEnum::Unknown;
     }
 
+    ::AppInstaller::Manifest::ScopeEnum GetManifestRepairScope(winrt::Microsoft::Management::Deployment::PackageRepairScope scope)
+    {
+        switch (scope)
+        {
+        case winrt::Microsoft::Management::Deployment::PackageRepairScope::Any:
+            return ::AppInstaller::Manifest::ScopeEnum::Unknown;
+        case winrt::Microsoft::Management::Deployment::PackageRepairScope::User:
+            return ::AppInstaller::Manifest::ScopeEnum::User;
+        case winrt::Microsoft::Management::Deployment::PackageRepairScope::System:
+            return ::AppInstaller::Manifest::ScopeEnum::Machine;
+        }
+
+        return ::AppInstaller::Manifest::ScopeEnum::Unknown;
+    }
+
     winrt::Microsoft::Management::Deployment::ElevationRequirement GetDeploymentElevationRequirement(::AppInstaller::Manifest::ElevationRequirementEnum elevationRequirement)
     {
         switch (elevationRequirement)
@@ -440,5 +454,47 @@ namespace winrt::Microsoft::Management::Deployment::implementation
         }
 
         return Microsoft::Management::Deployment::IconTheme::Unknown;
+    }
+
+    winrt::Microsoft::Management::Deployment::AuthenticationType GetDeploymentAuthenticationType(::AppInstaller::Authentication::AuthenticationType authType)
+    {
+        switch (authType)
+        {
+        case ::AppInstaller::Authentication::AuthenticationType::None:
+            return Microsoft::Management::Deployment::AuthenticationType::None;
+        case ::AppInstaller::Authentication::AuthenticationType::MicrosoftEntraId:
+            return Microsoft::Management::Deployment::AuthenticationType::MicrosoftEntraId;
+        }
+
+        return Microsoft::Management::Deployment::AuthenticationType::Unknown;
+    }
+
+    ::AppInstaller::Authentication::AuthenticationMode GetAuthenticationMode(winrt::Microsoft::Management::Deployment::AuthenticationMode authMode)
+    {
+        switch (authMode)
+        {
+        case winrt::Microsoft::Management::Deployment::AuthenticationMode::Interactive:
+            return ::AppInstaller::Authentication::AuthenticationMode::Interactive;
+        case winrt::Microsoft::Management::Deployment::AuthenticationMode::SilentPreferred:
+            return ::AppInstaller::Authentication::AuthenticationMode::SilentPreferred;
+        case winrt::Microsoft::Management::Deployment::AuthenticationMode::Silent:
+            return ::AppInstaller::Authentication::AuthenticationMode::Silent;
+        }
+
+        return ::AppInstaller::Authentication::AuthenticationMode::Unknown;
+    }
+
+    ::AppInstaller::Authentication::AuthenticationArguments GetAuthenticationArguments(winrt::Microsoft::Management::Deployment::AuthenticationArguments authArgs)
+    {
+        ::AppInstaller::Authentication::AuthenticationArguments result;
+        result.Mode = ::AppInstaller::Authentication::AuthenticationMode::Silent; // Default to silent for com invocations.
+
+        if (authArgs)
+        {
+            result.Mode = GetAuthenticationMode(authArgs.AuthenticationMode());
+            result.AuthenticationAccount = ::AppInstaller::Utility::ConvertToUTF8(authArgs.AuthenticationAccount());
+        }
+
+        return result;
     }
 }

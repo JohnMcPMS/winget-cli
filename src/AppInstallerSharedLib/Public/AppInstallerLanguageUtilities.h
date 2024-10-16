@@ -9,6 +9,7 @@
 #include <type_traits>
 #include <utility>
 #include <variant>
+#include <vector>
 
 namespace AppInstaller
 {
@@ -88,8 +89,20 @@ namespace AppInstaller
         static constexpr inline size_t Index(Enum e) { return static_cast<size_t>(e) + 1; }
     };
 
+    // An action that can be taken on an EnumBasedVariantMap.
+    enum class EnumBasedVariantMapAction
+    {
+        Add,
+        Contains,
+        Get,
+    };
+
+    // A callback function that can be used for logging map actions.
+    template <typename Enum>
+    using EnumBasedVariantMapActionCallback = void (*)(const void* map, Enum value, EnumBasedVariantMapAction action);
+
     // Provides a map of the Enum to the mapped types.
-    template <typename Enum, template<Enum> typename Mapping>
+    template <typename Enum, template<Enum> typename Mapping, EnumBasedVariantMapActionCallback<Enum> Callback = nullptr>
     struct EnumBasedVariantMap
     {
         using Variant = EnumBasedVariant<Enum, Mapping>;
@@ -102,28 +115,51 @@ namespace AppInstaller
         template <Enum E>
         void Add(mapping_t<E>&& v)
         {
+            if constexpr (Callback)
+            {
+                Callback(this, E, EnumBasedVariantMapAction::Add);
+            }
             m_data[E].emplace<Variant::Index(E)>(std::move(std::forward<mapping_t<E>>(v)));
         }
 
         template <Enum E>
         void Add(const mapping_t<E>& v)
         {
+            if constexpr (Callback)
+            {
+                Callback(this, E, EnumBasedVariantMapAction::Add);
+            }
             m_data[E].emplace<Variant::Index(E)>(v);
         }
 
         // Return a value indicating whether the given enum is stored in the map.
-        bool Contains(Enum e) const { return (m_data.find(e) != m_data.end()); }
+        bool Contains(Enum e) const
+        {
+            if constexpr (Callback)
+            {
+                Callback(this, e, EnumBasedVariantMapAction::Contains);
+            }
+            return (m_data.find(e) != m_data.end());
+        }
 
         // Gets the value.
         template <Enum E>
         mapping_t<E>& Get()
         {
+            if constexpr (Callback)
+            {
+                Callback(this, E, EnumBasedVariantMapAction::Get);
+            }
             return std::get<Variant::Index(E)>(GetVariant(E));
         }
 
         template <Enum E>
         const mapping_t<E>& Get() const
         {
+            if constexpr (Callback)
+            {
+                Callback(this, E, EnumBasedVariantMapAction::Get);
+            }
             return std::get<Variant::Index(E)>(GetVariant(E));
         }
 
@@ -144,6 +180,34 @@ namespace AppInstaller
 
         std::map<Enum, typename Variant::variant_t> m_data;
     };
+
+    template<typename E>
+    std::vector<E> GetAllSequentialEnumValues(E initialToSkip)
+    {
+        std::vector<E> result;
+        using underlying_t = std::underlying_type_t<E>;
+
+        for (underlying_t i = 1 + static_cast<underlying_t>(initialToSkip); i < static_cast<underlying_t>(E::Max); ++i)
+        {
+            result.emplace_back(static_cast<E>(i));
+        }
+
+        return result;
+    }
+
+    template<typename E>
+    std::vector<E> GetAllExponentialEnumValues(E initialToSkip)
+    {
+        std::vector<E> result;
+        using underlying_t = std::underlying_type_t<E>;
+
+        for (underlying_t i = 1 + static_cast<underlying_t>(initialToSkip); i < static_cast<underlying_t>(E::Max); i <<= 1)
+        {
+            result.emplace_back(static_cast<E>(i));
+        }
+
+        return result;
+    }
 }
 
 // Enable enums to be output generically (as their integral value).

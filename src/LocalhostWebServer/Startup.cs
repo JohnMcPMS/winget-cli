@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
 namespace LocalhostWebServer
@@ -28,6 +28,8 @@ namespace LocalhostWebServer
         public static string LocalSourceJson { get; set; }
 
         public static string TestDataPath { get; set; }
+
+        public static bool ExitBeforeRun { get; set; }
 
         public Startup(IConfiguration configuration)
         {
@@ -59,7 +61,7 @@ namespace LocalhostWebServer
             provider.Mappings[".msi"] = "application/msi";
             provider.Mappings[".appx"] = "application/vns.ms-appx";
             provider.Mappings[".appxbundle"] = "application/vns.ms-appx";
-
+            provider.Mappings[".mszyml"] = "application/x-ms-zip-yaml";
 
             //Enable static file serving
             app.UseStaticFiles(new StaticFileOptions
@@ -67,6 +69,8 @@ namespace LocalhostWebServer
                 FileProvider = new PhysicalFileProvider(StaticFileRoot),
                 RequestPath = StaticFileRequestPath,
                 ContentTypeProvider = provider,
+                ServeUnknownFileTypes = true,
+                DefaultContentType = "application/octet-stream"
             });
 
             app.UseDirectoryBrowser(new DirectoryBrowserOptions

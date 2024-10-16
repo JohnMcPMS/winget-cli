@@ -49,12 +49,14 @@ namespace AppInstaller::CLI::Execution
         };
 
         // The level for the Output channel.
-        enum class Level
+        enum class Level : uint32_t
         {
-            Verbose,
-            Info,
-            Warning,
-            Error,
+            None = 0x0,
+            Verbose = 0x1,
+            Info = 0x2,
+            Warning = 0x4,
+            Error = 0x8,
+            All = Verbose | Info | Warning | Error,
         };
 
         Reporter(std::ostream& outStream, std::istream& inStream);
@@ -69,6 +71,9 @@ namespace AppInstaller::CLI::Execution
         Reporter(const Reporter& other, clone_t);
 
         ~Reporter();
+
+        // Gets the primary device attributes if available.
+        std::optional<VirtualTerminal::PrimaryDeviceAttributes> GetPrimaryDeviceAttributes();
 
         // Get a stream for verbose output.
         OutputStream Verbose() { return GetOutputStream(Level::Verbose); }
@@ -98,18 +103,13 @@ namespace AppInstaller::CLI::Execution
         void SetStyle(AppInstaller::Settings::VisualStyle style);
 
         // Prompts the user, return true if they consented.
-        bool PromptForBoolResponse(Resource::LocString message, Level level = Level::Info);
+        bool PromptForBoolResponse(Resource::LocString message, Level level = Level::Info, bool resultIfDisabled = false);
 
         // Prompts the user, continues when Enter is pressed
         void PromptForEnter(Level level = Level::Info);
 
         // Prompts the user for a path.
-        std::filesystem::path PromptForPath(Resource::LocString message, Level level = Level::Info);
-
-        // Used to show indefinite progress. Currently an indefinite spinner is the form of
-        // showing indefinite progress.
-        // running: shows indefinite progress if set to true, stops indefinite progress if set to false
-        void ShowIndefiniteProgress(bool running);
+        std::filesystem::path PromptForPath(Resource::LocString message, Level level = Level::Info, std::filesystem::path resultIfDisabled = std::filesystem::path::path());
 
         // IProgressSink
         void BeginProgress() override;
@@ -165,22 +165,44 @@ namespace AppInstaller::CLI::Execution
             m_progressSink = sink;
         }
 
+        bool IsLevelEnabled(Level reporterLevel)
+        {
+            return WI_AreAllFlagsSet(m_enabledLevels, reporterLevel);
+        }
+
+        void SetLevelMask(Level reporterLevel, bool setEnabled = true);
+
+        // Determines if sixels are supported by the current instance.
+        bool SixelsSupported();
+
+        // Determines if sixels are enabled; they must be both supported and enabled by user settings.
+        bool SixelsEnabled();
+
     private:
         Reporter(std::shared_ptr<BaseStream> outStream, std::istream& inStream);
-
         // Gets a stream for output for internal use.
         OutputStream GetBasicOutputStream();
+
+        // Used to show indefinite progress. Currently an indefinite spinner is the form of
+        // showing indefinite progress.
+        // running: shows indefinite progress if set to true, stops indefinite progress if set to false
+        void ShowIndefiniteProgress(bool running);
 
         Channel m_channel = Channel::Output;
         std::shared_ptr<BaseStream> m_out;
         std::istream& m_in;
         std::optional<AppInstaller::Settings::VisualStyle> m_style;
-        std::optional<IndefiniteSpinner> m_spinner;
-        std::optional<ProgressBar> m_progressBar;
+        std::unique_ptr<IIndefiniteSpinner> m_spinner;
+        std::unique_ptr<IProgressBar> m_progressBar;
         wil::srwlock m_progressCallbackLock;
         std::atomic<ProgressCallback*> m_progressCallback;
         std::atomic<IProgressSink*> m_progressSink;
+
+        // Enable all levels by default
+        Level m_enabledLevels = Level::All;
     };
+
+    DEFINE_ENUM_FLAG_OPERATORS(Reporter::Level);
 
     // Indirection to enable change without tracking down every place
     extern const VirtualTerminal::Sequence& HelpCommandEmphasis;
@@ -194,4 +216,5 @@ namespace AppInstaller::CLI::Execution
     extern const VirtualTerminal::Sequence& ConvertToUpgradeFlowEmphasis;
     extern const VirtualTerminal::Sequence& ConfigurationIntentEmphasis;
     extern const VirtualTerminal::Sequence& ConfigurationUnitEmphasis;
+    extern const VirtualTerminal::Sequence& AuthenticationEmphasis;
 }

@@ -2,9 +2,11 @@
 // Licensed under the MIT License.
 #include "pch.h"
 #include "ConfigureCommand.h"
+#include "ConfigureListCommand.h"
 #include "ConfigureShowCommand.h"
 #include "ConfigureTestCommand.h"
 #include "ConfigureValidateCommand.h"
+#include "ConfigureExportCommand.h"
 #include "Workflows/ConfigurationFlow.h"
 #include "Workflows/MSStoreInstallerHandler.h"
 #include "ConfigurationCommon.h"
@@ -14,7 +16,7 @@ using namespace AppInstaller::CLI::Workflow;
 namespace AppInstaller::CLI
 {
     ConfigureCommand::ConfigureCommand(std::string_view parent) :
-        Command("configure", { "configuration" }, parent, Settings::TogglePolicy::Policy::Configuration)
+        Command("configure", { "configuration", "dsc"}, parent, Settings::TogglePolicy::Policy::Configuration)
     {
         SelectCurrentCommandIfUnrecognizedSubcommandFound(true);
     }
@@ -23,8 +25,10 @@ namespace AppInstaller::CLI
     {
         return InitializeFromMoveOnly<std::vector<std::unique_ptr<Command>>>({
             std::make_unique<ConfigureShowCommand>(FullName()),
+            std::make_unique<ConfigureListCommand>(FullName()),
             std::make_unique<ConfigureTestCommand>(FullName()),
             std::make_unique<ConfigureValidateCommand>(FullName()),
+            std::make_unique<ConfigureExportCommand>(FullName()),
         });
     }
 
@@ -33,7 +37,9 @@ namespace AppInstaller::CLI
         return {
             Argument{ Execution::Args::Type::ConfigurationFile, Resource::String::ConfigurationFileArgumentDescription, ArgumentType::Positional },
             Argument{ Execution::Args::Type::ConfigurationModulePath, Resource::String::ConfigurationModulePath, ArgumentType::Positional },
+            Argument{ Execution::Args::Type::ConfigurationHistoryItem, Resource::String::ConfigurationHistoryItemArgumentDescription, ArgumentType::Standard, Argument::Visibility::Help },
             Argument{ Execution::Args::Type::ConfigurationAcceptWarning, Resource::String::ConfigurationAcceptWarningArgumentDescription, ArgumentType::Flag },
+            Argument{ Execution::Args::Type::ConfigurationSuppressPrologue, Resource::String::ConfigurationSuppressPrologueArgumentDescription, ArgumentType::Flag, Argument::Visibility::Help },
             Argument{ Execution::Args::Type::ConfigurationEnable, Resource::String::ConfigurationEnableMessage, ArgumentType::Flag, Argument::Visibility::Help },
             Argument{ Execution::Args::Type::ConfigurationDisable, Resource::String::ConfigurationDisableMessage, ArgumentType::Flag, Argument::Visibility::Help },
         };
@@ -51,7 +57,6 @@ namespace AppInstaller::CLI
 
     Utility::LocIndView ConfigureCommand::HelpLink() const
     {
-        // TODO: Make this exist
         return "https://aka.ms/winget-command-configure"_liv;
     }
 
@@ -93,12 +98,15 @@ namespace AppInstaller::CLI
         }
         else
         {
-            if (!execArgs.Contains(Execution::Args::Type::ConfigurationFile))
-            {
-                throw CommandException(Resource::String::RequiredArgError("file"_liv));
-            }
+            Configuration::ValidateCommonArguments(execArgs, true);
+        }
+    }
 
-            Configuration::ValidateCommonArguments(execArgs);
+    void ConfigureCommand::Complete(Execution::Context& context, Execution::Args::Type argType) const
+    {
+        if (argType == Execution::Args::Type::ConfigurationHistoryItem)
+        {
+            context << CompleteConfigurationHistoryItem;
         }
     }
 }

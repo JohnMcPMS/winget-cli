@@ -20,6 +20,7 @@ namespace Microsoft.WinGet.Client.Commands
         Constants.WinGetNouns.Package,
         DefaultParameterSetName = Constants.FoundSet,
         SupportsShouldProcess = true)]
+    [Alias("udwgp")]
     [OutputType(typeof(PSInstallResult))]
     public sealed class UpdatePackageCmdlet : InstallCmdlet
     {
@@ -49,8 +50,9 @@ namespace Microsoft.WinGet.Client.Commands
                         this.Name,
                         this.Moniker,
                         this.Source,
-                        this.Query);
-            command.Update(this.IncludeUnknown.ToBool(), this.MatchOption.ToString(), this.Mode.ToString());
+                        this.Query,
+                        this.SkipDependencies);
+            command.Update(this.IncludeUnknown.ToBool(), this.MatchOption.ToString(), this.Scope.ToString(), this.Architecture.ToString(), this.Mode.ToString(), this.InstallerType.ToString());
         }
     }
 }

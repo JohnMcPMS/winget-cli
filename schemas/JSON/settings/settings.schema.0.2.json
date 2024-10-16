@@ -26,13 +26,20 @@
           "enum": [
             "accent",
             "rainbow",
-            "retro"
+            "retro",
+            "sixel",
+            "disabled"
           ]
         },
         "anonymizeDisplayedPaths": {
           "description": "Replaces some known folder paths with their respective environment variable",
           "type": "boolean",
           "default": true
+        },
+        "enableSixels": {
+          "description": "Enables output of sixel images in certain contexts",
+          "type": "boolean",
+          "default": false
         }
       }
     },
@@ -55,7 +62,7 @@
           "description": "The logging channels to enable",
           "type": "array",
           "items": {
-            "uniqueItems": "true",
+            "uniqueItems": true,
             "type": "string",
             "enum": [
               "fail",
@@ -104,7 +111,7 @@
           "description": "The architecture(s) to use for a package install",
           "type": "array",
           "items": {
-            "uniqueItems": "true",
+            "uniqueItems": true,
             "type": "string",
             "enum": [
               "neutral",
@@ -121,7 +128,7 @@
           "description": "The installerType(s) to use for a package install",
           "type": "array",
           "items": {
-            "uniqueItems": "true",
+            "uniqueItems": true,
             "type": "string",
             "enum": [
               "inno",
@@ -170,7 +177,7 @@
         "defaultInstallRoot": {
           "description": "Default install location to use for packages that require it when not specified",
           "type": "string",
-          "maxLength": "32767"
+          "maxLength": 32767
         },
         "maxResumes": {
           "description": "The maximum number of resumes allowed for a single resume id. This is to prevent continuous reboots if an install that requires a reboot is not properly detected.",
@@ -266,18 +273,18 @@
           "type": "boolean",
           "default": false
         },
-        "configuration": {
-          "description": "Enable support for configuration",
+        "configuration03": {
+          "description": "Enable support for configuration schema 0.3",
           "type": "boolean",
           "default": false
         },
-        "windowsFeature": {
-          "description": "Enable support for enabling Windows Feature(s)",
+        "configureSelfElevate": {
+          "description": "Enable configure commands request elevation as needed",
           "type": "boolean",
           "default": false
         },
-        "reboot": {
-          "description": "Enable support for initiating a reboot",
+        "configureExport": {
+          "description": "Enable support for the configure export command",
           "type": "boolean",
           "default": false
         }

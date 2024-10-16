@@ -27,7 +27,9 @@ CoCreatableClassWrlCreatorMapInclude(InstallOptions);
 CoCreatableClassWrlCreatorMapInclude(UninstallOptions);
 CoCreatableClassWrlCreatorMapInclude(DownloadOptions);
 CoCreatableClassWrlCreatorMapInclude(PackageMatchFilter);
+CoCreatableClassWrlCreatorMapInclude(AuthenticationArguments);
 CoCreatableClassWrlCreatorMapInclude(PackageManagerSettings);
+CoCreatableClassWrlCreatorMapInclude(RepairOptions);
 
 // Shim for configuration static functions
 CoCreatableClassWrlCreatorMapInclude(ConfigurationStaticFunctionsShim);
@@ -85,6 +87,7 @@ extern "C"
     WINDOWS_PACKAGE_MANAGER_API WindowsPackageManagerInProcModuleInitialize() try
     {
         ::Microsoft::WRL::Module<::Microsoft::WRL::ModuleType::InProc>::Create();
+        AppInstaller::CLI::InProcInitialize();
         return S_OK;
     }
     CATCH_RETURN();

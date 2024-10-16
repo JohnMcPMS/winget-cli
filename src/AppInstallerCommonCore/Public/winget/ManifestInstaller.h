@@ -70,6 +70,8 @@ namespace AppInstaller::Manifest
 
         UpdateBehaviorEnum UpdateBehavior = UpdateBehaviorEnum::Install;
 
+        RepairBehaviorEnum RepairBehavior = RepairBehaviorEnum::Unknown;
+
         std::vector<string_t> Commands;
 
         std::vector<string_t> Protocols;
@@ -113,5 +115,7 @@ namespace AppInstaller::Manifest
         InstallationMetadataInfo InstallationMetadata;
 
         bool DownloadCommandProhibited = false;
+
+        bool ArchiveBinariesDependOnPath = false;
     };
 }

@@ -35,6 +35,18 @@ namespace AppInstaller::CLI::Workflow
     // Outputs: InstallerArgs
     void GetInstallerArgs(Execution::Context& context);
 
+    // Repair is done through invoking ShellExecute on downloaded installer.
+    // Required Args: None
+    // Inputs: Manifest?, InstallerPath, InstallerArgs
+    // Outputs: OperationReturnCode
+    void ShellExecuteRepairImpl(Execution::Context& context);
+
+    // Repair the MSI
+    // Required Args: None
+    // Inputs: ProductCodes
+    // Output: None
+    void ShellExecuteMsiExecRepair(Execution::Context& context);
+
     // Enables the Windows Feature dependency by invoking ShellExecute on the DISM executable.
     // Required Args: None
     // Inputs: Windows Feature dependency
@@ -47,5 +59,20 @@ namespace AppInstaller::CLI::Workflow
 
     private:
         std::string_view m_featureName;
+    };
+
+    // Extracts the installer archive using the tar executable.
+    // Required Args: None
+    // Inputs: InstallerPath
+    // Outputs: None
+    struct ShellExecuteExtractArchive : public WorkflowTask
+    {
+        ShellExecuteExtractArchive(const std::filesystem::path& archivePath, const std::filesystem::path& destPath) : WorkflowTask("ShellExecuteExtractArchive"), m_archivePath(archivePath), m_destPath(destPath) {}
+
+        void operator()(Execution::Context& context) const override;
+
+    private:
+        std::filesystem::path m_archivePath;
+        std::filesystem::path m_destPath;
     };
 }

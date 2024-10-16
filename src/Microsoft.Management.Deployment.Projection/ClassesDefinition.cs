@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
 namespace Microsoft.Management.Deployment.Projection
@@ -94,6 +94,18 @@ namespace Microsoft.Management.Deployment.Projection
                 }
             },
 
+            [typeof(AuthenticationArguments)] = new()
+            {
+                ProjectedClassType = typeof(AuthenticationArguments),
+                InterfaceType = typeof(IAuthenticationArguments),
+                Clsids = new Dictionary<ClsidContext, Guid>()
+                {
+                    [ClsidContext.InProc] = new Guid("8D593114-1CF1-43B9-8722-4DBB30103296"),
+                    [ClsidContext.OutOfProc] = new Guid("BA580786-BDE3-4F6C-B8F3-44698AC8711A"),
+                    [ClsidContext.OutOfProcDev] = new Guid("6484A61D-50FA-41F0-B71E-F4370C6EB37C"),
+                }
+            },
+
             [typeof(PackageManagerSettings)] = new()
             {
                 ProjectedClassType = typeof(PackageManagerSettings),
@@ -101,6 +113,18 @@ namespace Microsoft.Management.Deployment.Projection
                 Clsids = new Dictionary<ClsidContext, Guid>()
                 {
                     [ClsidContext.InProc] = new Guid("80CF9D63-5505-4342-B9B4-BB87895CA8BB"),
+                }
+            },
+
+            [typeof(RepairOptions)] = new ()
+            {
+                ProjectedClassType = typeof(RepairOptions),
+                InterfaceType = typeof(IRepairOptions),
+                Clsids = new Dictionary<ClsidContext, Guid>()
+                {
+                    [ClsidContext.InProc] = new Guid("30C024C4-852C-4DD4-9810-1348C51EF9BB"),
+                    [ClsidContext.OutOfProc] = new Guid("0498F441-3097-455F-9CAF-148F28293865"),
+                    [ClsidContext.OutOfProcDev] = new Guid("E62BB1E7-C7B2-4AEC-9E28-FB649B30FF03"),
                 }
             }
         };

@@ -92,6 +92,19 @@ namespace AppInstaller::Repository
         }
     }
 
+    bool PackageVersionKey::IsMatch(const PackageVersionKey& other) const
+    {
+        return
+            ((other.SourceId.empty() || other.SourceId == SourceId) &&
+             (other.Version.empty() || Utility::ICUCaseInsensitiveEquals(other.Version, Version)) &&
+             (other.Channel.empty() || Utility::ICUCaseInsensitiveEquals(other.Channel, Channel)));
+    }
+
+    bool PackageVersionKey::IsDefaultLatest() const
+    {
+        return Version.empty() && Channel.empty();
+    }
+
     const char* UnsupportedRequestException::what() const noexcept
     {
         if (m_whatMessage.empty())

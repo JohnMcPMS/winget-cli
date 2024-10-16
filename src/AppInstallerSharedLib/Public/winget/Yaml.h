@@ -38,7 +38,8 @@ namespace AppInstaller::YAML
             Parser,
             Composer,
             Writer,
-            Emitter
+            Emitter,
+            Policy,
         };
 
         // Should only be used for Memory.
@@ -104,6 +105,10 @@ namespace AppInstaller::YAML
             return m_sequence->emplace_back(std::forward<Args>(args)...);
         }
 
+        // Merges sequence nodes. If both sequence have the specified key with the same value
+        // they will get merged together. All elements in sequence must have the key.
+        void MergeSequenceNode(Node other, std::string_view key, bool caseInsensitive = false);
+
         // Adds a child node to the mapping.
         template <typename... Args>
         Node& AddMappingNode(Node&& key, Args&&... args)
@@ -111,6 +116,9 @@ namespace AppInstaller::YAML
             Require(Type::Mapping);
             return m_mapping->emplace(std::move(key), Node(std::forward<Args>(args)...))->second;
         }
+
+        // Merge mapping node. If both contain a node with the same key preserve this.
+        void MergeMappingNode(Node other, bool caseInsensitive = false);
 
         bool IsDefined() const { return m_type != Type::Invalid; }
         bool IsNull() const { return m_type == Type::Invalid || m_type == Type::None || (m_type == Type::Scalar && m_scalar.empty()); }
@@ -148,6 +156,10 @@ namespace AppInstaller::YAML
         // Gets a child node from the mapping by its name.
         Node& operator[](std::string_view key);
         const Node& operator[](std::string_view key) const;
+
+        // Gets a child node from the mapping by its name case-insensitive.
+        Node& GetChildNode(std::string_view key);
+        const Node& GetChildNode(std::string_view key) const;
 
         // Gets a child node from the sequence by its index.
         Node& operator[](size_t index);
@@ -214,6 +226,17 @@ namespace AppInstaller::YAML
         Value,
     };
 
+    // Sets the scalar style to use for the next scalar output.
+    enum class ScalarStyle
+    {
+        Any,
+        Plain,
+        SingleQuoted,
+        DoubleQuoted,
+        Literal,
+        Folded,
+    };
+
     // Forward declaration to allow pImpl in this Emitter.
     namespace Wrapper
     {
@@ -239,6 +262,8 @@ namespace AppInstaller::YAML
         Emitter& operator<<(int64_t value);
         Emitter& operator<<(int value);
         Emitter& operator<<(bool value);
+
+        Emitter& operator<<(ScalarStyle style);
 
         // Gets the result of the emitter; can only be retrieved once.
         std::string str();
@@ -281,7 +306,10 @@ namespace AppInstaller::YAML
         };
 
         // If set, defines the type of the next scalar (Key or Value).
-        std::optional<InputType> m_scalarInfo;
+        std::optional<InputType> m_scalarType;
+
+        // If set, defines the style of the next scalar.
+        std::optional<ScalarStyle> m_scalarStyle;
 
         // Converts the input type to a bitmask value.
         size_t GetInputBitmask(InputType type);

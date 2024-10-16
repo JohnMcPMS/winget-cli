@@ -1,12 +1,16 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 #pragma once
 
 #define NOMINMAX
 #include <Windows.h>
+#include <AclAPI.h>
 #include <appmodel.h>
 #include <icu.h>
 #include <sddl.h>
+#include <Shlobj.h>
+#include <compressapi.h>
+#include <concurrencysal.h>
 
 #define YAML_DECLARE_STATIC
 #include <yaml.h>
@@ -30,6 +34,7 @@
 #include <functional>
 #include <iomanip>
 #include <limits>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -52,11 +57,8 @@
 #include <wil/filesystem.h>
 #pragma warning( pop )
 
-#ifndef WINGET_DISABLE_FOR_FUZZING
 #include <wil/cppwinrt.h>
-
 #include <winrt/Windows.ApplicationModel.Resources.h>
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.Globalization.h>
 #include <winrt/Windows.System.Profile.h>
-#endif

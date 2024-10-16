@@ -1,8 +1,8 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <!-- Keep in sync with attributes in AssemblyInfo.cs -->
-    <TargetFramework>net6.0-windows10.0.19041</TargetFramework>
+    <TargetFramework>net6.0-windows10.0.22000</TargetFramework>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
     <OutputPath>$(SolutionDir)$(Platform)\$(Configuration)\$(MSBuildProjectName)\</OutputPath>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
@@ -11,6 +11,11 @@
     <BuildOutputDirectory>$(SolutionDir)$(Platform)\$(Configuration)\</BuildOutputDirectory>
     <RootNamespace>Microsoft.WinGet.Configuration</RootNamespace>
     <Configurations>Debug;Release;ReleaseStatic</Configurations>
+    <!--
+    Forcing this version to continue using an older CsWinRT release while issues are resolved.
+    !!! Remove this on the next Microsoft.Windows.CsWinRT package version update. !!!
+    -->
+    <WindowsSdkPackageVersion>10.0.22000.34</WindowsSdkPackageVersion>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)'=='Release'">

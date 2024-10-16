@@ -17,7 +17,9 @@ appxsdk
 APSTUDIO
 ARRAYSIZE
 artifactstagingdirectory
+Asn
 aspirational
+Authenticode
 AUTOLISTEN
 azureedge
 binlog
@@ -40,8 +42,7 @@ COMMANDBARFLYOUT
 COMMONDATA
 comparand
 conemu
-contosa
-contosainstaller
+contoso
 COSTDEFERRED
 cotaskmem
 cpprest
@@ -51,6 +52,7 @@ createnew
 createpintable
 createportabletable
 createtables
+CRTDECL
 CTLs
 curated
 CURSORPOSITON
@@ -68,6 +70,7 @@ denelon
 depersist
 differentpath
 DIRECTONLY
+DISMAPI
 distro
 dllmain
 dotnet
@@ -78,6 +81,7 @@ emoji
 ENDDIALOG
 ensureandinsert
 ensurepathexists
+entra
 ENU
 EOAC
 errorlevel
@@ -104,6 +108,7 @@ FILEOS
 FILESINUSE
 FILESUBTYPE
 FILEVERSION
+florelis
 FLUSHEACHLINE
 forcerestart
 gdi
@@ -138,7 +143,9 @@ INSTALLPATH
 INSTALLUILEVEL
 INVALIDARG
 INVALIDSID
+iot
 IPinning
+ipmo
 IPortable
 ISAPPROVEDFOROUTPUT
 IUnknown
@@ -159,6 +166,7 @@ MAKEINTRESOURCE
 makemsix
 MANIFESTSCHEMA
 MANIFESTVERSION
+meme
 metadatas
 Minimatch
 Moq
@@ -190,6 +198,7 @@ norestart
 normalizednameandpublisher
 normalizedpackagenameandpublisher
 notcontains
+NTAPI
 NTSTATUS
 nullsoft
 nunit
@@ -205,6 +214,9 @@ packagefamilyname
 packageidentifier
 packagename
 PACKAGESSCHEMA
+paket
+Params
+params
 parentidx
 pathpart
 Pathto
@@ -220,11 +232,14 @@ pinningindex
 pipssource
 Pkcs
 portableindex
+powertoys
 pplx
 ppv
 PRECONFIG
 preindexed
 prepareforpackaging
+prepopulate
+prepopulated
 prioritization
 processthreadsapi
 PRODUCTNAME
@@ -238,6 +253,7 @@ publiccontainer
 PUCHAR
 pwa
 QCol
+Qspectre
 rclsid
 REBOOTPROMPT
 Redistributable
@@ -246,11 +262,13 @@ removemanifest
 removepin
 removeportablefile
 repolibtest
+requeue
 rescap
 resetpins
 resheader
 resmimetype
 RESOLVESOURCE
+RESTAPI
 RESTARTAPPS
 resw
 resx
@@ -281,8 +299,11 @@ SHTDN
 shtypes
 signtool
 silentwithprogress
+Silverlight
 simplesave
 simpletest
+sixel
+sixels
 sln
 sqlbuilder
 sqliteicu
@@ -305,6 +326,8 @@ subcontext
 SUBLANG
 subresource
 subselect
+substr
+SUPPRESSMSGBOXES
 SWIPECONTROL
 SYMED
 symlinktarget
@@ -322,7 +345,7 @@ Testrun
 testsettingname
 TEXTFORMAT
 TEXTINCLUDE
-Threadpool
+threadpool
 tpl
 TRACELOGGING
 triaged
@@ -343,6 +366,7 @@ und
 UNICODESTRING
 uninstalling
 Unmarshal
+unskipped
 untimes
 updatefile
 updatemanifest
@@ -357,10 +381,12 @@ userguide
 usersources
 utext
 valijson
+vcpkg
 vcvars
 vcxitems
 VERYSILENT
 VFT
+visualstudio
 VOS
 vso
 wapproj
@@ -368,6 +394,7 @@ wcsicmp
 webpage
 WHOLECHAIN
 wil
+windbg
 wincrypt
 WINEVENT
 winget
@@ -389,6 +416,7 @@ wrl
 WTD
 wtypesbase
 Xamarin
+Xbox
 XElement
 Xlang
 XResource

@@ -4,7 +4,7 @@
 #include <winget/SQLiteWrapper.h>
 #include "Microsoft/Schema/IPinningIndex.h"
 #include <winget/SQLiteStorageBase.h>
-#include "winget/Pin.h"
+#include <winget/Pin.h>
 #include <winget/ManagedFile.h>
 
 namespace AppInstaller::Repository::Microsoft
@@ -28,6 +28,10 @@ namespace AppInstaller::Repository::Microsoft
         {
             return { filePath, disposition, std::move(indexFile) };
         }
+
+        // Opens the PinningIndex database on the default path if it exists.
+        // Returns nullptr in case of error.
+        static std::shared_ptr<PinningIndex> OpenIfExists(OpenDisposition openDisposition = OpenDisposition::Read);
 
         // Opens or creates a PinningIndex database on the default path.
         // openDisposition is only used when opening an existing database.

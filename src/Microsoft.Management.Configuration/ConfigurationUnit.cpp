@@ -4,6 +4,7 @@
 #include "ConfigurationUnit.h"
 #include "ConfigurationUnit.g.cpp"
 #include "ConfigurationSetParser.h"
+#include "ConfigurationStatus.h"
 
 namespace winrt::Microsoft::Management::Configuration::implementation
 {
@@ -36,7 +37,7 @@ namespace winrt::Microsoft::Management::Configuration::implementation
         {
             std::vector<hstring> temp{ value.Size() };
             value.GetMany(0, temp);
-            return winrt::single_threaded_vector<hstring>(std::move(temp));
+            return winrt::multi_threaded_vector<hstring>(std::move(temp));
         }
     }
 
@@ -100,7 +101,7 @@ namespace winrt::Microsoft::Management::Configuration::implementation
 
     void ConfigurationUnit::Dependencies(std::vector<hstring>&& value)
     {
-        m_dependencies = winrt::single_threaded_vector<hstring>(std::move(value));
+        m_dependencies = winrt::multi_threaded_vector<hstring>(std::move(value));
     }
 
     Windows::Foundation::Collections::ValueSet ConfigurationUnit::Metadata()
@@ -137,12 +138,14 @@ namespace winrt::Microsoft::Management::Configuration::implementation
 
     ConfigurationUnitState ConfigurationUnit::State()
     {
-        return ConfigurationUnitState::Unknown;
+        auto status = ConfigurationStatus::Instance();
+        return status->GetUnitState(m_instanceIdentifier);
     }
 
     IConfigurationUnitResultInformation ConfigurationUnit::ResultInformation()
     {
-        return nullptr;
+        auto status = ConfigurationStatus::Instance();
+        return status->GetUnitResultInformation(m_instanceIdentifier);
     }
 
     bool ConfigurationUnit::IsActive()
@@ -157,7 +160,7 @@ namespace winrt::Microsoft::Management::Configuration::implementation
 
     Configuration::ConfigurationUnit ConfigurationUnit::Copy()
     {
-        auto result = make_self<wil::details::module_count_wrapper<ConfigurationUnit>>();
+        auto result = make_self<ConfigurationUnit>();
 
         result->m_type = m_type;
         result->m_intent = m_intent;
@@ -182,7 +185,7 @@ namespace winrt::Microsoft::Management::Configuration::implementation
         {
             if (!m_units)
             {
-                m_units = winrt::single_threaded_vector<Configuration::ConfigurationUnit>();
+                m_units = winrt::multi_threaded_vector<Configuration::ConfigurationUnit>();
             }
         }
     }
@@ -208,7 +211,7 @@ namespace winrt::Microsoft::Management::Configuration::implementation
 
     void ConfigurationUnit::Units(std::vector<Configuration::ConfigurationUnit>&& value)
     {
-        m_units = winrt::single_threaded_vector<Configuration::ConfigurationUnit>(std::move(value));
+        m_units = winrt::multi_threaded_vector<Configuration::ConfigurationUnit>(std::move(value));
     }
 
     HRESULT STDMETHODCALLTYPE ConfigurationUnit::SetLifetimeWatcher(IUnknown* watcher)

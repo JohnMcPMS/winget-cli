@@ -1,10 +1,12 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 #pragma once
+#include <AppInstallerDownloader.h>
 #include <winget/RepositorySource.h>
 #include <winget/Manifest.h>
 #include <winget/ARPCorrelation.h>
 #include <winget/Pin.h>
+#include <winget/PinningData.h>
 #include "CompletionData.h"
 #include "PackageCollection.h"
 #include "PortableInstaller.h"
@@ -17,11 +19,6 @@
 #include <utility>
 #include <variant>
 #include <vector>
-
-namespace AppInstaller::Repository::Microsoft
-{
-    struct PinningIndex;
-}
 
 namespace AppInstaller::CLI::Execution
 {
@@ -38,7 +35,7 @@ namespace AppInstaller::CLI::Execution
         Manifest,
         PackageVersion,
         Installer,
-        HashPair,
+        DownloadHashInfo,
         InstallerPath,
         LogPath,
         InstallerArgs,
@@ -63,10 +60,13 @@ namespace AppInstaller::CLI::Execution
         AllowedArchitectures,
         AllowUnknownScope,
         PortableInstaller,
-        PinningIndex,
+        PinningData,
         Pins,
         ConfigurationContext,
         DownloadDirectory,
+        ModifyPath,
+        RepairString,
+        MsixDigests,
         Max
     };
 
@@ -107,7 +107,7 @@ namespace AppInstaller::CLI::Execution
         template <>
         struct DataMapping<Data::Package>
         {
-            using value_t = std::shared_ptr<Repository::IPackage>;
+            using value_t = std::shared_ptr<Repository::ICompositePackage>;
         };
 
         template <>
@@ -129,9 +129,9 @@ namespace AppInstaller::CLI::Execution
         };
 
         template <>
-        struct DataMapping<Data::HashPair>
+        struct DataMapping<Data::DownloadHashInfo>
         {
-            using value_t = std::pair<std::vector<uint8_t>, std::vector<uint8_t>>;
+            using value_t = std::pair<std::vector<uint8_t>, Utility::DownloadResult>;
         };
 
         template <>
@@ -249,9 +249,9 @@ namespace AppInstaller::CLI::Execution
         };
 
         template <>
-        struct DataMapping<Data::PinningIndex>
+        struct DataMapping<Data::PinningData>
         {
-            using value_t = std::shared_ptr<Repository::Microsoft::PinningIndex>;
+            using value_t = Pinning::PinningData;
         };
 
         template <>
@@ -270,6 +270,25 @@ namespace AppInstaller::CLI::Execution
         struct DataMapping<Data::DownloadDirectory>
         {
             using value_t = std::filesystem::path;
+        };
+
+        template<>
+        struct DataMapping<Data::ModifyPath>
+        {
+            using value_t = std::string;
+        };
+
+        template<>
+        struct DataMapping<Data::RepairString>
+        {
+            using value_t = std::string;
+        };
+
+        template<>
+        struct DataMapping<Data::MsixDigests>
+        {
+            // The pair is { URL, Digest }
+            using value_t = std::vector<std::pair<std::string, std::wstring>>;
         };
     }
 }

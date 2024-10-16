@@ -1,4 +1,4 @@
-﻿// -----------------------------------------------------------------------------
+// -----------------------------------------------------------------------------
 // <copyright file="GroupPolicyHelper.cs" company="Microsoft Corporation">
 //     Copyright (c) Microsoft Corporation. Licensed under the MIT License.
 // </copyright>
@@ -119,6 +119,11 @@ namespace AppInstallerCLIE2ETests
         public static GroupPolicyHelper EnableConfiguration { get; private set; } = new GroupPolicyHelper("EnableWindowsPackageManagerConfiguration");
 
         /// <summary>
+        /// Gets the Enable Windows Package Manager proxy command line options policy.
+        /// </summary>
+        public static GroupPolicyHelper EnableProxyCommandLineOptions { get; private set; } = new GroupPolicyHelper("EnableWindowsPackageManagerProxyCommandLineOptions");
+
+        /// <summary>
         /// Gets the Enable auto update interval policy.
         /// </summary>
         public static GroupPolicyHelper SourceAutoUpdateInterval { get; private set; } = new GroupPolicyHelper("SourceAutoUpdateInterval", "SourceAutoUpdateInterval");
@@ -138,6 +143,7 @@ namespace AppInstallerCLIE2ETests
             SourceAutoUpdateInterval,
             EnableWinGetCommandLineInterfaces,
             EnableConfiguration,
+            EnableProxyCommandLineOptions,
         };
 
         /// <summary>
@@ -379,6 +385,16 @@ namespace AppInstallerCLIE2ETests
             /// Gets or sets certificate pinning.
             /// </summary>
             public GroupPolicyCertificatePinning CertificatePinning { get; set; }
+
+            /// <summary>
+            /// Gets or sets the source trust levels.
+            /// </summary>
+            public string[] TrustLevel { get; set; }
+
+            /// <summary>
+            /// Gets or sets a value indicating whether the source is explicit.
+            /// </summary>
+            public bool Explicit { get; set; }
         }
 
         /// <summary>

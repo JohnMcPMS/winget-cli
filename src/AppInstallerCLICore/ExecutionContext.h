@@ -7,7 +7,7 @@
 #include "ExecutionContextData.h"
 #include "CompletionData.h"
 #include "CheckpointManager.h"
-#include "Public/winget/Checkpoint.h"
+#include <winget/Checkpoint.h>
 
 #include <string_view>
 
@@ -74,6 +74,7 @@ namespace AppInstaller::CLI::Execution
         Resume = 0x200,
         RebootRequired = 0x400,
         RegisterResume = 0x800,
+        InstallerExecutionUseRepair = 0x1000,
     };
 
     DEFINE_ENUM_FLAG_OPERATORS(ContextFlag);
@@ -84,10 +85,13 @@ namespace AppInstaller::CLI::Execution
     bool WaitForAppShutdownEvent();
 #endif
 
+    // Callback to log data actions.
+    void ContextEnumBasedVariantMapActionCallback(const void* map, Data data, EnumBasedVariantMapAction action);
+
     // The context within which all commands execute.
     // Contains input/output via Execution::Reporter and
     // arguments via Execution::Args.
-    struct Context : EnumBasedVariantMap<Data, details::DataMapping>
+    struct Context : EnumBasedVariantMap<Data, details::DataMapping, ContextEnumBasedVariantMapActionCallback>
     {
         Context(std::ostream& out, std::istream& in) : Reporter(out, in) {}
 

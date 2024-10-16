@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 #pragma once
 
@@ -6,7 +6,6 @@
 #include <Windows.h>
 #include <AclAPI.h>
 #include <appmodel.h>
-#include <WinInet.h>
 #include <sddl.h>
 #include <Shlobj.h>
 #include <Shlwapi.h>
@@ -17,6 +16,8 @@
 #include <SoftPub.h>
 #include <WinTrust.h>
 #include <wincrypt.h>
+#include <deliveryoptimization.h>
+#include <deliveryoptimizationerrors.h>
 
 #include "TraceLogging.h"
 
@@ -25,7 +26,6 @@
 
 // TODO: See if we can get down to having just one JSON parser...
 #include <json/json.h>
-#include <cpprest/json.h>
 
 #pragma warning( push )
 #pragma warning ( disable : 4458 4100 4702 6031 )
@@ -59,6 +59,16 @@
 #include <type_traits>
 #include <unordered_set>
 #include <vector>
+#include <variant>
+
+#ifndef WINGET_DISABLE_FOR_FUZZING
+#pragma warning( push )
+#pragma warning ( disable : 26495 26439 )
+#include <cpprest/http_client.h>
+#include <cpprest/json.h>
+#include <cpprest/uri_builder.h>
+#pragma warning( pop )
+#endif
 
 #pragma warning( push )
 #pragma warning ( disable : 6001 6285 6287 6340 6387 6388 26451 26495 28196 )
@@ -72,13 +82,13 @@
 #include <wil/win32_helpers.h>
 #pragma warning( pop )
 
-#ifndef WINGET_DISABLE_FOR_FUZZING
 #include <wil/cppwinrt.h>
 
 #include <winrt/Windows.ApplicationModel.h>
 #include <winrt/Windows.ApplicationModel.AppExtensions.h>
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.Foundation.Collections.h>
+#include <winrt/Windows.Foundation.Metadata.h>
 #include <winrt/Windows.Management.Deployment.h>
 #include <winrt/Windows.Security.Cryptography.h>
 #include <winrt/Windows.Services.Store.h>
@@ -91,8 +101,8 @@
 #include <winrt/Windows.Web.Http.Filters.h>
 #include <winrt/Windows.Globalization.h>
 #include <winrt/Windows.ApplicationModel.Store.Preview.InstallControl.h>
-
-#endif
+#include <winrt/Windows.Security.Authentication.Web.Core.h>
+#include <winrt/Windows.Security.Credentials.h>
 
 #include <wrl/client.h>
 #include <wrl/implements.h>
@@ -102,3 +112,4 @@
 #include <shcore.h>
 
 #include <AppxPackaging.h>
+#include <WebAuthenticationCoreManagerInterop.h>

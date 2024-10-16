@@ -48,15 +48,15 @@ Microsoft.TestApp       winget                 1.2.*          Gating
 
 A new `winget pin` command with 3 sub-commands will be introduced.
 - Add package pinning configuration:
-  
+
   `winget pin add <package> [--version <optional gated version>] [--source <source>] [--force] [--blocking]`
-  
+
 - Remove package pinning configuration:
 
   `winget pin remove <package> [--source <source>] [--force]`
-  
-- List package pinning configuration: 
-  
+
+- List package pinning configuration:
+
   `winget pin list <package> [--source <source>]` for a specific package or `winget pin list` to list all
 
 #### Blocking
@@ -139,24 +139,24 @@ Success
 
 **Note:** Regarding gated version syntax, it will be mostly same as what current winget version supports, except with special `.*` in the end as wild card matching any remaining version parts if there are any.
 
-Example:  
-When `.*` in the end is detected:  
-Gate version `1.0.*` matches Version `1.0.1`  
-Gate version `1.0.*` matches Version `1.0`  
-Gate version `1.0.*` matches Version `1`  
-Gate version `1.0.*` matches Version `1.0.alpha`  
-Gate version `1.0.*` matches Version `1.0.1.2.3`  
+Example:
+When `.*` in the end is detected:
+Gate version `1.0.*` matches Version `1.0.1`
+Gate version `1.0.*` matches Version `1.0`
+Gate version `1.0.*` matches Version `1`
+Gate version `1.0.*` matches Version `1.0.alpha`
+Gate version `1.0.*` matches Version `1.0.1.2.3`
 Gate version `1.0.*` matches Version `1.0.*`
-Gate version `1.0.*` does not match Version `1.1.1` 
+Gate version `1.0.*` does not match Version `1.1.1`
 
-In rare cases where `*` is actually part of a version, only the last `.*` is considered wild card:  
-Gate version `1.*.*` matches Version `1.*.1`  
-Gate version `1.*.*` matches Version `1.*.*`  
-Gate version `1.*.*` does not match Version `1.1.1`  
+In rare cases where `*` is actually part of a version, only the last `.*` is considered wild card:
+Gate version `1.*.*` matches Version `1.*.1`
+Gate version `1.*.*` matches Version `1.*.*`
+Gate version `1.*.*` does not match Version `1.1.1`
 
-If no `.*` in the end is detected, the gate version gates to the specific version:  
-Gate version `1.0.1` matches Version `1.0.1`  
-Gate version `1.0.1` does not match Version `1.1.1`  
+If no `.*` in the end is detected, the gate version gates to the specific version:
+Gate version `1.0.1` matches Version `1.0.1`
+Gate version `1.0.1` does not match Version `1.1.1`
 
 ## Capabilities
 
@@ -170,7 +170,7 @@ Security of the Windows Package Manager should not be impacted by this change. H
 
 ### Reliability
 
-The change will improve reliability, as users will be able to have fine grained control of the Windows Package Manager's upgrade functionality to ensure their workflow is not disrupted. 
+The change will improve reliability, as users will be able to have fine-grained control of the Windows Package Manager's upgrade functionality to ensure their workflow is not disrupted.
 
 ### Compatibility
 
@@ -191,7 +191,7 @@ There should not be any notable performance changes.
 - Implementation in this spec only supports pinning from remote sources, so all installed versions from same package share the same pinning configuration. Winget could better support side by side installations by introducing package pinning from installed source.
 - Package pinning from user and from manifest are stored separately, we may integrate the `winget pin` commands to control package pinning from manifests.
 - A couple UI integrations can be made to `winget upgrade` and `winget list` to show pinned status during listing.
-- Dependencies flow can be improved to first check pinned status of each dependant package before trying to install all dependencies.
+- Dependencies flow can be improved to first check pinned status of each dependent package before trying to install all dependencies.
 - Support setting pinned state right after installation/upgrades like `winget install foo --pin`.
 - Improvements to import export commands to work seamlessly with existing package pinning configurations.
 

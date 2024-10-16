@@ -1,4 +1,4 @@
-﻿// -----------------------------------------------------------------------------
+// -----------------------------------------------------------------------------
 // <copyright file="SetUpFixture.cs" company="Microsoft Corporation">
 //     Copyright (c) Microsoft Corporation. Licensed under the MIT License.
 // </copyright>
@@ -41,8 +41,6 @@ namespace AppInstallerCLIE2ETests
 
                 shouldRevertDefaultFileTypeRiskOnExit = this.DecreaseFileTypeRisk(".exe;.msi", false);
 
-                Assert.True(TestCommon.RunCommand("certutil.exe", "-addstore -f \"TRUSTEDPEOPLE\" " + TestCommon.GetTestDataFile(Constants.AppInstallerTestCert)), "Add AppInstallerTestCert");
-
                 if (testParams.PackagedContext)
                 {
                     if (testParams.LooseFileRegistration)
@@ -61,6 +59,7 @@ namespace AppInstallerCLIE2ETests
                 TestIndex.GenerateE2ESource();
             }
 
+            WinGetSettingsHelper.ForcedExperimentalFeatures = testParams.ForcedExperimentalFeatures;
             WinGetSettingsHelper.InitializeWingetSettings();
         }
 
@@ -81,8 +80,6 @@ namespace AppInstallerCLIE2ETests
                 {
                     this.DecreaseFileTypeRisk(defaultFileTypes, true);
                 }
-
-                TestCommon.RunCommand("certutil.exe", $"-delstore \"TRUSTEDPEOPLE\" {Constants.AppInstallerTestCertThumbprint}");
 
                 TestCommon.PublishE2ETestLogs();
 

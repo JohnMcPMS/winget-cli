@@ -30,7 +30,7 @@ namespace AppInstaller::CLI
         case Execution::Args::Type::Query:
             return { type, "query"_liv, 'q', ArgTypeCategory::PackageQuery | ArgTypeCategory::SinglePackageQuery };
         case Execution::Args::Type::MultiQuery:
-            return { type, "query"_liv, 'q', ArgTypeCategory::PackageQuery };
+            return { type, "query"_liv, 'q', ArgTypeCategory::PackageQuery | ArgTypeCategory::MultiplePackages };
         case Execution::Args::Type::Manifest:
             return { type, "manifest"_liv, 'm', ArgTypeCategory::Manifest };
 
@@ -101,6 +101,10 @@ namespace AppInstaller::CLI
             return { type, "preserve"_liv, ArgTypeCategory::None, ArgTypeExclusiveSet::PurgePreserve };
         case Execution::Args::Type::ProductCode:
             return { type, "product-code"_liv, ArgTypeCategory::SinglePackageQuery };
+        case Execution::Args::Type::AllVersions:
+            return { type, "all-versions"_liv, "all"_liv, ArgTypeCategory::CopyFlagToSubContext, ArgTypeExclusiveSet::AllAndTargetVersion };
+        case Execution::Args::Type::TargetVersion:
+            return { type, "version"_liv, 'v', ArgTypeCategory::SinglePackageQuery, ArgTypeExclusiveSet::AllAndTargetVersion };
 
         //Source Command
         case Execution::Args::Type::SourceName:
@@ -111,6 +115,10 @@ namespace AppInstaller::CLI
             return { type, "arg"_liv, 'a' };
         case Execution::Args::Type::ForceSourceReset:
             return { type, "force"_liv };
+        case Execution::Args::Type::SourceExplicit:
+            return { type, "explicit"_liv };
+        case Execution::Args::Type::SourceTrustLevel:
+            return { type, "trust-level"_liv };
 
         //Hash Command
         case Execution::Args::Type::HashFile:
@@ -133,8 +141,6 @@ namespace AppInstaller::CLI
             return { type, "position"_liv };
 
         // Export Command
-        case Execution::Args::Type::OutputFile:
-            return { type, "output"_liv, 'o' };
         case Execution::Args::Type::IncludeVersions:
             return { type, "include-versions"_liv };
 
@@ -151,6 +157,10 @@ namespace AppInstaller::CLI
             return { type, "enable"_liv, ArgTypeCategory::None, ArgTypeExclusiveSet::EnableDisable };
         case Execution::Args::Type::AdminSettingDisable:
             return { type, "disable"_liv, ArgTypeCategory::None, ArgTypeExclusiveSet::EnableDisable };
+        case Execution::Args::Type::SettingName:
+            return { type, "setting"_liv };
+        case Execution::Args::Type::SettingValue:
+            return { type, "value"_liv };
 
         // Upgrade command
         case Execution::Args::Type::All:
@@ -190,19 +200,37 @@ namespace AppInstaller::CLI
 
         // Configuration commands
         case Execution::Args::Type::ConfigurationFile:
-            return { type, "file"_liv, 'f' };
+            return { type, "file"_liv, 'f', ArgTypeCategory::ConfigurationSetChoice, ArgTypeExclusiveSet::ConfigurationSetChoice };
         case Execution::Args::Type::ConfigurationAcceptWarning:
             return { type, "accept-configuration-agreements"_liv };
+        case Execution::Args::Type::ConfigurationSuppressPrologue:
+            return { type, "suppress-initial-details"_liv };
         case Execution::Args::Type::ConfigurationEnable:
             return { type, "enable"_liv, ArgTypeCategory::None, ArgTypeExclusiveSet::StubType };
         case Execution::Args::Type::ConfigurationDisable:
             return { type, "disable"_liv, ArgTypeCategory::None, ArgTypeExclusiveSet::StubType };
         case Execution::Args::Type::ConfigurationModulePath:
             return { type, "module-path"_liv };
+        case Execution::Args::Type::ConfigurationExportPackageId:
+            return { type, "package-id"_liv };
+        case Execution::Args::Type::ConfigurationExportModule:
+            return { type, "module"_liv };
+        case Execution::Args::Type::ConfigurationExportResource:
+            return { type, "resource"_liv };
+        case Execution::Args::Type::ConfigurationHistoryItem:
+            return { type, "history"_liv, 'h', ArgTypeCategory::ConfigurationSetChoice, ArgTypeExclusiveSet::ConfigurationSetChoice };
+        case Execution::Args::Type::ConfigurationHistoryRemove:
+            return { type, "remove"_liv };
+        case Execution::Args::Type::ConfigurationStatusWatch:
+            return { type, "live"_liv };
 
         // Download command
         case Execution::Args::Type::DownloadDirectory:
             return { type, "download-directory"_liv, 'd', ArgTypeCategory::None };
+        case Execution::Args::Type::Platform:
+            return { type, "platform"_liv, ArgTypeCategory::None };
+        case Execution::Args::Type::SkipMicrosoftStorePackageLicense:
+            return { type, "skip-microsoft-store-package-license"_liv, "skip-license"_liv, ArgTypeCategory::None };
 
         // Common arguments
         case Execution::Args::Type::NoVT:
@@ -225,16 +253,29 @@ namespace AppInstaller::CLI
             return { type, "open-logs"_liv, "logs"_liv };
         case Execution::Args::Type::Force:
             return { type, "force"_liv, ArgTypeCategory::CopyFlagToSubContext };
+        case Execution::Args::Type::OutputFile:
+            return { type, "output"_liv, 'o' };
 
         case Execution::Args::Type::DependencySource:
             return { type, "dependency-source"_liv, ArgTypeCategory::ExtendedSource };
         case Execution::Args::Type::CustomHeader:
-            return { type, "header"_liv, ArgTypeCategory::QuerySource };
+            return { type, "header"_liv, ArgTypeCategory::ExtendedSource };
         case Execution::Args::Type::AcceptSourceAgreements:
             return { type, "accept-source-agreements"_liv, ArgTypeCategory::ExtendedSource };
 
+        case Execution::Args::Type::Proxy:
+            return { type, "proxy"_liv, ArgTypeCategory::CopyValueToSubContext, ArgTypeExclusiveSet::Proxy };
+        case Execution::Args::Type::NoProxy:
+            return { type, "no-proxy"_liv, ArgTypeCategory::CopyFlagToSubContext, ArgTypeExclusiveSet::Proxy };
+
         case Execution::Args::Type::ToolVersion:
             return { type, "version"_liv, 'v' };
+
+        // Authentication arguments
+        case Execution::Args::Type::AuthenticationMode:
+            return { type, "authentication-mode"_liv };
+        case Execution::Args::Type::AuthenticationAccount:
+            return { type, "authentication-account"_liv };
 
         // Used for demonstration purposes
         case Execution::Args::Type::ExperimentalArg:
@@ -262,7 +303,7 @@ namespace AppInstaller::CLI
         case Args::Type::MultiQuery:
             return Argument{ type, Resource::String::MultiQueryArgumentDescription, ArgumentType::Positional }.SetCountLimit(128);
         case Args::Type::Manifest:
-            return Argument{ type, Resource::String::ManifestArgumentDescription, ArgumentType::Standard, Argument::Visibility::Help, Settings::TogglePolicy::Policy::LocalManifestFiles, Settings::AdminSetting::LocalManifestFiles };
+            return Argument{ type, Resource::String::ManifestArgumentDescription, ArgumentType::Standard, Argument::Visibility::Help, Settings::TogglePolicy::Policy::LocalManifestFiles, Settings::BoolAdminSetting::LocalManifestFiles };
         case Args::Type::Id:
             return Argument{ type, Resource::String::IdArgumentDescription, ArgumentType::Standard, Argument::Visibility::Help };
         case Args::Type::Name:
@@ -302,7 +343,7 @@ namespace AppInstaller::CLI
         case Args::Type::InstallLocation:
             return Argument{ type, Resource::String::LocationArgumentDescription, ArgumentType::Standard };
         case Args::Type::HashOverride:
-            return Argument{ type, Resource::String::HashOverrideArgumentDescription, ArgumentType::Flag, Settings::TogglePolicy::Policy::HashOverride, Settings::AdminSetting::InstallerHashOverride };
+            return Argument{ type, Resource::String::HashOverrideArgumentDescription, ArgumentType::Flag, Settings::TogglePolicy::Policy::HashOverride, Settings::BoolAdminSetting::InstallerHashOverride };
         case Args::Type::AcceptPackageAgreements:
             return Argument{ type, Resource::String::AcceptPackageAgreementsArgumentDescription, ArgumentType::Flag };
         case Args::Type::NoUpgrade:
@@ -318,13 +359,17 @@ namespace AppInstaller::CLI
         case Args::Type::SkipDependencies:
             return Argument{ type, Resource::String::SkipDependenciesArgumentDescription, ArgumentType::Flag, false };
         case Args::Type::IgnoreLocalArchiveMalwareScan:
-            return Argument{ type, Resource::String::IgnoreLocalArchiveMalwareScanArgumentDescription, ArgumentType::Flag, Settings::TogglePolicy::Policy::LocalArchiveMalwareScanOverride, Settings::AdminSetting::LocalArchiveMalwareScanOverride };
+            return Argument{ type, Resource::String::IgnoreLocalArchiveMalwareScanArgumentDescription, ArgumentType::Flag, Settings::TogglePolicy::Policy::LocalArchiveMalwareScanOverride, Settings::BoolAdminSetting::LocalArchiveMalwareScanOverride };
         case Args::Type::SourceName:
             return Argument{ type, Resource::String::SourceNameArgumentDescription, ArgumentType::Positional, false };
         case Args::Type::SourceArg:
             return Argument{ type, Resource::String::SourceArgArgumentDescription, ArgumentType::Positional, true };
         case Args::Type::SourceType:
             return Argument{ type, Resource::String::SourceTypeArgumentDescription, ArgumentType::Positional };
+        case Args::Type::SourceExplicit:
+            return Argument{ type, Resource::String::SourceExplicitArgumentDescription, ArgumentType::Flag };
+        case Args::Type::SourceTrustLevel:
+            return Argument{ type, Resource::String::SourceTrustLevelArgumentDescription, ArgumentType::Standard, Argument::Visibility::Help };
         case Args::Type::ValidateManifest:
             return Argument{ type, Resource::String::ValidateManifestArgumentDescription, ArgumentType::Positional, true };
         case Args::Type::IgnoreWarnings:
@@ -341,6 +386,10 @@ namespace AppInstaller::CLI
             return Argument{ type, Resource::String::HeaderArgumentDescription, ArgumentType::Standard, Argument::Visibility::Help };
         case Args::Type::AcceptSourceAgreements:
             return Argument{ type, Resource::String::AcceptSourceAgreementsArgumentDescription, ArgumentType::Flag };
+        case Args::Type::AuthenticationMode:
+            return Argument{ type, Resource::String::AuthenticationModeArgumentDescription, ArgumentType::Standard, Argument::Visibility::Help };
+        case Args::Type::AuthenticationAccount:
+            return Argument{ type, Resource::String::AuthenticationAccountArgumentDescription, ArgumentType::Standard, Argument::Visibility::Help };
         case Args::Type::ExperimentalArg:
             return Argument{ type, Resource::String::ExperimentalArgumentDescription, ArgumentType::Flag, ExperimentalFeature::Feature::ExperimentalArg };
         case Args::Type::Rename:
@@ -361,14 +410,26 @@ namespace AppInstaller::CLI
             return Argument{ type, Resource::String::ForceArgumentDescription, ArgumentType::Flag, false };
         case Args::Type::DownloadDirectory:
             return Argument{ type, Resource::String::DownloadDirectoryArgumentDescription, ArgumentType::Standard, Argument::Visibility::Help, false };
+        case Args::Type::SkipMicrosoftStorePackageLicense:
+            return Argument{ type, Resource::String::SkipMicrosoftStorePackageLicenseArgumentDescription, ArgumentType::Flag, Argument::Visibility::Help, false };
+        case Args::Type::Platform:
+            return Argument{ type, Resource::String::PlatformArgumentDescription, ArgumentType::Standard, Argument::Visibility::Help, false };
         case Args::Type::InstallerType:
             return Argument{ type, Resource::String::InstallerTypeArgumentDescription, ArgumentType::Standard, Argument::Visibility::Help, false };
         case Args::Type::ResumeId:
             return Argument{ type, Resource::String::ResumeIdArgumentDescription, ArgumentType::Standard, true };
         case Args::Type::AllowReboot:
-            return Argument{ type, Resource::String::AllowRebootArgumentDescription, ArgumentType::Flag, ExperimentalFeature::Feature::Reboot };
+            return Argument{ type, Resource::String::AllowRebootArgumentDescription, ArgumentType::Flag };
         case Args::Type::IgnoreResumeLimit:
             return Argument{ type, Resource::String::IgnoreResumeLimitArgumentDescription, ArgumentType::Flag, ExperimentalFeature::Feature::Resume };
+        case Args::Type::AllVersions:
+            return Argument{ type, Resource::String::UninstallAllVersionsArgumentDescription, ArgumentType::Flag, Argument::Visibility::Help };
+        case Args::Type::TargetVersion:
+            return Argument{ type, Resource::String::TargetVersionArgumentDescription, ArgumentType::Standard };
+        case Args::Type::Proxy:
+            return Argument{ type, Resource::String::ProxyArgumentDescription, ArgumentType::Standard, TogglePolicy::Policy::ProxyCommandLineOptions, BoolAdminSetting::ProxyCommandLineOptions };
+        case Args::Type::NoProxy:
+            return Argument{ type, Resource::String::NoProxyArgumentDescription, ArgumentType::Flag, TogglePolicy::Policy::ProxyCommandLineOptions, BoolAdminSetting::ProxyCommandLineOptions };
         default:
             THROW_HR(E_UNEXPECTED);
         }
@@ -383,7 +444,10 @@ namespace AppInstaller::CLI
         args.push_back(ForType(Args::Type::RainbowStyle));
         args.push_back(ForType(Args::Type::RetroStyle));
         args.push_back(ForType(Args::Type::VerboseLogs));
+        args.push_back(ForType(Args::Type::IgnoreWarnings));
         args.emplace_back(Args::Type::DisableInteractivity, Resource::String::DisableInteractivityArgumentDescription, ArgumentType::Flag, false);
+        args.push_back(ForType(Args::Type::Proxy));
+        args.push_back(ForType(Args::Type::NoProxy));
     }
 
     std::string Argument::GetUsageString() const

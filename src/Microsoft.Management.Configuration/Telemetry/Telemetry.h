@@ -85,7 +85,7 @@ namespace winrt::Microsoft::Management::Configuration::implementation
         // Logs a processing summary event for a configuration set.
         void LogConfigProcessingSummary(
             const guid& setIdentifier,
-            bool fromHistory,
+            std::string_view inputHash,
             ConfigurationUnitIntent runIntent,
             hresult result,
             ConfigurationUnitResultSource failurePoint,
@@ -107,6 +107,12 @@ namespace winrt::Microsoft::Management::Configuration::implementation
         // Logs a processing summary event for a configuration set apply run.
         void LogConfigProcessingSummaryForApply(
             const ConfigurationSet& configurationSet,
+            const ApplyConfigurationSetResult& result) const noexcept;
+
+        // Logs a processing summary event for a configuration set apply run exception.
+        void LogConfigProcessingSummaryForApplyException(
+            const ConfigurationSet& configurationSet,
+            hresult error,
             const ApplyConfigurationSetResult& result) const noexcept;
 
     protected:

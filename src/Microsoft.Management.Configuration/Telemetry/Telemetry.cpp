@@ -263,12 +263,12 @@ namespace winrt::Microsoft::Management::Configuration::implementation
         std::string_view action,
         const IConfigurationUnitResultInformation& resultInformation) const noexcept try
     {
-        // We only want to send telemetry for failures of publicly available units.
-        if (!IsTelemetryEnabled() || SUCCEEDED(static_cast<int32_t>(resultInformation.ResultCode())))
+        if (!IsTelemetryEnabled())
         {
             return;
         }
 
+        // We only want to send telemetry for publicly available units.
         IConfigurationUnitProcessorDetails details = unit.Details();
         if (!details || !details.IsPublic())
         {
@@ -295,7 +295,7 @@ namespace winrt::Microsoft::Management::Configuration::implementation
 
     void TelemetryTraceLogger::LogConfigProcessingSummary(
         const guid& setIdentifier,
-        bool fromHistory,
+        std::string_view inputHash,
         ConfigurationUnitIntent runIntent,
         hresult result,
         ConfigurationUnitResultSource failurePoint,
@@ -308,7 +308,8 @@ namespace winrt::Microsoft::Management::Configuration::implementation
             AICLI_TraceLoggingWriteActivity(
                 "ConfigProcessingSummary",
                 TraceLoggingGuid(setIdentifier, "SetID"),
-                TraceLoggingBool(fromHistory, "FromHistory"),
+                AICLI_TraceLoggingStringView(inputHash, "InputHash"),
+                TraceLoggingBool(false, "FromHistory"), // deprecated
                 TraceLoggingInt32(static_cast<int32_t>(runIntent), "RunIntent"),
                 TraceLoggingHResult(result, "Result"),
                 TraceLoggingInt32(static_cast<int32_t>(failurePoint), "FailurePoint"),
@@ -322,7 +323,8 @@ namespace winrt::Microsoft::Management::Configuration::implementation
             WinGet_WriteEventToDiagnostics(
                 "ConfigProcessingSummary",
                 WinGet_EventItem(setIdentifier, "SetID"),
-                WinGet_EventItem(fromHistory, "FromHistory"),
+                WinGet_EventItem(inputHash, "InputHash"),
+                WinGet_EventItem(false, "FromHistory"), // deprecated
                 WinGet_EventItem(static_cast<int32_t>(runIntent), "RunIntent"),
                 WinGet_EventItem(result, "Result"),
                 WinGet_EventItem(static_cast<int32_t>(failurePoint), "FailurePoint"),
@@ -344,7 +346,7 @@ namespace winrt::Microsoft::Management::Configuration::implementation
 
         ConfigRunSummaryData summaryData = ProcessRunResult(result.UnitResults());
 
-        LogConfigProcessingSummary(configurationSet.InstanceIdentifier(), configurationSet.IsFromHistory(), ConfigurationUnitIntent::Assert,
+        LogConfigProcessingSummary(configurationSet.InstanceIdentifier(), configurationSet.GetInputHash(), ConfigurationUnitIntent::Assert,
             summaryData.Result, summaryData.FailurePoint, summaryData.AssertSummary, summaryData.InformSummary, summaryData.ApplySummary);
     }
     CATCH_LOG();
@@ -361,7 +363,7 @@ namespace winrt::Microsoft::Management::Configuration::implementation
 
         ConfigRunSummaryData summaryData = ProcessRunResult(result.UnitResults());
 
-        LogConfigProcessingSummary(configurationSet.InstanceIdentifier(), configurationSet.IsFromHistory(), ConfigurationUnitIntent::Assert,
+        LogConfigProcessingSummary(configurationSet.InstanceIdentifier(), configurationSet.GetInputHash(), ConfigurationUnitIntent::Assert,
             error, ConfigurationUnitResultSource::Internal, summaryData.AssertSummary, summaryData.InformSummary, summaryData.ApplySummary);
     }
     CATCH_LOG();
@@ -377,8 +379,25 @@ namespace winrt::Microsoft::Management::Configuration::implementation
 
         ConfigRunSummaryData summaryData = ProcessRunResult(result.UnitResults());
 
-        LogConfigProcessingSummary(configurationSet.InstanceIdentifier(), configurationSet.IsFromHistory(), ConfigurationUnitIntent::Apply,
+        LogConfigProcessingSummary(configurationSet.InstanceIdentifier(), configurationSet.GetInputHash(), ConfigurationUnitIntent::Apply,
             result.ResultCode(), summaryData.FailurePoint, summaryData.AssertSummary, summaryData.InformSummary, summaryData.ApplySummary);
+    }
+    CATCH_LOG();
+
+    void TelemetryTraceLogger::LogConfigProcessingSummaryForApplyException(
+        const ConfigurationSet& configurationSet,
+        hresult error,
+        const ApplyConfigurationSetResult& result) const noexcept try
+    {
+        if (!IsTelemetryEnabled())
+        {
+            return;
+        }
+
+        ConfigRunSummaryData summaryData = ProcessRunResult(result.UnitResults());
+
+        LogConfigProcessingSummary(configurationSet.InstanceIdentifier(), configurationSet.GetInputHash(), ConfigurationUnitIntent::Apply,
+            error, ConfigurationUnitResultSource::Internal, summaryData.AssertSummary, summaryData.InformSummary, summaryData.ApplySummary);
     }
     CATCH_LOG();
 

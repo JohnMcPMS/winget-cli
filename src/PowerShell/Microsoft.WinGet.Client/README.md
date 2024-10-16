@@ -1,4 +1,4 @@
-﻿# Windows Package Manager PowerShell Module
+# Windows Package Manager PowerShell Module
 
 The Windows Package Manager PowerShell Module is made up on two components
 
@@ -27,20 +27,21 @@ If the new cmdlet introduces a new dependency, please make sure to add it in the
 - Find-WinGetPackage
 - Get-WinGetPackage
 - Get-WinGetSource
-- Get-WinGetUserSettings
+- Get-WinGetUserSetting
 - Get-WinGetVersion
 - Install-WinGetPackage
 - Repair-WinGetPackageManager
-- Set-WinGetUserSettings
-- Test-WinGetUserSettings
+- Set-WinGetUserSetting
+- Test-WinGetUserSetting
 - Uninstall-WinGetPackage
 - Update-WinGetPackage
 - Add-WinGetSource
 - Disable-WinGetSetting
 - Enable-WinGetSetting
-- Get-WinGetSettings
+- Get-WinGetSetting
 - Remove-WinGetSource
 - Reset-WinGetSource
+- Repair-WinGetPackage
 
 ## Quick Start Guide
 

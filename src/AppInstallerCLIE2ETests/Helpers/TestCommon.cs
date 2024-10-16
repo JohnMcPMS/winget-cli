@@ -1,4 +1,4 @@
-﻿// -----------------------------------------------------------------------------
+// -----------------------------------------------------------------------------
 // <copyright file="TestCommon.cs" company="Microsoft Corporation">
 //     Copyright (c) Microsoft Corporation. Licensed under the MIT License.
 // </copyright>
@@ -353,13 +353,15 @@ namespace AppInstallerCLIE2ETests.Helpers
         /// <param name="productCode">Product code.</param>
         /// <param name="shouldExist">Should exists.</param>
         /// <param name="scope">Scope.</param>
+        /// <param name="installDirectoryAddedToPath">Install directory added to path instead of the symlink directory.</param>
         public static void VerifyPortablePackage(
             string installDir,
             string commandAlias,
             string filename,
             string productCode,
             bool shouldExist,
-            Scope scope = Scope.User)
+            Scope scope = Scope.User,
+            bool installDirectoryAddedToPath = false)
         {
             // When portables are installed, if the exe path is inside a directory it will not be aliased
             // if the exe path is at the root level, it will be aliased. Therefore, if either exist, the exe exists
@@ -386,7 +388,7 @@ namespace AppInstallerCLIE2ETests.Helpers
             {
                 string pathName = "Path";
                 var currentPathValue = (string)environmentRegistryKey.GetValue(pathName);
-                var portablePathValue = symlinkDirectory + ';';
+                var portablePathValue = (installDirectoryAddedToPath ? installDir : symlinkDirectory) + ';';
                 isAddedToPath = currentPathValue.Contains(portablePathValue);
             }
 
@@ -396,9 +398,9 @@ namespace AppInstallerCLIE2ETests.Helpers
             }
 
             Assert.AreEqual(shouldExist, exeExists, $"Expected portable exe path: {exePath}");
-            Assert.AreEqual(shouldExist, symlinkExists, $"Expected portable symlink path: {symlinkPath}");
+            Assert.AreEqual(shouldExist && !installDirectoryAddedToPath, symlinkExists, $"Expected portable symlink path: {symlinkPath}");
             Assert.AreEqual(shouldExist, portableEntryExists, $"Expected {productCode} subkey in path: {uninstallSubKey}");
-            Assert.AreEqual(shouldExist, isAddedToPath, $"Expected path variable: {symlinkDirectory}");
+            Assert.AreEqual(shouldExist, isAddedToPath, $"Expected path variable: {(installDirectoryAddedToPath ? installDir : symlinkDirectory)}");
         }
 
         /// <summary>
@@ -471,7 +473,33 @@ namespace AppInstallerCLIE2ETests.Helpers
         }
 
         /// <summary>
-        /// Verify installer and manifest downloaded correctly and cleanup.
+        /// Verifies if the repair of the test executable was successful.
+        /// </summary>
+        /// <param name="installDir">The directory where the test executable is installed.</param>
+        /// <param name="expectedContent">The expected content in the test executable file. This is optional.</param>
+        /// <returns>Returns true if the repair was successful, false otherwise.</returns>
+        public static bool VerifyTestExeRepairSuccessful(string installDir, string expectedContent = null)
+        {
+            bool verifyRepairSuccess = true;
+
+            if (!File.Exists(Path.Combine(installDir, Constants.TestExeRepairCompletedFileName)))
+            {
+                TestContext.Out.WriteLine($"{Constants.TestExeRepairCompletedFileName} not found at {installDir}");
+                verifyRepairSuccess = false;
+            }
+
+            if (verifyRepairSuccess && !string.IsNullOrEmpty(expectedContent))
+            {
+                string content = File.ReadAllText(Path.Combine(installDir, Constants.TestExeRepairCompletedFileName));
+                TestContext.Out.WriteLine($"TestExeRepairCompleted.txt content: {content}");
+                verifyRepairSuccess = content.Contains(expectedContent);
+            }
+
+            return verifyRepairSuccess;
+        }
+
+        /// <summary>
+        /// Assert installer and manifest downloaded correctly and cleanup.
         /// </summary>
         /// <param name="downloadDir">Download directory.</param>
         /// <param name="name">Package name.</param>
@@ -482,8 +510,7 @@ namespace AppInstallerCLIE2ETests.Helpers
         /// <param name="locale">Installer locale.</param>
         /// <param name="isArchive">Boolean value indicating whether the installer is an archive.</param>
         /// <param name="cleanup">Boolean value indicating whether to remove the installer file and directory.</param>
-        /// <returns>True if success.</returns>
-        public static bool VerifyInstallerDownload(
+        public static void AssertInstallerDownload(
             string downloadDir,
             string name,
             string version,
@@ -526,21 +553,43 @@ namespace AppInstallerCLIE2ETests.Helpers
             string installerDownloadPath = Path.Combine(downloadDir, expectedFileName + installerExtension);
             string manifestDownloadPath = Path.Combine(downloadDir, expectedFileName + ".yaml");
 
-            bool downloadResult = false;
+            Assert.IsTrue(Directory.Exists(downloadDir), $"Download directory does not exist: {downloadDir}");
+            Assert.IsTrue(File.Exists(installerDownloadPath), $"Installer file does not exist: {installerDownloadPath}");
+            Assert.IsTrue(File.Exists(manifestDownloadPath), $"Manifest file does not exist: {manifestDownloadPath}");
 
-            if (Directory.Exists(downloadDir) && File.Exists(installerDownloadPath) && File.Exists(manifestDownloadPath))
+            if (cleanup)
             {
-                downloadResult = true;
-
-                if (cleanup)
-                {
-                    File.Delete(installerDownloadPath);
-                    File.Delete(manifestDownloadPath);
-                    Directory.Delete(downloadDir, true);
-                }
+                Directory.Delete(downloadDir, true);
             }
+        }
 
-            return downloadResult;
+        /// <summary>
+        /// Best effort test exe cleanup.
+        /// </summary>
+        /// <param name="installDir">Install directory.</param>
+        public static void BestEffortTestExeCleanup(string installDir)
+        {
+            var uninstallerPath = Path.Combine(installDir, Constants.TestExeUninstallerFileName);
+            if (File.Exists(uninstallerPath))
+            {
+                RunCommand(Path.Combine(installDir, Constants.TestExeUninstallerFileName));
+            }
+        }
+
+        /// <summary>
+        /// Best effort test exe cleanup and install directory cleanup.
+        /// </summary>
+        /// <param name="installDir">Install directory.</param>
+        public static void CleanupTestExeAndDirectory(string installDir)
+        {
+            // Always try clean up and ignore clean up failure
+            BestEffortTestExeCleanup(installDir);
+
+            // Delete the install directory to reclaim disk space
+            if (Directory.Exists(installDir))
+            {
+                Directory.Delete(installDir, true);
+            }
         }
 
         /// <summary>
@@ -554,13 +603,23 @@ namespace AppInstallerCLIE2ETests.Helpers
             bool verifyInstallSuccess = VerifyTestExeInstalled(installDir, expectedContent);
 
             // Always try clean up and ignore clean up failure
-            var uninstallerPath = Path.Combine(installDir, Constants.TestExeUninstallerFileName);
-            if (File.Exists(uninstallerPath))
-            {
-                RunCommand(Path.Combine(installDir, Constants.TestExeUninstallerFileName));
-            }
+            BestEffortTestExeCleanup(installDir);
 
             return verifyInstallSuccess;
+        }
+
+        /// <summary>
+        /// Verify exe repair completed and cleanup.
+        /// </summary>
+        /// <param name="installDir">Install directory.</param>
+        /// <param name="expectedContent">Optional expected context.</param>
+        /// <returns>True if success.</returns>
+        public static bool VerifyTestExeRepairCompletedAndCleanup(string installDir, string expectedContent = null)
+        {
+            bool verifyRepairSuccess = VerifyTestExeRepairSuccessful(installDir, expectedContent);
+            CleanupTestExeAndDirectory(installDir);
+
+            return verifyRepairSuccess;
         }
 
         /// <summary>
@@ -667,6 +726,9 @@ namespace AppInstallerCLIE2ETests.Helpers
         /// <param name="useGroupPolicyForTestSource">Use group policy.</param>
         public static void SetupTestSource(bool useGroupPolicyForTestSource = false)
         {
+            // Remove the test source so that its package is also removed.
+            RunAICLICommand("source remove", Constants.TestSourceName);
+
             RunAICLICommand("source reset", "--force");
             RunAICLICommand("source remove", Constants.DefaultWingetSourceName);
             RunAICLICommand("source remove", Constants.DefaultMSStoreSourceName);
@@ -701,13 +763,15 @@ namespace AppInstallerCLIE2ETests.Helpers
                                 },
                             },
                         },
+                        TrustLevel = new string[] { "None" },
+                        Explicit = false,
                     },
                 });
             }
             else
             {
                 GroupPolicyHelper.EnableAdditionalSources.SetNotConfigured();
-                RunAICLICommand("source add", $"{Constants.TestSourceName} {Constants.TestSourceUrl}");
+                RunAICLICommand("source add", $"{Constants.TestSourceName} {Constants.TestSourceUrl} --trust-level trusted");
             }
 
             Thread.Sleep(2000);
@@ -908,6 +972,91 @@ namespace AppInstallerCLIE2ETests.Helpers
         }
 
         /// <summary>
+        /// Gets the instance identifier of the first configuration history item with name in its output line.
+        /// </summary>
+        /// <param name="name">The string to search for.</param>
+        /// <returns>The instance identifier of a configuration that matched the search, or any empty string if none did.</returns>
+        public static string GetConfigurationInstanceIdentifierFor(string name)
+        {
+            var result = TestCommon.RunAICLICommand("configure list", string.Empty);
+            Assert.AreEqual(0, result.ExitCode);
+
+            string[] lines = result.StdOut.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+
+            foreach (string line in lines)
+            {
+                if (line.Contains(name))
+                {
+                    // Find the first GUID in the output
+                    int left = line.IndexOf('{');
+                    int right = line.IndexOfAny(new char[] { '}', '…' });
+                    Assert.AreNotEqual(-1, left);
+                    Assert.AreNotEqual(-1, right);
+                    Assert.LessOrEqual(right - left, 38);
+
+                    return line.Substring(left, right - left);
+                }
+            }
+
+            return string.Empty;
+        }
+
+        /// <summary>
+        /// Copy the installer file to the ARP InstallSource directory.
+        /// </summary>
+        /// <param name="installerFilePath">Test installer to be copied.</param>
+        /// <param name="productCode">Installer Product.</param>
+        /// <param name="useWoW6432Node">is WoW6432Node to use.</param>
+        /// <returns>Returns the installer source directory if the file operation is successful, otherwise returns an empty string.</returns>
+        public static string CopyInstallerFileToARPInstallSourceDirectory(string installerFilePath, string productCode, bool useWoW6432Node = false)
+        {
+            if (string.IsNullOrEmpty(installerFilePath))
+            {
+                new ArgumentNullException(nameof(installerFilePath));
+            }
+
+            if (!File.Exists(installerFilePath))
+            {
+                new FileNotFoundException(installerFilePath);
+            }
+
+            string outputDirectory = string.Empty;
+
+            // Define the registry paths for both x64 and x86
+            string registryPath = useWoW6432Node
+                ? $@"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\{productCode}"
+                : $@"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{productCode}";
+
+            // Open the registry key where the uninstall information is stored
+            using (RegistryKey key = Registry.LocalMachine.OpenSubKey(registryPath))
+            {
+                if (key != null)
+                {
+                    // Read the InstallSource value
+                    string arpInstallSourceDirectory = key.GetValue("InstallSource") as string;
+
+                    if (!string.IsNullOrEmpty(arpInstallSourceDirectory))
+                    {
+                        // Copy the MSI installer to the InstallSource directory
+                        string installerFileName = Path.GetFileName(installerFilePath);
+                        string installerDestinationPath = Path.Combine(arpInstallSourceDirectory, installerFileName);
+
+                        if (!Directory.Exists(arpInstallSourceDirectory))
+                        {
+                            Directory.CreateDirectory(arpInstallSourceDirectory);
+                        }
+
+                        File.Copy(installerFilePath, installerDestinationPath, true);
+
+                        outputDirectory = arpInstallSourceDirectory;
+                    }
+                }
+            }
+
+            return outputDirectory;
+        }
+
+        /// <summary>
         /// Run winget command via direct process.
         /// </summary>
         /// <param name="command">Command to run.</param>
@@ -923,6 +1072,7 @@ namespace AppInstallerCLIE2ETests.Helpers
             p.StartInfo = new ProcessStartInfo(TestSetup.Parameters.AICLIPath, command + ' ' + parameters);
             p.StartInfo.UseShellExecute = false;
 
+            p.StartInfo.StandardOutputEncoding = Encoding.UTF8;
             p.StartInfo.RedirectStandardOutput = true;
             StringBuilder outputData = new ();
             p.OutputDataReceived += (sender, args) =>
@@ -933,6 +1083,7 @@ namespace AppInstallerCLIE2ETests.Helpers
                 }
             };
 
+            p.StartInfo.StandardErrorEncoding = Encoding.UTF8;
             p.StartInfo.RedirectStandardError = true;
             StringBuilder errorData = new ();
             p.ErrorDataReceived += (sender, args) =>
@@ -976,7 +1127,7 @@ namespace AppInstallerCLIE2ETests.Helpers
 
                 if (TestSetup.Parameters.VerboseLogging && !string.IsNullOrEmpty(result.StdOut))
                 {
-                    TestContext.Out.WriteLine("Command run output. Output: " + result.StdOut);
+                    TestContext.Out.WriteLine("Command run output. Output:\n" + result.StdOut);
                 }
             }
             else if (throwOnTimeout)

@@ -80,7 +80,7 @@ namespace AppInstaller::Manifest
                 }
             }
 
-            for (const Version& ext : m_extensions)
+            for (const RawVersion& ext : m_extensions)
             {
                 if (ext.GetParts().empty() || ext.GetParts()[0].Integer != 0)
                 {
@@ -105,7 +105,7 @@ namespace AppInstaller::Manifest
 
     bool ManifestVer::HasExtension(std::string_view extension) const
     {
-        for (const Version& ext : m_extensions)
+        for (const RawVersion& ext : m_extensions)
         {
             const auto& parts = ext.GetParts();
             if (!parts.empty() && parts[0].Integer == 0 && parts[0].Other == extension)
@@ -222,20 +222,48 @@ namespace AppInstaller::Manifest
         return result;
     }
 
-    PlatformEnum ConvertToPlatformEnum(const std::string& in)
+    PlatformEnum ConvertToPlatformEnum(std::string_view in)
     {
-        PlatformEnum result = PlatformEnum::Unknown;
+        std::string inStrLower = Utility::ToLower(in);
 
-        if (Utility::CaseInsensitiveEquals(in, "windows.desktop"))
+        if (inStrLower == "windows.desktop")
         {
-            result = PlatformEnum::Desktop;
+            return PlatformEnum::Desktop;
         }
-        else if (Utility::CaseInsensitiveEquals(in, "windows.universal"))
+        else if (inStrLower == "windows.universal")
         {
-            result = PlatformEnum::Universal;
+            return PlatformEnum::Universal;
         }
 
-        return result;
+        return PlatformEnum::Unknown;
+    }
+
+    PlatformEnum ConvertToPlatformEnumForMSStoreDownload(std::string_view in)
+    {
+        std::string inStrLower = Utility::ToLower(in);
+
+        if (inStrLower == "windows.desktop")
+        {
+            return PlatformEnum::Desktop;
+        }
+        else if (inStrLower == "windows.universal")
+        {
+            return PlatformEnum::Universal;
+        }
+        else if (inStrLower == "windows.iot")
+        {
+            return PlatformEnum::IoT;
+        }
+        else if (inStrLower == "windows.team")
+        {
+            return PlatformEnum::Team;
+        }
+        else if (inStrLower == "windows.holographic")
+        {
+            return PlatformEnum::Holographic;
+        }
+
+        return PlatformEnum::Unknown;
     }
 
     ElevationRequirementEnum ConvertToElevationRequirementEnum(const std::string& in)
@@ -299,6 +327,10 @@ namespace AppInstaller::Manifest
         else if (in == "merged")
         {
             return ManifestTypeEnum::Merged;
+        }
+        else if (in == "shadow")
+        {
+            return ManifestTypeEnum::Shadow;
         }
         else
         {
@@ -576,6 +608,8 @@ namespace AppInstaller::Manifest
             return "InstallLocation"sv;
         case InstallerSwitchType::Update:
             return "Upgrade"sv;
+        case InstallerSwitchType::Repair:
+            return "Repair"sv;
         }
 
         return "Unknown"sv;
@@ -624,14 +658,20 @@ namespace AppInstaller::Manifest
         return "unknown"sv;
     }
 
-    std::string_view PlatformToString(PlatformEnum platform)
+    std::string_view PlatformToString(PlatformEnum platform, bool shortString)
     {
         switch (platform)
         {
         case PlatformEnum::Desktop:
-            return "Windows.Desktop"sv;
+            return shortString ? "Desktop" : "Windows.Desktop"sv;
         case PlatformEnum::Universal:
-            return "Windows.Universal"sv;
+            return shortString ? "Universal" : "Windows.Universal"sv;
+        case PlatformEnum::IoT:
+            return shortString ? "IoT" : "Windows.IoT"sv;
+        case PlatformEnum::Holographic:
+            return shortString ? "Holographic" : "Windows.Holographic"sv;
+        case PlatformEnum::Team:
+            return shortString ? "Team" : "Windows.Team"sv;
         }
 
         return "Unknown"sv;
@@ -647,6 +687,21 @@ namespace AppInstaller::Manifest
             return "uninstallPrevious"sv;
         case UpdateBehaviorEnum::Deny:
             return "deny"sv;
+        }
+
+        return "unknown"sv;
+    }
+
+    std::string_view RepairBehaviorToString(RepairBehaviorEnum repairBehavior)
+    {
+        switch (repairBehavior)
+        {
+        case AppInstaller::Manifest::RepairBehaviorEnum::Modify:
+            return "modify"sv;
+        case AppInstaller::Manifest::RepairBehaviorEnum::Installer:
+            return "installer"sv;
+        case AppInstaller::Manifest::RepairBehaviorEnum::Uninstaller:
+            return "uninstaller"sv;
         }
 
         return "unknown"sv;
@@ -878,6 +933,15 @@ namespace AppInstaller::Manifest
             installerType == InstallerTypeEnum::Msix;
     }
 
+    bool DoesInstallerTypeRequireRepairBehaviorForRepair(InstallerTypeEnum installerType)
+    {
+        return
+            installerType == InstallerTypeEnum::Burn ||
+            installerType == InstallerTypeEnum::Inno ||
+            installerType == InstallerTypeEnum::Nullsoft ||
+            installerType == InstallerTypeEnum::Exe;
+    }
+
     bool IsArchiveType(InstallerTypeEnum installerType)
     {
         return (installerType == InstallerTypeEnum::Zip);
@@ -952,14 +1016,35 @@ namespace AppInstaller::Manifest
         case InstallerTypeEnum::Inno:
             return
             {
-                {InstallerSwitchType::Silent, ManifestInstaller::string_t("/VERYSILENT /NORESTART")},
-                {InstallerSwitchType::SilentWithProgress, ManifestInstaller::string_t("/SILENT /NORESTART")},
+                {InstallerSwitchType::Silent, ManifestInstaller::string_t("/SP- /VERYSILENT /SUPPRESSMSGBOXES /NORESTART")},
+                {InstallerSwitchType::SilentWithProgress, ManifestInstaller::string_t("/SP- /SILENT /SUPPRESSMSGBOXES /NORESTART")},
                 {InstallerSwitchType::Log, ManifestInstaller::string_t("/LOG=\"" + std::string(ARG_TOKEN_LOGPATH) + "\"")},
                 {InstallerSwitchType::InstallLocation, ManifestInstaller::string_t("/DIR=\"" + std::string(ARG_TOKEN_INSTALLPATH) + "\"")}
             };
         default:
             return {};
         }
+    }
+
+    RepairBehaviorEnum ConvertToRepairBehaviorEnum(std::string_view in)
+    {
+        std::string inStrLower = Utility::ToLower(in);
+        RepairBehaviorEnum result = RepairBehaviorEnum::Unknown;
+
+        if (inStrLower == "installer")
+        {
+            result = RepairBehaviorEnum::Installer;
+        }
+        else if (inStrLower == "uninstaller")
+        {
+            result = RepairBehaviorEnum::Uninstaller;
+        }
+        else if (inStrLower == "modify")
+        {
+            result = RepairBehaviorEnum::Modify;
+        }
+
+        return result;
     }
 
     std::map<DWORD, ExpectedReturnCodeEnum> GetDefaultKnownReturnCodes(InstallerTypeEnum installerType)

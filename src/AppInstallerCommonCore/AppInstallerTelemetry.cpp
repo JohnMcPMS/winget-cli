@@ -6,8 +6,8 @@
 #include "Public/AppInstallerRuntime.h"
 #include "Public/AppInstallerSHA256.h"
 #include "Public/AppInstallerStrings.h"
-#include "winget/UserSettings.h"
 #include "Public/winget/ThreadGlobals.h"
+#include "winget/UserSettings.h"
 
 #define AICLI_TraceLoggingStringView(_sv_,_name_) TraceLoggingCountedUtf8String(_sv_.data(), static_cast<ULONG>(_sv_.size()), _name_)
 #define AICLI_TraceLoggingWStringView(_sv_,_name_) TraceLoggingCountedWideString(_sv_.data(), static_cast<ULONG>(_sv_.size()), _name_)
@@ -546,8 +546,12 @@ namespace AppInstaller::Logging
         std::string_view channel,
         const std::vector<uint8_t>& expected,
         const std::vector<uint8_t>& actual,
-        bool overrideHashMismatch) const noexcept
+        bool overrideHashMismatch,
+        uint64_t downloadSizeInBytes,
+        const std::optional<std::string>& contentType) const noexcept
     {
+        std::string actualContentType = contentType.value_or(std::string{});
+
         if (IsTelemetryEnabled())
         {
             AICLI_TraceLoggingWriteActivity(
@@ -559,6 +563,8 @@ namespace AppInstaller::Logging
                 TraceLoggingBinary(expected.data(), static_cast<ULONG>(expected.size()), "Expected"),
                 TraceLoggingBinary(actual.data(), static_cast<ULONG>(actual.size()), "Actual"),
                 TraceLoggingBool(overrideHashMismatch, "Override"),
+                TraceLoggingUInt64(downloadSizeInBytes, "ActualSize"),
+                AICLI_TraceLoggingStringView(actualContentType, "ContentType"),
                 TelemetryPrivacyDataTag(PDT_ProductAndServicePerformance),
                 TraceLoggingKeyword(MICROSOFT_KEYWORD_CRITICAL_DATA));
 
@@ -570,6 +576,8 @@ namespace AppInstaller::Logging
                 m_summary.HashMismatchExpected = expected;
                 m_summary.HashMismatchActual = actual;
                 m_summary.HashMismatchOverride = overrideHashMismatch;
+                m_summary.HashMismatchActualSize = downloadSizeInBytes;
+                m_summary.HashMismatchContentType = actualContentType;
             }
         }
 
@@ -578,7 +586,7 @@ namespace AppInstaller::Logging
             << Utility::SHA256::ConvertToString(expected)
             << "] does not match download ["
             << Utility::SHA256::ConvertToString(actual)
-            << ']');
+            << "] with file size [" << downloadSizeInBytes << "] and content type [" << actualContentType << "]");
     }
 
     void TelemetryTraceLogger::LogInstallerFailure(std::string_view id, std::string_view version, std::string_view channel, std::string_view type, uint32_t errorCode) const noexcept
@@ -725,6 +733,33 @@ namespace AppInstaller::Logging
         }
     }
 
+    void TelemetryTraceLogger::LogRepairFailure(std::string_view id, std::string_view version, std::string_view type, uint32_t errorCode) const noexcept
+    {
+        if (IsTelemetryEnabled())
+        {
+            AICLI_TraceLoggingWriteActivity(
+                "RepairFailure",
+                TraceLoggingUInt32(m_subExecutionId, "SubExecutionId"),
+                AICLI_TraceLoggingStringView(id, "Id"),
+                AICLI_TraceLoggingStringView(version, "Version"),
+                AICLI_TraceLoggingStringView(type, "Type"),
+                TraceLoggingUInt32(errorCode, "ErrorCode"),
+                TelemetryPrivacyDataTag(PDT_ProductAndServicePerformance),
+                TraceLoggingKeyword(MICROSOFT_KEYWORD_CRITICAL_DATA));
+
+            if (m_useSummary)
+            {
+                m_summary.PackageIdentifier = id;
+                m_summary.PackageVersion = version;
+                m_summary.RepairExecutionType = type;
+                m_summary.RepairErrorCode = errorCode;
+            
+            }
+        }
+
+        AICLI_LOG(CLI, Error, << type << " repair failed: " << errorCode);
+    }
+
     TelemetryTraceLogger::~TelemetryTraceLogger()
     {
         if (IsTelemetryEnabled())
@@ -785,6 +820,8 @@ namespace AppInstaller::Logging
                     TraceLoggingBinary(m_summary.HashMismatchExpected.data(), static_cast<ULONG>(m_summary.HashMismatchExpected.size()), "HashMismatchExpected"),
                     TraceLoggingBinary(m_summary.HashMismatchActual.data(), static_cast<ULONG>(m_summary.HashMismatchActual.size()), "HashMismatchActual"),
                     TraceLoggingBool(m_summary.HashMismatchOverride, "HashMismatchOverride"),
+                    TraceLoggingUInt64(m_summary.HashMismatchActualSize, "HashMismatchActualSize"),
+                    AICLI_TraceLoggingStringView(m_summary.HashMismatchContentType, "HashMismatchContentType"),
                     AICLI_TraceLoggingStringView(m_summary.InstallerExecutionType, "InstallerExecutionType"),
                     TraceLoggingUInt32(m_summary.InstallerErrorCode, "InstallerErrorCode"),
                     AICLI_TraceLoggingStringView(m_summary.UninstallerExecutionType, "UninstallerExecutionType"),
@@ -798,6 +835,8 @@ namespace AppInstaller::Logging
                     AICLI_TraceLoggingStringView(m_summary.ARPPublisher, "ARPPublisher"),
                     AICLI_TraceLoggingStringView(m_summary.DOUrl, "DOUrl"),
                     TraceLoggingHResult(m_summary.DOHResult, "DOHResult"),
+                    AICLI_TraceLoggingStringView(m_summary.RepairExecutionType, "RepairExecutionType"),
+                    TraceLoggingUInt32(m_summary.RepairErrorCode, "RepairErrorCode"),
                     TelemetryPrivacyDataTag(PDT_ProductAndServicePerformance | PDT_ProductAndServiceUsage | PDT_SoftwareSetupAndInventory),
                     TraceLoggingKeyword(MICROSOFT_KEYWORD_MEASURES));
             }

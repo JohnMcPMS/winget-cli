@@ -1,14 +1,17 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 #pragma once
+#include <AppInstallerLanguageUtilities.h>
 #include <AppInstallerLogging.h>
 #include <AppInstallerProgress.h>
 #include <AppxPackaging.h>
 #include <winget/UserSettings.h>
+#include <winget/ExperimentalFeature.h>
 #include <wil/result.h>
 
 #include <filesystem>
 #include <functional>
+#include <memory>
 #include <string>
 
 #define REQUIRE_THROWS_HR(_expr_, _hr_)     REQUIRE_THROWS_MATCHES(_expr_, wil::ResultException, ::TestCommon::ResultExceptionHRMatcher(_hr_))
@@ -22,18 +25,20 @@ namespace TestCommon
         ShellExecuteOnFailure,
     };
 
+    struct KeepTempFile {};
+
     // Use this to create a temporary file for testing.
     struct TempFile
     {
-        TempFile(const std::string& baseName, const std::string& baseExt, bool deleteFileOnConstruction = true);
-        TempFile(const std::filesystem::path& parent, const std::string& baseName, const std::string& baseExt, bool deleteFileOnConstruction = true);
-        TempFile(const std::filesystem::path& filePath, bool deleteFileOnConstruction = true);
+        TempFile(const std::string& baseName, const std::string& baseExt, std::optional<KeepTempFile> keepTempFile = {});
+        TempFile(const std::filesystem::path& parent, const std::string& baseName, const std::string& baseExt, std::optional<KeepTempFile> keepTempFile = {});
+        TempFile(const std::filesystem::path& filePath, std::optional<KeepTempFile> keepTempFile = {});
 
         TempFile(const TempFile&) = delete;
         TempFile& operator=(const TempFile&) = delete;
 
-        TempFile(TempFile&&) = delete;
-        TempFile& operator=(TempFile&&) = delete;
+        TempFile(TempFile&&) = default;
+        TempFile& operator=(TempFile&&) = default;
 
         ~TempFile();
 
@@ -43,6 +48,8 @@ namespace TestCommon
 
         void Rename(const std::filesystem::path& newFilePath);
 
+        void Release();
+
         static void SetDestructorBehavior(TempFileDestructionBehavior behavior);
 
         static void SetTestFailed(bool failed);
@@ -50,6 +57,7 @@ namespace TestCommon
     protected:
         TempFile() = default;
         std::filesystem::path _filepath;
+        AppInstaller::DestructionToken m_destructionToken{ true };
     };
 
     // Use to create a temporary directory for testing.
@@ -139,6 +147,8 @@ namespace TestCommon
         {
             m_settings[S].emplace<AppInstaller::Settings::details::SettingIndex(S)>(std::move(value));
         }
+
+        static std::unique_ptr<TestUserSettings> EnableExperimentalFeature(AppInstaller::Settings::ExperimentalFeature::Feature feature, bool keepFileSettings = false);
     };
 
     // Below cert installation/uninstallation methods require admin privilege,

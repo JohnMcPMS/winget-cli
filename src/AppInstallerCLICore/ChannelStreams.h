@@ -36,6 +36,8 @@ namespace AppInstaller::CLI::Execution
 
         void Disable();
 
+        std::ostream& Get();
+
     private:
         template <typename T>
         void Write(const T& t, bool bypass)
@@ -59,6 +61,9 @@ namespace AppInstaller::CLI::Execution
 
         // Adds a format to the current value.
         void AddFormat(const VirtualTerminal::Sequence& sequence);
+
+        // Clears the current format value.
+        void ClearFormat();
 
         template <typename T>
         OutputStream& operator<<(const T& t)
@@ -93,6 +98,10 @@ namespace AppInstaller::CLI::Execution
         OutputStream& operator<<(const VirtualTerminal::Sequence& sequence);
         OutputStream& operator<<(const VirtualTerminal::ConstructedSequence& sequence);
         OutputStream& operator<<(const std::filesystem::path& path);
+
+        inline bool IsEnabled() {
+            return m_enabled;
+        }
 
     private:
         // Applies the format for the stream.

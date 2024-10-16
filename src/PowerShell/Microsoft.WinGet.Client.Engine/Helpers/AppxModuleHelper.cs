@@ -1,4 +1,4 @@
-﻿// -----------------------------------------------------------------------------
+// -----------------------------------------------------------------------------
 // <copyright file="AppxModuleHelper.cs" company="Microsoft Corporation">
 //     Copyright (c) Microsoft Corporation. Licensed under the MIT License.
 // </copyright>
@@ -17,6 +17,7 @@ namespace Microsoft.WinGet.Client.Engine.Helpers
     using Microsoft.WinGet.Client.Engine.Extensions;
     using Microsoft.WinGet.Common.Command;
     using Octokit;
+    using Semver;
     using static Microsoft.WinGet.Client.Engine.Common.Constants;
 
     /// <summary>
@@ -58,6 +59,7 @@ namespace Microsoft.WinGet.Client.Engine.Helpers
         private const string AppInstallerName = "Microsoft.DesktopAppInstaller";
         private const string AppxManifest = "AppxManifest.xml";
         private const string PackageFullName = "PackageFullName";
+        private const string Version = "Version";
 
         // Assets
         private const string MsixBundleName = "Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle";
@@ -73,12 +75,12 @@ namespace Microsoft.WinGet.Client.Engine.Helpers
         private const string VCLibsUWPDesktopArm64 = "https://aka.ms/Microsoft.VCLibs.arm64.14.00.Desktop.appx";
 
         // Xaml
+        private const string XamlPackage28 = "Microsoft.UI.Xaml.2.8";
+        private const string XamlReleaseTag286 = "v2.8.6";
+        private const string MinimumWinGetReleaseTagForXaml28 = "v1.7.10514";
+
         private const string XamlPackage27 = "Microsoft.UI.Xaml.2.7";
         private const string XamlReleaseTag273 = "v2.7.3";
-        private const string XamlAssetX64 = "Microsoft.UI.Xaml.2.7.x64.appx";
-        private const string XamlAssetX86 = "Microsoft.UI.Xaml.2.7.x86.appx";
-        private const string XamlAssetArm = "Microsoft.UI.Xaml.2.7.arm.appx";
-        private const string XamlAssetArm64 = "Microsoft.UI.Xaml.2.7.arm64.appx";
 
         private readonly PowerShellCmdlet pwshCmdlet;
         private readonly HttpClientHelper httpClientHelper;
@@ -126,8 +128,35 @@ namespace Microsoft.WinGet.Client.Engine.Helpers
         /// <summary>
         /// Calls Add-AppxPackage to register with AppInstaller's AppxManifest.xml.
         /// </summary>
-        public void RegisterAppInstaller()
+        /// <param name="releaseTag">Release tag of GitHub release.</param>
+        public void RegisterAppInstaller(string releaseTag)
         {
+            if (string.IsNullOrEmpty(releaseTag))
+            {
+                string? versionFromLocalPackage = this.GetAppInstallerPropertyValue(Version);
+
+                if (versionFromLocalPackage == null)
+                {
+                    throw new ArgumentNullException(Version);
+                }
+
+                var packageVersion = new Version(versionFromLocalPackage);
+                if (packageVersion.Major == 1 && packageVersion.Minor > 15)
+                {
+                    releaseTag = $"1.{packageVersion.Minor - 15}.{packageVersion.Build}";
+                }
+                else
+                {
+                    releaseTag = $"{packageVersion.Major}.{packageVersion.Minor}.{packageVersion.Build}";
+                }
+            }
+
+            // Ensure that all dependencies are present when attempting to register.
+            // If dependencies are missing, a provisioned package can appear to only need registration,
+            // but will fail to register. `InstallDependenciesAsync` checks for the packages before
+            // acting, so it should be mostly a no-op if they are already available.
+            this.InstallDependenciesAsync(releaseTag).Wait();
+
             string? packageFullName = this.GetAppInstallerPropertyValue(PackageFullName);
 
             if (packageFullName == null)
@@ -163,7 +192,7 @@ namespace Microsoft.WinGet.Client.Engine.Helpers
         /// <returns>A <see cref="Task"/> representing the asynchronous operation.</returns>
         public async Task InstallFromGitHubReleaseAsync(string releaseTag, bool allUsers, bool isDowngrade, bool force)
         {
-            await this.InstallDependenciesAsync();
+            await this.InstallDependenciesAsync(releaseTag);
 
             if (isDowngrade)
             {
@@ -185,6 +214,25 @@ namespace Microsoft.WinGet.Client.Engine.Helpers
                 {
                     await this.AddAppInstallerBundleAsync(releaseTag, false, force);
                 }
+            }
+        }
+
+        /// <summary>
+        /// Gets the Xaml dependency package name and release tag based on the provided WinGet release tag.
+        /// </summary>
+        /// <param name="releaseTag">WinGet release tag.</param>
+        /// <returns>A tuple in the format of (XamlPackageName, XamlReleaseTag).</returns>
+        private static Tuple<string, string> GetXamlDependencyVersionInfo(string releaseTag)
+        {
+            var targetVersion = SemVersion.Parse(releaseTag, SemVersionStyles.AllowLowerV);
+
+            if (targetVersion.CompareSortOrderTo(SemVersion.Parse(MinimumWinGetReleaseTagForXaml28, SemVersionStyles.AllowLowerV)) >= 0)
+            {
+                return Tuple.Create(XamlPackage28, XamlReleaseTag286);
+            }
+            else
+            {
+                return Tuple.Create(XamlPackage27, XamlReleaseTag273);
             }
         }
 
@@ -269,7 +317,7 @@ namespace Microsoft.WinGet.Client.Engine.Helpers
                 .FirstOrDefault();
         }
 
-        private async Task InstallDependenciesAsync()
+        private async Task InstallDependenciesAsync(string releaseTag)
         {
             // A better implementation would use Add-AppxPackage with -DependencyPath, but
             // the Appx module needs to be remoted into Windows PowerShell. When the string[] parameter
@@ -278,7 +326,7 @@ namespace Microsoft.WinGet.Client.Engine.Helpers
             // if we are in Core, then start powershell.exe and run the same command. Right now, we just
             // do Add-AppxPackage for each one.
             await this.InstallVCLibsDependenciesAsync();
-            await this.InstallUiXamlAsync();
+            await this.InstallUiXamlAsync(releaseTag);
         }
 
         private async Task InstallVCLibsDependenciesAsync()
@@ -292,10 +340,32 @@ namespace Microsoft.WinGet.Client.Engine.Helpers
 
             // See if the minimum (or greater) version is installed.
             // TODO: Pull the minimum version from the target package
-            // TODO: This does not check architecture of the package
             Version minimumVersion = new Version(VCLibsUWPDesktopVersion);
 
-            bool isInstalled = false;
+            // Construct the list of frameworks that we want present.
+            Dictionary<string, string> vcLibsDependencies = new Dictionary<string, string>();
+            var arch = RuntimeInformation.OSArchitecture;
+            if (arch == Architecture.X64)
+            {
+                vcLibsDependencies.Add("x64", VCLibsUWPDesktopX64);
+            }
+            else if (arch == Architecture.X86)
+            {
+                vcLibsDependencies.Add("x86", VCLibsUWPDesktopX86);
+            }
+            else if (arch == Architecture.Arm64)
+            {
+                // Deployment please figure out for me.
+                vcLibsDependencies.Add("x64", VCLibsUWPDesktopX64);
+                vcLibsDependencies.Add("x86", VCLibsUWPDesktopX86);
+                vcLibsDependencies.Add("arm", VCLibsUWPDesktopArm);
+                vcLibsDependencies.Add("arm64", VCLibsUWPDesktopArm64);
+            }
+            else
+            {
+                throw new PSNotSupportedException(arch.ToString());
+            }
+
             if (result != null &&
                 result.Count > 0)
             {
@@ -311,42 +381,35 @@ namespace Microsoft.WinGet.Client.Engine.Helpers
 
                     if (packageVersion >= minimumVersion)
                     {
-                        this.pwshCmdlet.Write(StreamType.Verbose, $"VCLibs dependency satisfied by: {psobject?.PackageFullName ?? "<null>"}");
-                        isInstalled = true;
-                        break;
+                        string? architectureString = psobject?.Architecture?.ToString();
+                        if (architectureString == null)
+                        {
+                            this.pwshCmdlet.Write(StreamType.Verbose, $"VCLibs dependency has no architecture value: {psobject?.PackageFullName ?? "<null>"}");
+                            continue;
+                        }
+
+                        architectureString = architectureString.ToLower();
+
+                        if (vcLibsDependencies.ContainsKey(architectureString))
+                        {
+                            this.pwshCmdlet.Write(StreamType.Verbose, $"VCLibs {architectureString} dependency satisfied by: {psobject?.PackageFullName ?? "<null>"}");
+                            vcLibsDependencies.Remove(architectureString);
+                        }
+                    }
+                    else
+                    {
+                        this.pwshCmdlet.Write(StreamType.Verbose, $"VCLibs is lower than minimum required version [{minimumVersion}]: {psobject?.PackageFullName ?? "<null>"}");
                     }
                 }
             }
 
-            if (!isInstalled)
+            if (vcLibsDependencies.Count != 0)
             {
-                this.pwshCmdlet.Write(StreamType.Verbose, "Couldn't find required VCLibs package");
+                this.pwshCmdlet.Write(StreamType.Verbose, "Couldn't find required VCLibs packages");
 
-                var vcLibsDependencies = new List<string>();
-                var arch = RuntimeInformation.OSArchitecture;
-                if (arch == Architecture.X64)
+                foreach (var vclibPair in vcLibsDependencies)
                 {
-                    vcLibsDependencies.Add(VCLibsUWPDesktopX64);
-                }
-                else if (arch == Architecture.X86)
-                {
-                    vcLibsDependencies.Add(VCLibsUWPDesktopX86);
-                }
-                else if (arch == Architecture.Arm64)
-                {
-                    // Deployment please figure out for me.
-                    vcLibsDependencies.Add(VCLibsUWPDesktopX64);
-                    vcLibsDependencies.Add(VCLibsUWPDesktopX86);
-                    vcLibsDependencies.Add(VCLibsUWPDesktopArm);
-                    vcLibsDependencies.Add(VCLibsUWPDesktopArm64);
-                }
-                else
-                {
-                    throw new PSNotSupportedException(arch.ToString());
-                }
-
-                foreach (var vclib in vcLibsDependencies)
-                {
+                    string vclib = vclibPair.Value;
                     await this.AddAppxPackageAsUriAsync(vclib, vclib.Substring(vclib.LastIndexOf('/') + 1));
                 }
             }
@@ -356,32 +419,38 @@ namespace Microsoft.WinGet.Client.Engine.Helpers
             }
         }
 
-        private async Task InstallUiXamlAsync()
+        private async Task InstallUiXamlAsync(string releaseTag)
         {
-            var uiXamlObjs = this.GetAppxObject(XamlPackage27);
+            (string xamlPackageName, string xamlReleaseTag) = GetXamlDependencyVersionInfo(releaseTag);
+            string xamlAssetX64 = string.Format("{0}.x64.appx", xamlPackageName);
+            string xamlAssetX86 = string.Format("{0}.x86.appx", xamlPackageName);
+            string xamlAssetArm = string.Format("{0}.arm.appx", xamlPackageName);
+            string xamlAssetArm64 = string.Format("{0}.arm64.appx", xamlPackageName);
+
+            var uiXamlObjs = this.GetAppxObject(xamlPackageName);
             if (uiXamlObjs is null)
             {
                 var githubRelease = new GitHubClient(RepositoryOwner.Microsoft, RepositoryName.UiXaml);
 
-                var xamlRelease = await githubRelease.GetReleaseAsync(XamlReleaseTag273);
+                var xamlRelease = await githubRelease.GetReleaseAsync(xamlReleaseTag);
 
                 var packagesToInstall = new List<ReleaseAsset>();
                 var arch = RuntimeInformation.OSArchitecture;
                 if (arch == Architecture.X64)
                 {
-                    packagesToInstall.Add(xamlRelease.GetAsset(XamlAssetX64));
+                    packagesToInstall.Add(xamlRelease.GetAsset(xamlAssetX64));
                 }
                 else if (arch == Architecture.X86)
                 {
-                    packagesToInstall.Add(xamlRelease.GetAsset(XamlAssetX86));
+                    packagesToInstall.Add(xamlRelease.GetAsset(xamlAssetX86));
                 }
                 else if (arch == Architecture.Arm64)
                 {
                     // Deployment please figure out for me.
-                    packagesToInstall.Add(xamlRelease.GetAsset(XamlAssetX64));
-                    packagesToInstall.Add(xamlRelease.GetAsset(XamlAssetX86));
-                    packagesToInstall.Add(xamlRelease.GetAsset(XamlAssetArm));
-                    packagesToInstall.Add(xamlRelease.GetAsset(XamlAssetArm64));
+                    packagesToInstall.Add(xamlRelease.GetAsset(xamlAssetX64));
+                    packagesToInstall.Add(xamlRelease.GetAsset(xamlAssetX86));
+                    packagesToInstall.Add(xamlRelease.GetAsset(xamlAssetArm));
+                    packagesToInstall.Add(xamlRelease.GetAsset(xamlAssetArm64));
                 }
                 else
                 {
