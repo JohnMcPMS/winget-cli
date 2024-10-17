@@ -235,9 +235,9 @@
       <DisableSpecificWarnings Condition="'$(Configuration)|$(Platform)'=='Debug|ARM'">28251</DisableSpecificWarnings>
       <DisableSpecificWarnings Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">28251</DisableSpecificWarnings>
       <DisableSpecificWarnings Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">28251</DisableSpecificWarnings>
-      <ForcedIncludeFiles Condition="'$(Configuration)|$(Platform)'=='Debug|ARM'">Microsoft.Management.Configuration_h.h;%(ForcedIncludeFiles)</ForcedIncludeFiles>
-      <ForcedIncludeFiles Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">Microsoft.Management.Configuration_h.h;%(ForcedIncludeFiles)</ForcedIncludeFiles>
-      <ForcedIncludeFiles Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Microsoft.Management.Configuration_h.h;%(ForcedIncludeFiles)</ForcedIncludeFiles>
+      <ForcedIncludeFiles Condition="'$(Configuration)|$(Platform)'=='Debug|ARM'">Microsoft.Management.Deployment_h.h;%(ForcedIncludeFiles)</ForcedIncludeFiles>
+      <ForcedIncludeFiles Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">Microsoft.Management.Deployment_h.h;%(ForcedIncludeFiles)</ForcedIncludeFiles>
+      <ForcedIncludeFiles Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Microsoft.Management.Deployment_h.h;%(ForcedIncludeFiles)</ForcedIncludeFiles>
     </ClCompile>
     <Link>
       <GenerateWindowsMetadata>false</GenerateWindowsMetadata>
@@ -300,7 +300,7 @@
       <EnablePREfast Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</EnablePREfast>
       <RuntimeTypeInfo Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">false</RuntimeTypeInfo>
       <DisableSpecificWarnings Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">28251</DisableSpecificWarnings>
-      <ForcedIncludeFiles Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Microsoft.Management.Configuration_h.h;%(ForcedIncludeFiles)</ForcedIncludeFiles>
+      <ForcedIncludeFiles Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Microsoft.Management.Deployment_h.h;%(ForcedIncludeFiles)</ForcedIncludeFiles>
     </ClCompile>
     <Manifest>
       <AdditionalManifestFiles Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">$(ProjectDir)..\manifest\shared.manifest %(AdditionalManifestFiles)</AdditionalManifestFiles>
@@ -352,10 +352,10 @@
       <DisableSpecificWarnings Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">28251</DisableSpecificWarnings>
       <DisableSpecificWarnings Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">28251</DisableSpecificWarnings>
       <DisableSpecificWarnings Condition="'$(Configuration)|$(Platform)'=='Release|x64'">28251</DisableSpecificWarnings>
-      <ForcedIncludeFiles Condition="'$(Configuration)|$(Platform)'=='Release|ARM'">Microsoft.Management.Configuration_h.h;%(ForcedIncludeFiles)</ForcedIncludeFiles>
-      <ForcedIncludeFiles Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">Microsoft.Management.Configuration_h.h;%(ForcedIncludeFiles)</ForcedIncludeFiles>
-      <ForcedIncludeFiles Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Microsoft.Management.Configuration_h.h;%(ForcedIncludeFiles)</ForcedIncludeFiles>
-      <ForcedIncludeFiles Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Microsoft.Management.Configuration_h.h;%(ForcedIncludeFiles)</ForcedIncludeFiles>
+      <ForcedIncludeFiles Condition="'$(Configuration)|$(Platform)'=='Release|ARM'">Microsoft.Management.Deployment_h.h;%(ForcedIncludeFiles)</ForcedIncludeFiles>
+      <ForcedIncludeFiles Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">Microsoft.Management.Deployment_h.h;%(ForcedIncludeFiles)</ForcedIncludeFiles>
+      <ForcedIncludeFiles Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Microsoft.Management.Deployment_h.h;%(ForcedIncludeFiles)</ForcedIncludeFiles>
+      <ForcedIncludeFiles Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Microsoft.Management.Deployment_h.h;%(ForcedIncludeFiles)</ForcedIncludeFiles>
     </ClCompile>
     <Link>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
@@ -465,10 +465,10 @@
       <DisableSpecificWarnings Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|ARM64'">28251</DisableSpecificWarnings>
       <DisableSpecificWarnings Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|Win32'">28251</DisableSpecificWarnings>
       <DisableSpecificWarnings Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|x64'">28251</DisableSpecificWarnings>
-      <ForcedIncludeFiles Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|ARM'">Microsoft.Management.Configuration_h.h;%(ForcedIncludeFiles)</ForcedIncludeFiles>
-      <ForcedIncludeFiles Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|ARM64'">Microsoft.Management.Configuration_h.h;%(ForcedIncludeFiles)</ForcedIncludeFiles>
-      <ForcedIncludeFiles Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|Win32'">Microsoft.Management.Configuration_h.h;%(ForcedIncludeFiles)</ForcedIncludeFiles>
-      <ForcedIncludeFiles Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|x64'">Microsoft.Management.Configuration_h.h;%(ForcedIncludeFiles)</ForcedIncludeFiles>
+      <ForcedIncludeFiles Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|ARM'">Microsoft.Management.Deployment_h.h;%(ForcedIncludeFiles)</ForcedIncludeFiles>
+      <ForcedIncludeFiles Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|ARM64'">Microsoft.Management.Deployment_h.h;%(ForcedIncludeFiles)</ForcedIncludeFiles>
+      <ForcedIncludeFiles Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|Win32'">Microsoft.Management.Deployment_h.h;%(ForcedIncludeFiles)</ForcedIncludeFiles>
+      <ForcedIncludeFiles Condition="'$(Configuration)|$(Platform)'=='ReleaseStatic|x64'">Microsoft.Management.Deployment_h.h;%(ForcedIncludeFiles)</ForcedIncludeFiles>
     </ClCompile>
     <Link>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
