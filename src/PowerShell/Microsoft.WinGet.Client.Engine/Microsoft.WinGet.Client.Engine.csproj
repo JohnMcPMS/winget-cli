@@ -97,6 +97,7 @@
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(TargetFramework)' == '$(DesktopFramework)'">
+    <LangVersion>10</LangVersion>
     <DefineConstants>$(DefineConstants);POWERSHELL_WINDOWS</DefineConstants>
   </PropertyGroup>
 
