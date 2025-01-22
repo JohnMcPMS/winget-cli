@@ -235,34 +235,41 @@ namespace AppInstaller::Settings
 
         WINGET_VALIDATE_SIGNATURE(ProgressBarVisualStyle)
         {
-            // progressBar property possible values
-            static constexpr std::string_view s_progressBar_Accent = "accent";
-            static constexpr std::string_view s_progressBar_Rainbow = "rainbow";
-            static constexpr std::string_view s_progressBar_Retro = "retro";
+            std::string lowerValue = ToLower(value);
 
-            if (Utility::CaseInsensitiveEquals(value, s_progressBar_Accent))
+            if (value == "accent")
             {
                 return VisualStyle::Accent;
             }
-            else if (Utility::CaseInsensitiveEquals(value, s_progressBar_Rainbow))
+            else if (value == "rainbow")
             {
                 return VisualStyle::Rainbow;
             }
-            else if (Utility::CaseInsensitiveEquals(value, s_progressBar_Retro))
+            else if (value == "retro")
             {
                 return VisualStyle::Retro;
+            }
+            else if (value == "sixel")
+            {
+                return VisualStyle::Sixel;
+            }
+            else if (value == "disabled")
+            {
+                return VisualStyle::Disabled;
             }
 
             return {};
         }
 
+        WINGET_VALIDATE_PASS_THROUGH(EnableSixelDisplay)
         WINGET_VALIDATE_PASS_THROUGH(EFExperimentalCmd)
         WINGET_VALIDATE_PASS_THROUGH(EFExperimentalArg)
         WINGET_VALIDATE_PASS_THROUGH(EFDirectMSI)
-        WINGET_VALIDATE_PASS_THROUGH(EFWindowsFeature)
         WINGET_VALIDATE_PASS_THROUGH(EFResume)
         WINGET_VALIDATE_PASS_THROUGH(EFConfiguration03)
-        WINGET_VALIDATE_PASS_THROUGH(EFReboot)
+        WINGET_VALIDATE_PASS_THROUGH(EFConfigureSelfElevation)
+        WINGET_VALIDATE_PASS_THROUGH(EFConfigureExport)
+        WINGET_VALIDATE_PASS_THROUGH(EFFonts)
         WINGET_VALIDATE_PASS_THROUGH(AnonymizePathForDisplay)
         WINGET_VALIDATE_PASS_THROUGH(TelemetryDisable)
         WINGET_VALIDATE_PASS_THROUGH(InteractivityDisable)
@@ -270,6 +277,7 @@ namespace AppInstaller::Settings
         WINGET_VALIDATE_PASS_THROUGH(DisableInstallNotes)
         WINGET_VALIDATE_PASS_THROUGH(UninstallPurgePortablePackage)
         WINGET_VALIDATE_PASS_THROUGH(NetworkWingetAlternateSourceURL)
+        WINGET_VALIDATE_PASS_THROUGH(MaxResumes)
 
 #ifndef AICLI_DISABLE_TEST_HOOKS
         WINGET_VALIDATE_PASS_THROUGH(EnableSelfInitiatedMinidump)
@@ -284,6 +292,23 @@ namespace AppInstaller::Settings
         WINGET_VALIDATE_SIGNATURE(PortablePackageMachineRoot)
         {
             return ValidatePathValue(value);
+        }
+
+        WINGET_VALIDATE_SIGNATURE(ArchiveExtractionMethod)
+        {
+            static constexpr std::string_view s_archiveExtractionMethod_shellApi = "shellApi";
+            static constexpr std::string_view s_archiveExtractionMethod_tar = "tar";
+
+            if (Utility::CaseInsensitiveEquals(value, s_archiveExtractionMethod_tar))
+            {
+                return Archive::ExtractionMethod::Tar;
+            }
+            else if (Utility::CaseInsensitiveEquals(value, s_archiveExtractionMethod_shellApi))
+            {
+                return Archive::ExtractionMethod::ShellApi;
+            }
+
+            return {};
         }
 
         WINGET_VALIDATE_SIGNATURE(InstallArchitecturePreference)
@@ -376,6 +401,11 @@ namespace AppInstaller::Settings
             return ValidatePathValue(value);
         }
 
+        WINGET_VALIDATE_SIGNATURE(ConfigureDefaultModuleRoot)
+        {
+            return ValidatePathValue(value);
+        }
+
         WINGET_VALIDATE_SIGNATURE(NetworkDownloader)
         {
             static constexpr std::string_view s_downloader_default = "default";
@@ -433,6 +463,18 @@ namespace AppInstaller::Settings
                 return Level::Crit;
             }
             return {};
+        }
+
+        WINGET_VALIDATE_SIGNATURE(LoggingChannelPreference)
+        {
+            Logging::Channel result = Logging::Channel::None;
+
+            for (auto const& entry : value)
+            {
+                result |= GetChannelFromName(entry);
+            }
+
+            return result;
         }
     }
 

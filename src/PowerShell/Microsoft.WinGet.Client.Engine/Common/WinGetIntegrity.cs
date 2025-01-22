@@ -1,4 +1,4 @@
-﻿// -----------------------------------------------------------------------------
+// -----------------------------------------------------------------------------
 // <copyright file="WinGetIntegrity.cs" company="Microsoft Corporation">
 //     Copyright (c) Microsoft Corporation. Licensed under the MIT License.
 // </copyright>
@@ -44,7 +44,7 @@ namespace Microsoft.WinGet.Client.Engine.Common
                 // Start by calling winget without its WindowsApp PFN path.
                 // If it succeeds and the exit code is 0 then we are good.
                 var wingetCliWrapper = new WingetCLIWrapper(false);
-                var result = wingetCliWrapper.RunCommand("--version");
+                var result = wingetCliWrapper.RunCommand(pwshCmdlet, "--version");
                 result.VerifyExitCode();
             }
             catch (Win32Exception e)
@@ -68,7 +68,7 @@ namespace Microsoft.WinGet.Client.Engine.Common
             {
                 // This assumes caller knows that the version exist.
                 WinGetVersion expectedWinGetVersion = new WinGetVersion(expectedVersion);
-                var installedVersion = WinGetVersion.InstalledWinGetVersion;
+                var installedVersion = WinGetVersion.InstalledWinGetVersion(pwshCmdlet);
                 if (expectedWinGetVersion.CompareTo(installedVersion) != 0)
                 {
                     throw new WinGetIntegrityException(
@@ -84,24 +84,32 @@ namespace Microsoft.WinGet.Client.Engine.Common
         private static IntegrityCategory GetReason(PowerShellCmdlet pwshCmdlet)
         {
             // Ok, so you are here because calling winget --version failed. Lets try to figure out why.
+            var category = IntegrityCategory.Unknown;
+            pwshCmdlet.ExecuteInPowerShellThread(() =>
+            {
+                // When running winget.exe on PowerShell the message of the Win32Exception will distinguish between
+                // 'The system cannot find the file specified' and 'No applicable app licenses found' but of course
+                // the HRESULT is the same (E_FAIL).
+                // To not compare strings let Powershell handle it. If calling winget throws an
+                // ApplicationFailedException then is most likely that the license is not there.
+                try
+                {
+                    var ps = PowerShell.Create(RunspaceMode.CurrentRunspace);
+                    ps.AddCommand("winget").Invoke();
+                }
+                catch (ApplicationFailedException e)
+                {
+                    pwshCmdlet.Write(StreamType.Verbose, e.Message);
+                    category = IntegrityCategory.AppInstallerNoLicense;
+                }
+                catch (Exception)
+                {
+                }
+            });
 
-            // When running winget.exe on PowerShell the message of the Win32Exception will distinguish between
-            // 'The system cannot find the file specified' and 'No applicable app licenses found' but of course
-            // the HRESULT is the same (E_FAIL).
-            // To not compare strings let Powershell handle it. If calling winget throws an
-            // ApplicationFailedException then is most likely that the license is not there.
-            try
+            if (category != IntegrityCategory.Unknown)
             {
-                var ps = PowerShell.Create(RunspaceMode.CurrentRunspace);
-                ps.AddCommand("winget").Invoke();
-            }
-            catch (ApplicationFailedException e)
-            {
-                pwshCmdlet.Write(StreamType.Verbose, e.Message);
-                return IntegrityCategory.AppInstallerNoLicense;
-            }
-            catch (Exception)
-            {
+                return category;
             }
 
             // First lets check if the file is there, which means it is installed or someone is taking our place.
@@ -127,7 +135,7 @@ namespace Microsoft.WinGet.Client.Engine.Common
                 }
             }
 
-            // Not under %LOCALAPPDATA%\\Microsoft\\WindowsApps\PFM\
+            // Not under %LOCALAPPDATA%\\Microsoft\\WindowsApps\PFN\
 
             // Check OS version
             if (!IsSupportedOSVersion())

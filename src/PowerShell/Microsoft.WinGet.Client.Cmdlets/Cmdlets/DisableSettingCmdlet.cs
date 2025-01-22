@@ -14,6 +14,7 @@ namespace Microsoft.WinGet.Client.Cmdlets.Cmdlets
     /// Disables an admin setting. Requires admin.
     /// </summary>
     [Cmdlet(VerbsLifecycle.Disable, Constants.WinGetNouns.Setting)]
+    [Alias("dwgs")]
     public sealed class DisableSettingCmdlet : PSCmdlet
     {
         /// <summary>
@@ -24,6 +25,12 @@ namespace Microsoft.WinGet.Client.Cmdlets.Cmdlets
             Mandatory = true,
             ValueFromPipeline = true,
             ValueFromPipelineByPropertyName = true)]
+        [ValidateSet(
+            "LocalManifestFiles",
+            "BypassCertificatePinningForMicrosoftStore",
+            "InstallerHashOverride",
+            "LocalArchiveMalwareScanOverride",
+            "ProxyCommandLineOptions")]
         public string Name { get; set; }
 
         /// <summary>

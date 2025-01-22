@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="UTF-8" ?>
+<?xml version="1.0" encoding="UTF-8" ?>
 <Configuration>
   <ViewDefinitions>
     <View>
@@ -95,6 +95,15 @@
       <TableControl>
         <TableHeaders>
           <TableColumnHeader>
+            <Label>Id</Label>
+          </TableColumnHeader>
+          <TableColumnHeader>
+            <Label>Name</Label>
+          </TableColumnHeader>
+          <TableColumnHeader>
+            <Label>Source</Label>
+          </TableColumnHeader>
+          <TableColumnHeader>
             <Label>InstallerErrorCode</Label>
           </TableColumnHeader>
           <TableColumnHeader>
@@ -113,6 +122,15 @@
         <TableRowEntries>
           <TableRowEntry>
             <TableColumnItems>
+              <TableColumnItem>
+                <ScriptBlock>$_.Id</ScriptBlock>
+              </TableColumnItem>
+              <TableColumnItem>
+                <ScriptBlock>$_.Name</ScriptBlock>
+              </TableColumnItem>
+              <TableColumnItem>
+                <ScriptBlock>$_.Source</ScriptBlock>
+              </TableColumnItem>
               <TableColumnItem>
                 <ScriptBlock>$_.InstallerErrorCode</ScriptBlock>
               </TableColumnItem>
@@ -141,6 +159,15 @@
       <TableControl>
         <TableHeaders>
           <TableColumnHeader>
+            <Label>Id</Label>
+          </TableColumnHeader>
+          <TableColumnHeader>
+            <Label>Name</Label>
+          </TableColumnHeader>
+          <TableColumnHeader>
+            <Label>Source</Label>
+          </TableColumnHeader>
+          <TableColumnHeader>
             <Label>UninstallerErrorCode</Label>
           </TableColumnHeader>
           <TableColumnHeader>
@@ -160,6 +187,15 @@
           <TableRowEntry>
             <TableColumnItems>
               <TableColumnItem>
+                <ScriptBlock>$_.Id</ScriptBlock>
+              </TableColumnItem>
+              <TableColumnItem>
+                <ScriptBlock>$_.Name</ScriptBlock>
+              </TableColumnItem>
+              <TableColumnItem>
+                <ScriptBlock>$_.Source</ScriptBlock>
+              </TableColumnItem>
+              <TableColumnItem>
                 <ScriptBlock>$_.UninstallerErrorCode</ScriptBlock>
               </TableColumnItem>
               <TableColumnItem>
@@ -167,6 +203,58 @@
               </TableColumnItem>
               <TableColumnItem>
                 <ScriptBlock>$_.RebootRequired</ScriptBlock>
+              </TableColumnItem>
+              <TableColumnItem>
+                <ScriptBlock>$_.ExtendedErrorCode</ScriptBlock>
+              </TableColumnItem>
+              <TableColumnItem>
+                <ScriptBlock>$_.CorrelationData</ScriptBlock>
+              </TableColumnItem>                
+            </TableColumnItems>
+          </TableRowEntry>
+        </TableRowEntries>
+      </TableControl>
+    </View>
+    <View>
+      <Name>Microsoft.WinGet.Client.Engine.PSObjects.PSDownloadResult</Name>
+      <ViewSelectedBy>
+        <TypeName>Microsoft.WinGet.Client.Engine.PSObjects.PSDownloadResult</TypeName>
+      </ViewSelectedBy>
+      <TableControl>
+        <TableHeaders>
+          <TableColumnHeader>
+            <Label>Id</Label>
+          </TableColumnHeader>
+          <TableColumnHeader>
+            <Label>Name</Label>
+          </TableColumnHeader>
+          <TableColumnHeader>
+            <Label>Source</Label>
+          </TableColumnHeader>
+          <TableColumnHeader>
+            <Label>Status</Label>
+          </TableColumnHeader>
+          <TableColumnHeader>
+            <Label>ExtendedErrorCode</Label>
+          </TableColumnHeader>
+          <TableColumnHeader>
+            <Label>CorrelationData</Label>
+          </TableColumnHeader>          
+        </TableHeaders>
+        <TableRowEntries>
+          <TableRowEntry>
+            <TableColumnItems>
+              <TableColumnItem>
+                <ScriptBlock>$_.Id</ScriptBlock>
+              </TableColumnItem>
+              <TableColumnItem>
+                <ScriptBlock>$_.Name</ScriptBlock>
+              </TableColumnItem>
+              <TableColumnItem>
+                <ScriptBlock>$_.Source</ScriptBlock>
+              </TableColumnItem>
+              <TableColumnItem>
+                <ScriptBlock>$_.Status</ScriptBlock>
               </TableColumnItem>
               <TableColumnItem>
                 <ScriptBlock>$_.ExtendedErrorCode</ScriptBlock>
@@ -195,6 +283,12 @@
           <TableColumnHeader>
             <Label>Type</Label>
           </TableColumnHeader>
+          <TableColumnHeader>
+            <Label>TrustLevel</Label>
+          </TableColumnHeader>
+          <TableColumnHeader>
+            <Label>Explicit</Label>
+          </TableColumnHeader>          
         </TableHeaders>
         <TableRowEntries>
           <TableRowEntry>
@@ -207,6 +301,12 @@
               </TableColumnItem>
               <TableColumnItem>
                 <ScriptBlock>$_.Type</ScriptBlock>
+              </TableColumnItem>
+              <TableColumnItem>
+                <ScriptBlock>$_.TrustLevel</ScriptBlock>
+              </TableColumnItem>
+              <TableColumnItem>
+                <ScriptBlock>$_.Explicit</ScriptBlock>
               </TableColumnItem>
             </TableColumnItems>
           </TableRowEntry>
@@ -259,7 +359,71 @@
               </TableColumnItem>
               <TableColumnItem>
                 <ScriptBlock>$_.ProductCodes</ScriptBlock>
-              </TableColumnItem>                
+              </TableColumnItem>
+            </TableColumnItems>
+          </TableRowEntry>
+        </TableRowEntries>
+      </TableControl>
+    </View>
+    <View>
+      <Name>Microsoft.WinGet.Client.Engine.PSObjects.PSRepairResult</Name>
+      <ViewSelectedBy>
+        <TypeName>Microsoft.WinGet.Client.Engine.PSObjects.PSRepairResult</TypeName>
+      </ViewSelectedBy>
+      <TableControl>
+        <TableHeaders>
+          <TableColumnHeader>
+            <Label>Id</Label>
+          </TableColumnHeader>
+          <TableColumnHeader>
+            <Label>Name</Label>
+          </TableColumnHeader>
+          <TableColumnHeader>
+            <Label>Source</Label>
+          </TableColumnHeader>
+          <TableColumnHeader>
+            <Label>RepairErrorCode</Label>
+          </TableColumnHeader>
+          <TableColumnHeader>
+            <Label>Status</Label>
+          </TableColumnHeader>
+          <TableColumnHeader>
+            <Label>RebootRequired</Label>
+          </TableColumnHeader>
+          <TableColumnHeader>
+            <Label>ExtendedErrorCode</Label>
+          </TableColumnHeader>
+          <TableColumnHeader>
+            <Label>CorrelationData</Label>
+          </TableColumnHeader>
+        </TableHeaders>
+        <TableRowEntries>
+          <TableRowEntry>
+            <TableColumnItems>
+              <TableColumnItem>
+                <ScriptBlock>$_.Id</ScriptBlock>
+              </TableColumnItem>
+              <TableColumnItem>
+                <ScriptBlock>$_.Name</ScriptBlock>
+              </TableColumnItem>
+              <TableColumnItem>
+                <ScriptBlock>$_.Source</ScriptBlock>
+              </TableColumnItem>
+              <TableColumnItem>
+                <ScriptBlock>$_.RepairErrorCode</ScriptBlock>
+              </TableColumnItem>
+              <TableColumnItem>
+                <ScriptBlock>$_.Status</ScriptBlock>
+              </TableColumnItem>
+              <TableColumnItem>
+                <ScriptBlock>$_.RebootRequired</ScriptBlock>
+              </TableColumnItem>
+              <TableColumnItem>
+                <ScriptBlock>$_.ExtendedErrorCode</ScriptBlock>
+              </TableColumnItem>
+              <TableColumnItem>
+                <ScriptBlock>$_.CorrelationData</ScriptBlock>
+              </TableColumnItem>
             </TableColumnItems>
           </TableRowEntry>
         </TableRowEntries>

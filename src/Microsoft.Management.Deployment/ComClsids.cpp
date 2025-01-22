@@ -13,6 +13,10 @@
 #include "PackageMatchFilter.h"
 #include "PackageManagerSettings.h"
 #include "DownloadOptions.h"
+#include "AuthenticationArguments.h"
+#include "RepairOptions.h"
+#include "AddPackageCatalogOptions.h"
+#include "RemovePackageCatalogOptions.h"
 #pragma warning( pop )
 
 namespace winrt::Microsoft::Management::Deployment
@@ -47,9 +51,25 @@ namespace winrt::Microsoft::Management::Deployment
         {
             return __uuidof(winrt::Microsoft::Management::Deployment::implementation::PackageMatchFilter);
         }
+        else if (IsEqualCLSID(clsid, WINGET_INPROC_COM_CLSID_AuthenticationArguments))
+        {
+            return __uuidof(winrt::Microsoft::Management::Deployment::implementation::AuthenticationArguments);
+        }
         else if (IsEqualCLSID(clsid, WINGET_INPROC_COM_CLSID_PackageManagerSettings))
         {
             return __uuidof(winrt::Microsoft::Management::Deployment::implementation::PackageManagerSettings);
+        }
+        else if (IsEqualCLSID(clsid, WINGET_INPROC_COM_CLSID_RepairOptions))
+        {
+           return __uuidof(winrt::Microsoft::Management::Deployment::implementation::RepairOptions);
+        }
+        else if (IsEqualCLSID(clsid, WINGET_INPROC_COM_CLSID_AddPackageCatalogOptions))
+        {
+            return __uuidof(winrt::Microsoft::Management::Deployment::implementation::AddPackageCatalogOptions);
+        }
+        else if (IsEqualCLSID(clsid, WINGET_INPROC_COM_CLSID_RemovePackageCatalogOptions))
+        {
+            return __uuidof(winrt::Microsoft::Management::Deployment::implementation::RemovePackageCatalogOptions);
         }
         else
         {

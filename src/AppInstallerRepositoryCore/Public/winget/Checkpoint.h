@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 #pragma once
-#include "Microsoft/CheckpointDatabase.h"
+#include <winget/CheckpointDatabase.h>
 #include <guiddef.h>
 
 using namespace AppInstaller::Repository::Microsoft;
@@ -12,12 +12,13 @@ namespace AppInstaller::Checkpoints
     {
         ClientVersion,
         Command,
-        Arguments
+        Arguments,
+        ResumeCount
     };
 
     struct CheckpointManager;
 
-    // A representation of a row in the Checkpoint table. 
+    // A representation of a row in the Checkpoint table.
     template <typename T>
     struct Checkpoint
     {
@@ -51,6 +52,12 @@ namespace AppInstaller::Checkpoints
         void SetMany(T dataType, const std::string& fieldName, const std::vector<std::string>& values)
         {
             m_checkpointDatabase->SetDataValue(m_checkpointId, dataType, fieldName, values);
+        }
+
+        // Update a single existing field value for a data type.
+        void Update(T dataType, const std::string& fieldName, const std::string& value)
+        {
+            m_checkpointDatabase->UpdateDataValue(m_checkpointId, dataType, fieldName, { value });
         }
 
         // Gets a single field value for a data type.

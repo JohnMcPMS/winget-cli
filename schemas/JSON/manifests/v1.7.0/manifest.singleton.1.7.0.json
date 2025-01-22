@@ -73,7 +73,9 @@
       "type": "object",
       "properties": {
         "IconUrl": {
-          "$ref": "#/definitions/Url",
+          "type": "string",
+          "pattern": "^([Hh][Tt][Tt][Pp][Ss]?)://.+$",
+          "maxLength": 2048,
           "description": "The url of the hosted icon file"
         },
         "IconFileType": {
@@ -287,6 +289,12 @@
           "minLength": 1,
           "maxLength": 2048,
           "description": "Custom switches will be passed directly to the installer by winget"
+        },
+        "Repair": {
+          "type": [ "string", "null" ],
+          "minLength": 1,
+          "maxLength": 512,
+          "description": "The 'Repair' value must be passed to the installer, ModifyPath ARP command, or uninstaller ARP command when the user opts for a repair"
         }
       }
     },
@@ -346,7 +354,8 @@
             "$ref": "#/definitions/Url",
             "description": "The return response url to provide additional guidance for expected return codes"
           }
-        }
+        },
+        "required": [ "InstallerReturnCode", "ReturnResponse" ]
       },
       "maxItems": 128,
       "description": "Installer exit codes for common errors"
@@ -680,6 +689,15 @@
       "type": [ "boolean", "null" ],
       "description": "Indicates whether the installer is prohibited from being downloaded for offline installation."
     },
+    "RepairBehavior": {
+      "type": [ "string", "null" ],
+      "enum": [
+        "modify",
+        "uninstaller",
+        "installer"
+      ],
+      "description": "The repair method"
+    },
     "Installer": {
       "type": "object",
       "properties": {
@@ -797,6 +815,9 @@
         },
         "DownloadCommandProhibited": {
           "$ref": "#/definitions/DownloadCommandProhibited"
+        },
+        "RepairBehavior": {
+          "$ref": "#/definitions/RepairBehavior"
         }
       },
       "required": [
@@ -1035,6 +1056,9 @@
     },
     "DownloadCommandProhibited": {
       "$ref": "#/definitions/DownloadCommandProhibited"
+    },
+    "RepairBehavior": {
+      "$ref": "#/definitions/RepairBehavior"
     },
     "Installers": {
       "type": "array",

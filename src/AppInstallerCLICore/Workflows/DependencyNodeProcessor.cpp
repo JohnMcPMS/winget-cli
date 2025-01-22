@@ -3,6 +3,8 @@
 #include "pch.h"
 #include "DependencyNodeProcessor.h"
 #include "ManifestComparator.h"
+#include <winget/PinningData.h>
+#include <winget/PackageVersionSelection.h>
 
 using namespace AppInstaller::Manifest;
 using namespace AppInstaller::Repository;
@@ -40,19 +42,22 @@ namespace AppInstaller::CLI::Workflow
         const auto& match = matches.at(0);
         const auto& package = match.Package;
         auto packageId = package->GetProperty(PackageProperty::Id);
-        m_nodePackageInstalledVersion = package->GetInstalledVersion();
+        m_nodePackageInstalledVersion = GetInstalledVersion(package);
+        std::shared_ptr<IPackageVersionCollection> availableVersions = GetAvailableVersionsForInstalledVersion(package);
 
-        PinBehavior pinBehavior;
         if (m_context.Args.Contains(Execution::Args::Type::Force))
         {
-            pinBehavior = PinBehavior::IgnorePins;
+            m_nodePackageLatestVersion = availableVersions->GetLatestVersion();
         }
         else
         {
-            pinBehavior = m_context.Args.Contains(Execution::Args::Type::IncludePinned) ? PinBehavior::IncludePinned : PinBehavior::ConsiderPins;
-        }
+            Pinning::PinBehavior pinBehavior = m_context.Args.Contains(Execution::Args::Type::IncludePinned) ? Pinning::PinBehavior::IncludePinned : Pinning::PinBehavior::ConsiderPins;
 
-        m_nodePackageLatestVersion = package->GetLatestAvailableVersion(pinBehavior);
+            Pinning::PinningData pinningData{ Pinning::PinningData::Disposition::ReadOnly };
+            auto evaluator = pinningData.CreatePinStateEvaluator(pinBehavior, m_nodePackageInstalledVersion);
+
+            m_nodePackageLatestVersion = evaluator.GetLatestAvailableVersionForPins(availableVersions);
+        }
 
         if (m_nodePackageInstalledVersion && dependencyNode.IsVersionOk(Utility::Version(m_nodePackageInstalledVersion->GetProperty(PackageVersionProperty::Version))))
         {

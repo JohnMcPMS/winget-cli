@@ -10,7 +10,7 @@ The first thing to check is which version of Windows 10 you have.
 
 The Windows Package Manager requires at least Version 1809 (October 2018 Update).
 
-The next requirement is ensuring you have the [App Installer](https://www.microsoft.com/p/app-installer/9nblggh4nns1) from the Microsoft Store. The Windows Package Manager is delivered as an MSIX package. The App Installer is required to install MSIX packages on Windows 10.
+The next requirement is ensuring you have the [App Installer](https://apps.microsoft.com/detail/9nblggh4nns1) from the Microsoft Store. The Windows Package Manager is delivered as an MSIX package. The App Installer is required to install MSIX packages on Windows 10.
 
 >Note: The Windows Package Manager is shipped with later versions of the App Installer.
 
@@ -41,6 +41,19 @@ The Windows Package Manager can be provisioned machine-wide or for each new user
 After the package is provisioned, the users need to log into their Windows account to get the package registered and use it.
 
 ## Common Issues
+
+### Executing `winget` exits with no message
+
+If no output is displayed, it is likely that the version of WinGet on your system is using a retired Content Delivery Network (CDN).
+You can check which version of WinGet is on your machine using `winget --info`. If the version is lower than `1.6.3482`, take the following troubleshooting steps.
+
+1. Install the latest version of WinGet using one of the below methods
+  * a. Through the Microsoft Store by installing the latest version of [App Installer](https://apps.microsoft.com/detail/9NBLGGH4NNS1)
+  * b. Through installing the MSIX package found in the [GitHub releases](https://github.com/microsoft/winget-cli/releases)
+  * c. Through installing the MSIX package from https://aka.ms/getwinget
+2. Force a source update using `winget source update`
+
+If the above guidelines do not resolve the problem, please open an issue with details of the Windows version and App Installer version you are using.
 
 ### Executing `winget` doesn't display help
 
@@ -90,7 +103,7 @@ At line:1 char:1
 ```
 
 These errors most commonly occur for one of following reasons. Please try out the following troubleshooting steps.
-1. The App Installer does not contain the Windows Package Manager. You should check to ensure the version of App Installer is greater than 1.11.11451. You can check by executing the following command in PowerShell: 
+1. The App Installer does not contain the Windows Package Manager. You should check to ensure the version of App Installer is greater than 1.11.11451. You can check by executing the following command in PowerShell:
 
     >`Get-AppxPackage microsoft.desktopappinstaller`
 
@@ -109,7 +122,7 @@ If the above guidelines do not resolve the problem, please open an issue with de
 
 This error is related to networking and maps to "ERROR_INTERNET_CANNOT_CONNECT". It could be related to TLS (Transport Layer Security).
 
-This issue may be resolved by enabling TLS 1.2. 
+This issue may be resolved by enabling TLS 1.2.
 
 It may also be resolved by flushing your DNS cache. Instructions are available at [Microsoft Learn](https://learn.microsoft.com/windows-server/administration/windows-commands/ipconfig).
 

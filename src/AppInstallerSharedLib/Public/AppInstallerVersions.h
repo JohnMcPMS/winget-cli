@@ -18,12 +18,11 @@ namespace AppInstaller::Utility
     //
     // Versions are compared by:
     //  for each part in each version
-    //      if both sides have no more parts, return equal
-    //      else if one side has no more parts, it is less
-    //      else if integers not equal, return comparison of integers
+    //      if one side has no more parts, perform the remaining comparisons against an empty part
+    //      if integers not equal, return comparison of integers
     //      else if only one side has a non-empty string part, it is less
     //      else if string parts not equal, return comparison of strings
-    //  if all parts are same, use approximate comparator if applicable
+    //  if each part has been compared, use approximate comparator if applicable
     //
     //  Note: approximate to another approximate version is invalid.
     //        approximate to Unknown is invalid.
@@ -119,10 +118,20 @@ namespace AppInstaller::Utility
 
         std::string m_version;
         std::vector<Part> m_parts;
+        bool m_trimPrefix = true;
         ApproximateComparator m_approximateComparator = ApproximateComparator::None;
 
       // Remove trailing empty parts (0 or empty)
         void Trim();
+    };
+
+    // Version that does not have leading non-digit characters trimmed
+    struct RawVersion : protected Version
+    {
+        RawVersion() { m_trimPrefix = false; }
+        RawVersion(std::string version, std::string_view splitChars = DefaultSplitChars);
+
+        using Version::GetParts;
     };
 
     // Four parts version number: 16-bits.16-bits.16-bits.16-bits
@@ -271,4 +280,20 @@ namespace AppInstaller::Utility
 
     // Checks if there are overlaps within the list of version ranges
     bool HasOverlapInVersionRanges(const std::vector<VersionRange>& ranges);
+
+    // The OpenType font version.
+    // The format of this version type is 'Version 1.234 ;567'
+    // The only part that is of importance is the 'Major.Minor' parts.
+    // The 'Version' string is typically found at the beginning of the version string.
+    // Any value after a digit that is not a '.' represents some other meaning.
+    struct OpenTypeFontVersion : Version
+    {
+        OpenTypeFontVersion() = default;
+
+        OpenTypeFontVersion(std::string&& version);
+        OpenTypeFontVersion(const std::string& version) :
+            OpenTypeFontVersion(std::string(version)) {}
+
+        void Assign(std::string version, std::string_view splitChars = DefaultSplitChars) override;
+    };
 }

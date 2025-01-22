@@ -2,11 +2,11 @@
 // Licensed under the MIT License.
 #include "pch.h"
 #include "Rest/Schema/1_0/Interface.h"
-#include "Rest/Schema/IRestClient.h"
-#include "Rest/Schema/HttpClientHelper.h"
-#include "ManifestDeserializer.h"
-#include <winget/JsonUtil.h>
 #include "Rest/Schema/CommonRestConstants.h"
+#include "Rest/Schema/IRestClient.h"
+#include "ManifestDeserializer.h"
+#include <winget/HttpClientHelper.h>
+#include <winget/JsonUtil.h>
 
 using namespace AppInstaller::Manifest;
 
@@ -219,6 +219,16 @@ namespace AppInstaller::Repository::Rest::Schema::V1_0::Json
                 std::optional<Manifest::ManifestInstaller> installerObject = DeserializeInstaller(installer);
                 if (installerObject)
                 {
+                    // Merge default switches after parsing.
+                    auto defaultSwitches = Manifest::GetDefaultKnownSwitches(installerObject->EffectiveInstallerType());
+                    for (auto const& defaultSwitch : defaultSwitches)
+                    {
+                        if (installerObject->Switches.find(defaultSwitch.first) == installerObject->Switches.end())
+                        {
+                            installerObject->Switches[defaultSwitch.first] = defaultSwitch.second;
+                        }
+                    }
+
                     manifest.Installers.emplace_back(std::move(installerObject.value()));
                 }
             }
@@ -374,19 +384,11 @@ namespace AppInstaller::Repository::Rest::Schema::V1_0::Json
         }
 
         // Installer Switches
-        installer.Switches = Manifest::GetDefaultKnownSwitches(installer.EffectiveInstallerType());
         std::optional<std::reference_wrapper<const web::json::value>> switches =
             JSON::GetJsonValueFromNode(installerJsonObject, JSON::GetUtilityString(InstallerSwitches));
         if (switches)
         {
-            const auto& installerSwitches = switches.value().get();
-            TryParseInstallerSwitchField(installer.Switches, InstallerSwitchType::Silent, installerSwitches, Silent);
-            TryParseInstallerSwitchField(installer.Switches, InstallerSwitchType::SilentWithProgress, installerSwitches, SilentWithProgress);
-            TryParseInstallerSwitchField(installer.Switches, InstallerSwitchType::Interactive, installerSwitches, Interactive);
-            TryParseInstallerSwitchField(installer.Switches, InstallerSwitchType::InstallLocation, installerSwitches, InstallLocation);
-            TryParseInstallerSwitchField(installer.Switches, InstallerSwitchType::Log, installerSwitches, Log);
-            TryParseInstallerSwitchField(installer.Switches, InstallerSwitchType::Update, installerSwitches, Upgrade);
-            TryParseInstallerSwitchField(installer.Switches, InstallerSwitchType::Custom, installerSwitches, Custom);
+            installer.Switches = DeserializeInstallerSwitches(switches.value().get());
         }
 
         // Installer SuccessCodes
@@ -431,6 +433,21 @@ namespace AppInstaller::Repository::Rest::Schema::V1_0::Json
         installer.RestrictedCapabilities = ConvertToManifestStringArray(JSON::GetRawStringArrayFromJsonNode(installerJsonObject, JSON::GetUtilityString(RestrictedCapabilities)));
 
         return installer;
+    }
+
+    std::map<Manifest::InstallerSwitchType, Manifest::string_t> ManifestDeserializer::DeserializeInstallerSwitches(const web::json::value& installerSwitchesJsonObject) const
+    {
+        std::map<Manifest::InstallerSwitchType, Manifest::string_t> installerSwitches;
+
+        TryParseInstallerSwitchField(installerSwitches, InstallerSwitchType::Silent, installerSwitchesJsonObject, Silent);
+        TryParseInstallerSwitchField(installerSwitches, InstallerSwitchType::SilentWithProgress, installerSwitchesJsonObject, SilentWithProgress);
+        TryParseInstallerSwitchField(installerSwitches, InstallerSwitchType::Interactive, installerSwitchesJsonObject, Interactive);
+        TryParseInstallerSwitchField(installerSwitches, InstallerSwitchType::InstallLocation, installerSwitchesJsonObject, InstallLocation);
+        TryParseInstallerSwitchField(installerSwitches, InstallerSwitchType::Log, installerSwitchesJsonObject, Log);
+        TryParseInstallerSwitchField(installerSwitches, InstallerSwitchType::Update, installerSwitchesJsonObject, Upgrade);
+        TryParseInstallerSwitchField(installerSwitches, InstallerSwitchType::Custom, installerSwitchesJsonObject, Custom);
+
+        return installerSwitches;
     }
 
     std::optional<Manifest::DependencyList> ManifestDeserializer::DeserializeDependency(const web::json::value& dependenciesObject) const

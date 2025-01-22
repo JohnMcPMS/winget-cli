@@ -21,7 +21,7 @@ namespace AppInstaller::CLI
         struct ModulePathInfo
         {
             SetProcessorFactory::PwshConfigurationProcessorLocation location;
-            std::optional<std::string_view> customLocation;
+            std::optional<std::string> customLocation;
         };
 
         ModulePathInfo GetModulePathInfo(Execution::Args& execArgs)
@@ -44,8 +44,15 @@ namespace AppInstaller::CLI
                 }
                 else
                 {
-                    return { SetProcessorFactory::PwshConfigurationProcessorLocation::Custom, execArgs.GetArg(Execution::Args::Type::ConfigurationModulePath) };
+                    return { SetProcessorFactory::PwshConfigurationProcessorLocation::Custom, std::string(execArgs.GetArg(Execution::Args::Type::ConfigurationModulePath)) };
                 }
+            }
+
+            std::filesystem::path defaultModuleRoot = Settings::User().Get<Settings::Setting::ConfigureDefaultModuleRoot>();
+
+            if (!defaultModuleRoot.empty())
+            {
+                return { SetProcessorFactory::PwshConfigurationProcessorLocation::Custom, defaultModuleRoot.u8string() };
             }
 
             return { SetProcessorFactory::PwshConfigurationProcessorLocation::WinGetModulePath, {} };
@@ -54,7 +61,7 @@ namespace AppInstaller::CLI
 
     namespace Configuration
     {
-        void ValidateCommonArguments(Execution::Args& execArgs)
+        void ValidateCommonArguments(Execution::Args& execArgs, bool requireConfigurationSetChoice)
         {
             auto modulePath = GetModulePathInfo(execArgs);
 
@@ -70,6 +77,12 @@ namespace AppInstaller::CLI
                 {
                     throw CommandException(Resource::String::ConfigurationModulePathArgError);
                 }
+            }
+
+            if (requireConfigurationSetChoice &&
+                !WI_IsFlagSet(Argument::GetCategoriesPresent(execArgs), ArgTypeCategory::ConfigurationSetChoice))
+            {
+                throw CommandException(Resource::String::RequiredArgError("file"_liv));
             }
         }
 

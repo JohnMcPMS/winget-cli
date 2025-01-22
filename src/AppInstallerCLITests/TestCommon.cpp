@@ -50,25 +50,25 @@ namespace TestCommon
         }
     }
 
-    TempFile::TempFile(const std::string& baseName, const std::string& baseExt, bool deleteFileOnConstruction)
+    TempFile::TempFile(const std::string& baseName, const std::string& baseExt, std::optional<KeepTempFile> keepTempFile)
     {
         _filepath = GetTempFilePath(baseName, baseExt);
-        if (deleteFileOnConstruction)
+        if (!keepTempFile)
         {
             std::filesystem::remove(_filepath);
         }
     }
 
-    TempFile::TempFile(const std::filesystem::path& parent, const std::string& baseName, const std::string& baseExt, bool deleteFileOnConstruction)
+    TempFile::TempFile(const std::filesystem::path& parent, const std::string& baseName, const std::string& baseExt, std::optional<KeepTempFile> keepTempFile)
     {
         _filepath = GetFilePath(parent, baseName, baseExt);
-        if (deleteFileOnConstruction)
+        if (!keepTempFile)
         {
             std::filesystem::remove(_filepath);
         }
     }
 
-    TempFile::TempFile(const std::filesystem::path& filePath, bool deleteFileOnConstruction)
+    TempFile::TempFile(const std::filesystem::path& filePath, std::optional<KeepTempFile> keepTempFile)
     {
         if (filePath.is_relative())
         {
@@ -79,31 +79,40 @@ namespace TestCommon
         {
             _filepath = filePath;
         }
-        if (deleteFileOnConstruction)
+        if (!keepTempFile)
         {
             std::filesystem::remove(_filepath);
         }
     }
 
-    TempFile::~TempFile()
+    TempFile::~TempFile() try
     {
-        switch (s_TempFileDestructorBehavior)
+        if (m_destructionToken)
         {
-        case TempFileDestructionBehavior::Delete:
-            std::filesystem::remove_all(_filepath);
-            break;
-        case TempFileDestructionBehavior::Keep:
-            break;
-        case TempFileDestructionBehavior::ShellExecuteOnFailure:
-            s_TempFilesOnFile.emplace_back(std::move(_filepath));
-            break;
+            switch (s_TempFileDestructorBehavior)
+            {
+            case TempFileDestructionBehavior::Delete:
+                std::filesystem::remove_all(_filepath);
+                break;
+            case TempFileDestructionBehavior::Keep:
+                break;
+            case TempFileDestructionBehavior::ShellExecuteOnFailure:
+                s_TempFilesOnFile.emplace_back(std::move(_filepath));
+                break;
+            }
         }
     }
+    CATCH_LOG_RETURN()
 
     void TempFile::Rename(const std::filesystem::path& newFilePath)
     {
         std::filesystem::rename(GetPath(), newFilePath);
         _filepath = newFilePath;
+    }
+
+    void TempFile::Release()
+    {
+        m_destructionToken = false;
     }
 
     void TempFile::SetDestructorBehavior(TempFileDestructionBehavior behavior)
@@ -246,6 +255,22 @@ namespace TestCommon
     TestUserSettings::~TestUserSettings()
     {
         AppInstaller::Settings::SetUserSettingsOverride(nullptr);
+    }
+
+    std::unique_ptr<TestUserSettings> TestUserSettings::EnableExperimentalFeature(Settings::ExperimentalFeature::Feature feature, bool keepFileSettings)
+    {
+        std::unique_ptr<TestUserSettings> result = std::make_unique<TestUserSettings>(keepFileSettings);
+
+        // Due to the template usage, this needs to be updated for any features that want to use it.
+        // Currently no feature is used. Uncomment below when a feature needs to be used.
+        // switch (feature)
+        // {
+        // default:
+        //     THROW_HR(E_NOTIMPL);
+        // }
+        UNREFERENCED_PARAMETER(feature);
+
+        return result;
     }
 
     bool InstallCertFromSignedPackage(const std::filesystem::path& package)

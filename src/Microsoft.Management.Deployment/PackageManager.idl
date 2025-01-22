@@ -2,7 +2,7 @@
 // Licensed under the MIT License.
 namespace Microsoft.Management.Deployment
 {
-    [contractversion(9)]
+    [contractversion(12)] // For version 1.10
     apicontract WindowsPackageManagerContract{};
 
     /// State of the install
@@ -151,6 +151,73 @@ namespace Microsoft.Management.Deployment
         UInt32 UninstallerErrorCode { get; };
     }
 
+    /// State of the repair
+    [contract(Microsoft.Management.Deployment.WindowsPackageManagerContract, 11)]
+    enum PackageRepairProgressState
+    {
+        /// The repair is queued but not yet active. Cancellation of the IAsyncOperationWithProgress in this 
+        /// state will prevent the package from repairing.
+        Queued,
+        /// The repair is in progress. Cancellation of the IAsyncOperationWithProgress in this state will not
+        /// stop the repair or the post repair steps.
+        Repairing,
+        /// The repair has completed and cleanup actions are in progress. Cancellation of the 
+        /// IAsyncOperationWithProgress in this state will not stop cleanup or roll back the repair.
+        PostRepair,
+        /// The operation has completed.
+        Finished,
+    };
+
+    /// Progress object for the repair
+    [contract(Microsoft.Management.Deployment.WindowsPackageManagerContract, 11)]
+    struct RepairProgress
+    {
+        /// State of the repair
+        PackageRepairProgressState State;
+
+        /// Repair percentage if known.
+        Double RepairCompletionProgress;
+    };
+
+    /// Status of the repair call
+    /// Implementation Note: Errors mapped from AppInstallerErrors.h
+    /// DESIGN NOTE: RepairResultStatus from AppInstallerErrors.h is not implemented in V1.
+    [contract(Microsoft.Management.Deployment.WindowsPackageManagerContract, 11)]
+    enum RepairResultStatus
+    {
+        Ok,
+        BlockedByPolicy,
+        CatalogError,
+        DownloadError,
+        InternalError,
+        InvalidOptions,
+        RepairError,
+        ManifestError,
+        NoApplicableRepairer,
+        PackageAgreementsNotAccepted,
+    };
+
+    /// Result of the repair
+    [contract(Microsoft.Management.Deployment.WindowsPackageManagerContract, 11)]
+    runtimeclass RepairResult
+    {
+       /// Used by a caller to correlate the repair with a caller's data.
+       String CorrelationData { get; };
+
+       /// Whether a restart is required to complete the repair.
+       Boolean RebootRequired { get; };
+
+       /// Batched error code, example APPINSTALLER_CLI_ERROR_SHELLEXEC_INSTALL_FAILED
+       RepairResultStatus Status { get; };
+
+       /// The error code of the overall operation.
+       HRESULT ExtendedErrorCode { get; };
+
+       /// The error code from the repair attempt. Only valid if the Status is RepairError.
+       /// This value's meaning will require knowledge of the specific repairer or repair technology.
+       UInt32 RepairerErrorCode { get; };
+     }
+
     /// State of the download
     [contract(Microsoft.Management.Deployment.WindowsPackageManagerContract, 7)]
     enum PackageDownloadProgressState
@@ -262,6 +329,12 @@ namespace Microsoft.Management.Deployment
         PackageCatalogOrigin Origin { get; };
         /// The trust level of the package catalog
         PackageCatalogTrustLevel TrustLevel { get; };
+
+        [contract(Microsoft.Management.Deployment.WindowsPackageManagerContract, 11)]
+        {
+            /// Excludes a source from discovery unless specified.
+            Boolean Explicit{ get; };
+        }
     }
 
     /// A metadata item of a package version.
@@ -441,6 +514,12 @@ namespace Microsoft.Management.Deployment
         {
             /// The package installer elevation requirement.
             ElevationRequirement ElevationRequirement { get; };
+        }
+
+        [contract(Microsoft.Management.Deployment.WindowsPackageManagerContract, 12)]
+        {
+            /// Authentication info from the package installer.
+            AuthenticationInfo AuthenticationInfo { get; };
         }
     };
 
@@ -634,7 +713,12 @@ namespace Microsoft.Management.Deployment
         BlockedByPolicy,
         CatalogError,
         InternalError,
-        InvalidOptions
+        InvalidOptions,
+        [contract(Microsoft.Management.Deployment.WindowsPackageManagerContract, 10)]
+        {
+            AuthenticationError,
+            AccessDenied,
+        }
     };
 
     /// IMPLEMENTATION NOTE: SearchResult from winget/RepositorySearch.h
@@ -652,6 +736,12 @@ namespace Microsoft.Management.Deployment
         /// USAGE NOTE: Windows Package Manager does not support result pagination, there is no way to continue 
         /// getting more results.
         Boolean WasLimitExceeded { get; };
+
+        [contract(Microsoft.Management.Deployment.WindowsPackageManagerContract, 11)]
+        {
+            /// The error code of the operation.
+            HRESULT ExtendedErrorCode{ get; };
+        }
     }
 
     /// Options for FindPackages
@@ -698,6 +788,63 @@ namespace Microsoft.Management.Deployment
         FindPackagesResult FindPackages(FindPackagesOptions options);
     }
 
+    /// Authentication mode
+    [contract(Microsoft.Management.Deployment.WindowsPackageManagerContract, 10)]
+    enum AuthenticationMode
+    {
+        /// Always use interactive authentication flow on first authentication request, following requests may use cached result.
+        Interactive,
+        /// Try silent authentication flow first. If failed, use interactive authentication flow.
+        SilentPreferred,
+        /// Only use silent authentication flow. If failed, fail the authentication.
+        Silent,
+    };
+
+    /// Authentication related arguments
+    [contract(Microsoft.Management.Deployment.WindowsPackageManagerContract, 10)]
+    runtimeclass AuthenticationArguments
+    {
+        AuthenticationArguments();
+
+        /// Choice of authentication flow behavior.
+        AuthenticationMode AuthenticationMode;
+        /// Optional. The authentication account to be used for authentication.
+        String AuthenticationAccount;
+    }
+
+    /// Authentication method
+    [contract(Microsoft.Management.Deployment.WindowsPackageManagerContract, 10)]
+    enum AuthenticationType
+    {
+        Unknown,
+        None,
+        MicrosoftEntraId,
+        [contract(Microsoft.Management.Deployment.WindowsPackageManagerContract, 12)]
+        {
+            MicrosoftEntraIdForAzureBlobStorage,
+        }
+    };
+
+    /// Microsoft Entra Id related authentication info.
+    [contract(Microsoft.Management.Deployment.WindowsPackageManagerContract, 10)]
+    runtimeclass MicrosoftEntraIdAuthenticationInfo
+    {
+        /// The resource identifier or resource uri.
+        String Resource { get; };
+        /// Requested scope. May be empty.
+        String Scope { get; };
+    }
+
+    /// Authentication info.
+    [contract(Microsoft.Management.Deployment.WindowsPackageManagerContract, 10)]
+    runtimeclass AuthenticationInfo
+    {
+        /// The authentication type.
+        AuthenticationType AuthenticationType { get; };
+        /// Microsoft Entra Id related authentication info.
+        MicrosoftEntraIdAuthenticationInfo MicrosoftEntraIdAuthenticationInfo { get; };
+    }
+
     /// Status of the Connect call
     [contract(Microsoft.Management.Deployment.WindowsPackageManagerContract, 1)]
     enum ConnectResultStatus
@@ -715,10 +862,35 @@ namespace Microsoft.Management.Deployment
     runtimeclass ConnectResult
     {
         /// Error codes
-        ConnectResultStatus Status{ get; };
+        ConnectResultStatus Status { get; };
 
         PackageCatalog PackageCatalog { get; };
+
+        [contract(Microsoft.Management.Deployment.WindowsPackageManagerContract, 11)]
+        {
+            /// The error code of the operation.
+            HRESULT ExtendedErrorCode{ get; };
+        }
     }
+
+    [contract(Microsoft.Management.Deployment.WindowsPackageManagerContract, 12)]
+    enum RefreshPackageCatalogStatus
+    {
+        Ok,
+        GroupPolicyError,
+        CatalogError,
+        InternalError,
+    };
+
+    /// IMPLEMENTATION NOTE: RefreshPackageCatalogResult
+    [contract(Microsoft.Management.Deployment.WindowsPackageManagerContract, 12)]
+    runtimeclass RefreshPackageCatalogResult
+    {
+        RefreshPackageCatalogStatus Status { get; };
+
+        /// Error codes
+        HRESULT ExtendedErrorCode { get; };
+    };
 
     /// A reference to a catalog that callers can try to Connect.
     [contract(Microsoft.Management.Deployment.WindowsPackageManagerContract, 1)]
@@ -758,9 +930,28 @@ namespace Microsoft.Management.Deployment
 
         [contract(Microsoft.Management.Deployment.WindowsPackageManagerContract, 9)]
         {
-            // When set to true, the opened catalog will only provide the information regarding packages installed from this catalog.
-            // In this mode, no external resources should be required.
+            /// When set to true, the opened catalog will only provide the information regarding packages installed from this catalog.
+            /// In this mode, no external resources should be required.
             Boolean InstalledPackageInformationOnly;
+        }
+
+        [contract(Microsoft.Management.Deployment.WindowsPackageManagerContract, 10)]
+        {
+            /// Authentication arguments used in authentication flow during package catalog operations if applicable.
+            /// This is user or caller input.
+            AuthenticationArguments AuthenticationArguments;
+
+            /// Authentication info from the package catalog.
+            /// This is defined by individual package catalog.
+            AuthenticationInfo AuthenticationInfo { get; };
+        }
+
+        [contract(Microsoft.Management.Deployment.WindowsPackageManagerContract, 12)]
+        {
+            /// Updates the package catalog.
+            /// The progress value, represented as a double, indicates the percentage of update package catalog operation completion.
+            /// The progress range is from 0 to 100.
+            Windows.Foundation.IAsyncOperationWithProgress<RefreshPackageCatalogResult, Double> RefreshPackageCatalogAsync();
         }
     }
 
@@ -865,11 +1056,11 @@ namespace Microsoft.Management.Deployment
 
         [contract(Microsoft.Management.Deployment.WindowsPackageManagerContract, 2)]
         {
-            // The set of allowed Architectures, in preference order, that will be considered for
-            // the install operation.  Initially the vector contains the default allowed architectures
-            // in the default preference order for the current system.  It is allowed to have repeated
-            // values in the list, to make prepending a preference override easier.  Instances of an
-            // architecture after the first will simply be ignored.
+            /// The set of allowed Architectures, in preference order, that will be considered for
+            /// the install operation.  Initially the vector contains the default allowed architectures
+            /// in the default preference order for the current system.  It is allowed to have repeated
+            /// values in the list, to make prepending a preference override easier.  Instances of an
+            /// architecture after the first will simply be ignored.
             Windows.Foundation.Collections.IVector<Windows.System.ProcessorArchitecture> AllowedArchitectures { get; };
         }
 
@@ -900,11 +1091,17 @@ namespace Microsoft.Management.Deployment
 
         [contract(Microsoft.Management.Deployment.WindowsPackageManagerContract, 7)]
         {
-            // Skip installing the dependencies for the package.
+            /// Skip installing the dependencies for the package.
             Boolean SkipDependencies;
 
             /// The package installer type.
             PackageInstallerType InstallerType;
+        }
+
+        [contract(Microsoft.Management.Deployment.WindowsPackageManagerContract, 12)]
+        {
+            /// Authentication arguments used when downloading the package installer if authentication is required.
+            AuthenticationArguments AuthenticationArguments;
         }
     }
 
@@ -999,6 +1196,76 @@ namespace Microsoft.Management.Deployment
         /// Used by a caller to correlate the download with a caller's data.
         /// The string must be JSON encoded.
         String CorrelationData;
+
+        [contract(Microsoft.Management.Deployment.WindowsPackageManagerContract, 12)]
+        {
+            /// Authentication arguments used when downloading the package installer if authentication is required.
+            AuthenticationArguments AuthenticationArguments;
+        }
+    }
+
+    [contract(Microsoft.Management.Deployment.WindowsPackageManagerContract, 11)]
+    enum PackageRepairMode
+    {
+        /// The default experience for the installer. Installer may show some UI.
+        Default,
+        /// Runs the installer in silent mode. This suppresses the installer's UI to the extent 
+        /// possible (installer may still show some required UI).
+        Silent,
+        /// Runs the installer in interactive mode.
+        Interactive,
+    };
+
+    [contract(Microsoft.Management.Deployment.WindowsPackageManagerContract, 11)]
+    enum PackageRepairScope
+    {
+        /// Use default repair behavior.
+        Any,
+        /// Repair for current user. Currently only applicable to msix.
+        User,
+        /// Repair for all users.
+        System,
+    };
+
+    [contract(Microsoft.Management.Deployment.WindowsPackageManagerContract, 11)]
+    runtimeclass RepairOptions
+    {
+        RepairOptions();
+
+        /// Optionally specifies the version from the package to repair. If unspecified the version matching 
+        /// CatalogPackage.GetLatestVersion() is used.
+        PackageVersionId PackageVersionId;
+
+        /// The package Repair scope.
+        PackageRepairScope PackageRepairScope;
+
+        /// The package repair mode.
+        PackageRepairMode PackageRepairMode;
+
+        /// Optional parameter specifying Accept the package agreements required for download.
+        Boolean AcceptPackageAgreements;
+
+        /// Used by a caller to correlate the repair with a caller's data.
+        /// The string must be JSON encoded.
+        String CorrelationData;
+
+        /// Continues the download even if the hash in the catalog does not match the linked installer used for repair.
+        Boolean AllowHashMismatch;
+
+        /// Directs the logging to a log file. If provided, the installer must have write access to the file
+        String LogOutputPath;
+
+        /// Force the operation to continue upon non security related failures.
+        Boolean Force;
+
+        /// Bypasses the Disabled Store Policy
+        Boolean BypassIsStoreClientBlockedPolicyCheck;
+
+        [contract(Microsoft.Management.Deployment.WindowsPackageManagerContract, 12)]
+        {
+            /// Authentication arguments used when downloading the package installer if authentication is required.
+            AuthenticationArguments AuthenticationArguments;
+        }
     }
 
     /// IMPLEMENTATION NOTE: Documentation from AppInstaller::Manifest::Documentation
@@ -1138,6 +1405,103 @@ namespace Microsoft.Management.Deployment
         String InstallationNotes { get; };
     }
 
+    /// IMPLEMENTATION NOTE: AddPackageCatalogOptions
+    [contract(Microsoft.Management.Deployment.WindowsPackageManagerContract, 12)]
+    runtimeclass AddPackageCatalogOptions
+    {
+        AddPackageCatalogOptions();
+
+        /// The name of the package catalog. 
+        /// SAMPLE VALUES: For OpenWindowsCatalog "winget".
+        /// For contoso sample on msdn "contoso"
+        String Name;
+
+        /// The SourceUri used when adding the package catalog.
+        /// SAMPLE VALUES: For OpenWindowsCatalog "https://winget.azureedge.net/cache"
+        /// For contoso sample on msdn "https://pkgmgr-int.azureedge.net/cache"
+        String SourceUri;
+
+        /// ALLOWED VALUES: "Microsoft.Rest", "Microsoft.PreIndexed.Package"
+        /// SAMPLE VALUES: For OpenWindowsCatalog "Microsoft.PreIndexed.Package".
+        /// For contoso sample on msdn "Microsoft.PreIndexed.Package"
+        String Type;
+
+        /// The trust level of the catalog to add.
+        PackageCatalogTrustLevel TrustLevel;
+
+        /// Custom header to pass to the catalog.
+        String CustomHeader;
+
+        /// Excludes a source from discovery unless specified.
+        Boolean Explicit;
+    };
+
+    /// IMPLEMENTATION NOTE: AddPackageCatalogStatus
+    [contract(Microsoft.Management.Deployment.WindowsPackageManagerContract, 12)]
+    enum AddPackageCatalogStatus
+    {
+        Ok,
+        GroupPolicyError,
+        CatalogError,
+        InternalError,
+        InvalidOptions,
+        AccessDenied,
+        AuthenticationError,
+    };
+
+    /// IMPLEMENTATION NOTE: AddPackageCatalogResult
+    [contract(Microsoft.Management.Deployment.WindowsPackageManagerContract, 12)]
+    runtimeclass AddPackageCatalogResult
+    {
+        AddPackageCatalogStatus Status { get; };
+
+        /// Error codes
+        HRESULT ExtendedErrorCode { get; };
+    };
+
+    /// IMPLEMENTATION NOTE: RemovePackageCatalogOptions
+    [contract(Microsoft.Management.Deployment.WindowsPackageManagerContract, 12)]
+    runtimeclass RemovePackageCatalogOptions
+    {
+        RemovePackageCatalogOptions();
+
+        /// The name of the package catalog. 
+        /// SAMPLE VALUES: For OpenWindowsCatalog "winget".
+        /// For contoso sample on msdn "contoso"
+        String Name;
+
+        /// By default, the value is 'false', resulting in the removal of the package catalog registration
+        /// from the winget Package catalogs list and the deletion of all associated system artifacts. This 
+        /// mirrors the WinGet Source remove operation on a specific Package Catalog. 
+        /// If set to 'true', it removes the package catalog registration from the Windows Package Catalogs
+        /// list without any cleanup, similar to the WinGet source reset operation on a specific Package
+        /// Catalog.
+        Boolean PreserveData;
+    };
+
+    /// IMPLEMENTATION NOTE: RemovePackageCatalogStatus
+    [contract(Microsoft.Management.Deployment.WindowsPackageManagerContract, 12)]
+    enum RemovePackageCatalogStatus
+    {
+        Ok,
+        GroupPolicyError,
+        CatalogError,
+        InternalError,
+        AccessDenied,
+        InvalidOptions,
+    };
+
+    /// IMPLEMENTATION NOTE: RemovePackageCatalogResult
+    /// Result of removing a package catalog.
+    [contract(Microsoft.Management.Deployment.WindowsPackageManagerContract, 12)]
+    runtimeclass RemovePackageCatalogResult
+    {
+        RemovePackageCatalogStatus Status { get; };
+
+        /// Error codes
+        HRESULT ExtendedErrorCode { get; };
+    };
+
     [contract(Microsoft.Management.Deployment.WindowsPackageManagerContract, 1)]
     runtimeclass PackageManager
     {
@@ -1156,6 +1520,19 @@ namespace Microsoft.Management.Deployment
         /// Get a composite catalog to allow searching a user defined or pre defined source and a local source
         /// (Installing, Installed) together at the same time.
         PackageCatalogReference CreateCompositePackageCatalog(CreateCompositePackageCatalogOptions options);
+
+        [contract(Microsoft.Management.Deployment.WindowsPackageManagerContract, 12)]
+        {
+            /// Add a catalog to the Windows Package Catalogs.
+            /// The progress value, represented as a double, indicates the percentage of add package catalog operation completion.
+            /// The progress range is from 0 to 100.
+            Windows.Foundation.IAsyncOperationWithProgress<AddPackageCatalogResult, Double> AddPackageCatalogAsync(AddPackageCatalogOptions options);
+
+            /// Unregisters a Package Catalog from the Windows Package Catalogs and eliminates the system artifacts based on the provided options.
+            /// The progress value, represented as a double, indicates the percentage of remove package catalog operation completion.
+            /// The progress range is from 0 to 100.
+            Windows.Foundation.IAsyncOperationWithProgress<RemovePackageCatalogResult, Double> RemovePackageCatalogAsync(RemovePackageCatalogOptions options);
+        }
 
         /// Install the specified package
         Windows.Foundation.IAsyncOperationWithProgress<InstallResult, InstallProgress> InstallPackageAsync(CatalogPackage package, InstallOptions options);
@@ -1185,6 +1562,12 @@ namespace Microsoft.Management.Deployment
 
             // Get download progress
             Windows.Foundation.IAsyncOperationWithProgress<DownloadResult, PackageDownloadProgress> GetDownloadProgress(CatalogPackage package, PackageCatalogInfo catalogInfo);
+        }
+
+        [contract(Microsoft.Management.Deployment.WindowsPackageManagerContract, 11)]
+        {
+            // Repair the specified package
+            Windows.Foundation.IAsyncOperationWithProgress<RepairResult, RepairProgress> RepairPackageAsync(CatalogPackage package, RepairOptions options);
         }
     }
 
@@ -1269,5 +1652,15 @@ namespace Microsoft.Management.Deployment
         interface Windows.Foundation.Collections.IVectorView<Icon>;
         interface Windows.Foundation.Collections.IVector<CatalogPackageMetadata>;
         interface Windows.Foundation.Collections.IVectorView<CatalogPackageMetadata>;
+        interface Windows.Foundation.Collections.IVector<AuthenticationArguments>;
+        interface Windows.Foundation.Collections.IVectorView<AuthenticationArguments>;
+        interface Windows.Foundation.Collections.IVector<MicrosoftEntraIdAuthenticationInfo>;
+        interface Windows.Foundation.Collections.IVectorView<MicrosoftEntraIdAuthenticationInfo>;
+        interface Windows.Foundation.Collections.IVector<AuthenticationInfo>;
+        interface Windows.Foundation.Collections.IVectorView<AuthenticationInfo>;
+        interface Windows.Foundation.Collections.IVector<RepairOptions>;
+        interface Windows.Foundation.Collections.IVectorView<RepairOptions>;
+        interface Windows.Foundation.Collections.IVector<RepairResult>;
+        interface Windows.Foundation.Collections.IVectorView<RepairResult>;
     }
 }

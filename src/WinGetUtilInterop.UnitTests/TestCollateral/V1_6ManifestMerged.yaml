@@ -106,9 +106,9 @@ Markets:
 ExpectedReturnCodes:
     - InstallerReturnCode: 2
       ReturnResponse: contactSupport
+      ReturnResponseUrl: https://defaultReturnResponseUrl.com
     - InstallerReturnCode: 3
       ReturnResponse: custom
-      ReturnResponseUrl: https://defaultReturnResponseUrl.com
 UnsupportedArguments:
   - log
 NestedInstallerType: msi
@@ -148,6 +148,17 @@ Localization:
   Tags:
   - appxsdkUK
   - msixsdkUK
+  PurchaseUrl: https://PurchaseUrl.com
+  InstallationNotes: Installation notes
+  Documentations:
+  - DocumentLabel: Document label
+    DocumentUrl: https://DocumentUrl.com
+  Icons:
+  - IconUrl: https://testIcon2
+    IconFileType: png
+    IconResolution: 32x32
+    IconTheme: dark
+    IconSha256: 69D84CA8899800A5575CE31798293CD4FEBAB1D734A07C2E51E56A28E0DF8321
 Installers:
   - Architecture: x86
     InstallerLocale: en-GB
@@ -214,8 +225,9 @@ Installers:
       ExcludedMarkets:
         - "US"
     ExpectedReturnCodes:
-    - InstallerReturnCode: 2
-      ReturnResponse: contactSupport
+      - InstallerReturnCode: 2
+        ReturnResponse: contactSupport
+        ReturnResponseUrl: https://returnResponseUrl.com
     DownloadCommandProhibited: true
     InstallationMetadata:
       DefaultInstallLocation: "%ProgramFiles%\\TestApp"
@@ -230,5 +242,5 @@ Installers:
     InstallerUrl: https://www.microsoft.com/msixsdk/msixsdkx64.exe
     InstallerType: exe
     ProductCode: '{Bar}'
-    ManifestType: singleton
+ManifestType: merged
 ManifestVersion: 1.6.0

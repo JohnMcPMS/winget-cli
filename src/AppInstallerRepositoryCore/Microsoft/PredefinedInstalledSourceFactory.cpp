@@ -9,6 +9,7 @@
 
 #include <winget/Registry.h>
 #include <AppInstallerArchitecture.h>
+#include <winget/ExperimentalFeature.h>
 
 using namespace std::string_literals;
 using namespace std::string_view_literals;
@@ -53,7 +54,7 @@ namespace AppInstaller::Repository::Microsoft
                 return std::nullopt;
             }
 
-            return cacheData.GetPropertyByManifestId(versionKey->ManifestId, PackageVersionProperty::Name);
+            return cacheData.GetPropertyByPrimaryId(versionKey->ManifestId, PackageVersionProperty::Name);
         }
 
         // Populates the index with the entries from MSIX.
@@ -74,7 +75,7 @@ namespace AppInstaller::Repository::Microsoft
             else
             {
                 // TODO: Consider if Optional packages should also be enumerated
-                packages = packageManager.FindPackagesForUserWithPackageTypes({}, PackageTypes::Main);
+                packages = packageManager.FindPackagesForUserWithPackageTypes({}, PackageTypes::Main | PackageTypes::Framework);
             }
 
             // Reuse the same manifest object, as we will be setting the same values every time.
@@ -100,9 +101,10 @@ namespace AppInstaller::Repository::Microsoft
                 }
 
                 auto packageId = package.Id();
+                Utility::NormalizedString fullName = Utility::ConvertToUTF8(packageId.FullName());
                 Utility::NormalizedString familyName = Utility::ConvertToUTF8(packageId.FamilyName());
 
-                manifest.Id = familyName;
+                manifest.Id = "MSIX\\" + fullName;
 
                 // Get version
                 std::ostringstream strstr;
@@ -142,11 +144,11 @@ namespace AppInstaller::Repository::Microsoft
                     catch (const winrt::hresult_error& hre)
                     {
                         AICLI_LOG(Repo, Warning, << "winrt::hresult_error[0x" << Logging::SetHRFormat << hre.code() << ": " <<
-                            Utility::ConvertToUTF8(hre.message()) << "] exception thrown when getting DisplayName for " << familyName);
+                            Utility::ConvertToUTF8(hre.message()) << "] exception thrown when getting DisplayName for " << fullName);
                     }
                     catch (...)
                     {
-                        AICLI_LOG(Repo, Warning, << "Unknown exception thrown when getting DisplayName for " << familyName);
+                        AICLI_LOG(Repo, Warning, << "Unknown exception thrown when getting DisplayName for " << fullName);
                     }
                 }
 
@@ -158,10 +160,17 @@ namespace AppInstaller::Repository::Microsoft
                 manifest.Installers[0].PackageFamilyName = familyName;
 
                 // Use the full name as a unique key for the path
-                auto manifestId = index.AddManifest(manifest, std::filesystem::path{ packageId.FullName().c_str() });
+                auto manifestId = index.AddManifest(manifest);
 
-                index.SetMetadataByManifestId(manifestId, PackageVersionMetadata::InstalledType, 
+                index.SetMetadataByManifestId(manifestId, PackageVersionMetadata::InstalledType,
                     Manifest::InstallerTypeToString(Manifest::InstallerTypeEnum::Msix));
+
+                auto architecture = Utility::ConvertToArchitectureEnum(packageId.Architecture());
+                if (architecture)
+                {
+                    index.SetMetadataByManifestId(manifestId, PackageVersionMetadata::InstalledArchitecture,
+                        ToString(architecture.value()));
+                }
             }
         }
 
@@ -170,7 +179,7 @@ namespace AppInstaller::Repository::Microsoft
             AICLI_LOG(Repo, Verbose, << "Creating PredefinedInstalledSource with filter [" << PredefinedInstalledSourceFactory::FilterToString(filter) << ']');
 
             // Create an in memory index
-            SQLiteIndex index = SQLiteIndex::CreateNew(SQLITE_MEMORY_DB_CONNECTION_TARGET, SQLite::Version::Latest());
+            SQLiteIndex index = SQLiteIndex::CreateNew(SQLITE_MEMORY_DB_CONNECTION_TARGET, SQLite::Version::Latest(), SQLiteIndex::CreateOptions::SupportPathless);
 
             // Put installed packages into the index
             if (filter == PredefinedInstalledSourceFactory::Filter::None || filter == PredefinedInstalledSourceFactory::Filter::ARP ||

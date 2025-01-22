@@ -34,7 +34,7 @@ void OverrideForDirectMsi(TestContext& context)
 
     context.Override({ DownloadInstallerFile, [](TestContext& context)
     {
-        context.Add<Data::HashPair>({ {}, {} });
+        context.Add<Data::DownloadHashInfo>({ {}, {} });
         // We don't have an msi installer for tests, but we won't execute it anyway
         context.Add<Data::InstallerPath>(TestDataFile("AppInstallerTestExeInstaller.exe"));
     } });
@@ -92,7 +92,7 @@ TEST_CASE("InstallFlow_RenameFromEncodedUrl", "[InstallFlow][workflow]")
     OverrideForCheckExistingInstaller(context);
     context.Override({ DownloadInstallerFile, [](TestContext& context)
     {
-        context.Add<Data::HashPair>({ {}, {} });
+        context.Add<Data::DownloadHashInfo>({ {}, {} });
         auto installerPath = std::filesystem::temp_directory_path();
         installerPath /= "EncodedUrlTest.exe";
         std::filesystem::copy(TestDataFile("AppInstallerTestExeInstaller.exe"), installerPath, std::filesystem::copy_options::overwrite_existing);
@@ -124,7 +124,7 @@ TEST_CASE("InstallFlow_RenameFromInvalidFileCharacterUrl", "[InstallFlow][workfl
     OverrideForCheckExistingInstaller(context);
     context.Override({ DownloadInstallerFile, [](TestContext& context)
     {
-        context.Add<Data::HashPair>({ {}, {} });
+        context.Add<Data::DownloadHashInfo>({ {}, {} });
         auto installerPath = std::filesystem::temp_directory_path();
         installerPath /= "InvalidFileCharacterUrlTest.exe";
         std::filesystem::copy(TestDataFile("AppInstallerTestExeInstaller.exe"), installerPath, std::filesystem::copy_options::overwrite_existing);
@@ -450,7 +450,7 @@ TEST_CASE("InstallFlow_Zip_ArchiveScanOverride_AdminSettingDisabled", "[InstallF
     context.Args.AddArg(Execution::Args::Type::Manifest, TestDataFile("InstallFlowTest_Zip_Exe.yaml").GetPath().u8string());
     context.Args.AddArg(Execution::Args::Type::IgnoreLocalArchiveMalwareScan);
 
-    DisableAdminSetting(AppInstaller::Settings::AdminSetting::LocalArchiveMalwareScanOverride);
+    DisableAdminSetting(AppInstaller::Settings::BoolAdminSetting::LocalArchiveMalwareScanOverride);
 
     TestHook::SetScanArchiveResult_Override scanArchiveResultOverride(false);
 
@@ -478,7 +478,7 @@ TEST_CASE("InstallFlow_Zip_ArchiveScanOverride_AdminSettingEnabled", "[InstallFl
     context.Args.AddArg(Execution::Args::Type::Manifest, TestDataFile("InstallFlowTest_Zip_Exe.yaml").GetPath().u8string());
     context.Args.AddArg(Execution::Args::Type::IgnoreLocalArchiveMalwareScan);
 
-    EnableAdminSetting(AppInstaller::Settings::AdminSetting::LocalArchiveMalwareScanOverride);
+    EnableAdminSetting(AppInstaller::Settings::BoolAdminSetting::LocalArchiveMalwareScanOverride);
 
     TestHook::SetScanArchiveResult_Override scanArchiveResultOverride(false);
 
@@ -507,6 +507,59 @@ TEST_CASE("ExtractInstallerFromArchive_InvalidZip", "[InstallFlow][workflow]")
     auto manifest = YamlParser::CreateFromPath(TestDataFile("InstallFlowTest_Zip_Exe.yaml"));
     context.Add<Data::Manifest>(manifest);
     context.Add<Data::Installer>(manifest.Installers.at(0));
+
+    // Provide an invalid zip file which should be handled appropriately.
+    context.Add<Data::InstallerPath>(TestDataFile("AppInstallerTestExeInstaller.exe"));
+    context << ExtractFilesFromArchive;
+    REQUIRE_TERMINATED_WITH(context, APPINSTALLER_CLI_ERROR_EXTRACT_ARCHIVE_FAILED);
+    REQUIRE(installOutput.str().find(Resource::LocString(Resource::String::ExtractArchiveFailed).get()) != std::string::npos);
+}
+
+TEST_CASE("ExtractInstallerFromArchiveWithTar", "[InstallFlow][workflow]")
+{
+    TestCommon::TestUserSettings testSettings;
+    testSettings.Set<Setting::ArchiveExtractionMethod>(AppInstaller::Archive::ExtractionMethod::Tar);
+
+    TestCommon::TempFile installResultPath("TestExeInstalled.txt");
+
+    std::ostringstream installOutput;
+    TestContext context{ installOutput, std::cin };
+    auto previousThreadGlobals = context.SetForCurrentThread();
+
+    OverrideForShellExecute(context);
+    OverrideForVerifyAndSetNestedInstaller(context);
+    context.Args.AddArg(Execution::Args::Type::Manifest, TestDataFile("InstallFlowTest_Zip_Exe.yaml").GetPath().u8string());
+
+    TestHook::SetScanArchiveResult_Override scanArchiveResultOverride(true);
+    TestHook::SetExtractArchiveWithTarResult_Override setExtractArchiveWithTarResultOverride(ERROR_SUCCESS);
+
+    InstallCommand install({});
+    install.Execute(context);
+    INFO(installOutput.str());
+    REQUIRE(installOutput.str().find(Resource::LocString(Resource::String::ExtractArchiveSucceeded).get()) != std::string::npos);
+
+    // Verify Installer is called and parameters are passed in.
+    REQUIRE(std::filesystem::exists(installResultPath.GetPath()));
+    std::ifstream installResultFile(installResultPath.GetPath());
+    REQUIRE(installResultFile.is_open());
+    std::string installResultStr;
+    std::getline(installResultFile, installResultStr);
+    REQUIRE(installResultStr.find("/custom") != std::string::npos);
+    REQUIRE(installResultStr.find("/silentwithprogress") != std::string::npos);
+}
+
+TEST_CASE("ExtractInstallerFromArchiveWithTar_InvalidZip", "[InstallFlow][workflow]")
+{
+    TestCommon::TestUserSettings testSettings;
+    testSettings.Set<Setting::ArchiveExtractionMethod>(AppInstaller::Archive::ExtractionMethod::Tar);
+
+    std::ostringstream installOutput;
+    TestContext context{ installOutput, std::cin };
+    auto previousThreadGlobals = context.SetForCurrentThread();
+    auto manifest = YamlParser::CreateFromPath(TestDataFile("InstallFlowTest_Zip_Exe.yaml"));
+    context.Add<Data::Manifest>(manifest);
+    context.Add<Data::Installer>(manifest.Installers.at(0));
+
     // Provide an invalid zip file which should be handled appropriately.
     context.Add<Data::InstallerPath>(TestDataFile("AppInstallerTestExeInstaller.exe"));
     context << ExtractFilesFromArchive;
@@ -1213,7 +1266,6 @@ TEST_CASE("InstallFlow_InstallWithReboot", "[InstallFlow][workflow][reboot]")
 {
     TestCommon::TempFile installResultPath("TestExeInstalled.txt");
     TestCommon::TestUserSettings testSettings;
-    testSettings.Set<Setting::EFReboot>(true);
 
     std::ostringstream installOutput;
     TestContext context{ installOutput, std::cin };
@@ -1252,7 +1304,7 @@ TEST_CASE("InstallFlow_InstallWithReboot", "[InstallFlow][workflow][reboot]")
 
         REQUIRE(context.IsTerminated());
         REQUIRE(!std::filesystem::exists(installResultPath.GetPath()));
-        REQUIRE_FALSE(installOutput.str().find(Resource::LocString(Resource::String::InitiatingReboot).get()) != std::string::npos);
+        REQUIRE(installOutput.str().find(Resource::LocString(Resource::String::InitiatingReboot).get()) != std::string::npos);
         REQUIRE(installOutput.str().find(Resource::LocString(Resource::String::FailedToInitiateReboot).get()) != std::string::npos);
     }
 }

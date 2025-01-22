@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="15.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <PropertyGroup Condition="'$(VisualStudioVersion)' == '' or '$(VisualStudioVersion)' &lt; '15.0'">
     <VisualStudioVersion>15.0</VisualStudioVersion>
@@ -63,14 +63,133 @@
     </AppxManifest>
   </ItemGroup>
   <ItemGroup>
-    <None Include="Execute-AppxRecipe.ps1" />
+    <Content Include="Images\progress-sixel\arrow_only.png" />
+    <Content Include="Images\progress-sixel\conveyor.png" />
+    <Content Include="Images\progress-sixel\folders_only.png" />
+    <Content Include="Images\SplashScreen.scale-200_altform-colorful_theme-dark.png" />
+    <Content Include="Images\SplashScreen.scale-200_altform-colorful_theme-light.png" />
+    <Content Include="Images\SplashScreen.scale-400.png" />
+    <Content Include="Images\SplashScreen.scale-400_altform-colorful_theme-dark.png" />
+    <Content Include="Images\SplashScreen.scale-400_altform-colorful_theme-light.png" />
+    <Content Include="Images\StoreDisplay-150.png" />
+    <Content Include="Images\StoreDisplay-300.png" />
+    <Content Include="Images\StoreDisplay-71.png" />
+    <Content Include="Images\StoreLogo.scale-100.png" />
+    <Content Include="Images\StoreLogo.scale-100_altform-colorful_theme-light.png" />
+    <Content Include="Images\StoreLogo.scale-125.png" />
+    <Content Include="Images\StoreLogo.scale-125_altform-colorful_theme-light.png" />
+    <Content Include="Images\StoreLogo.scale-150.png" />
+    <Content Include="Images\StoreLogo.scale-150_altform-colorful_theme-light.png" />
+    <Content Include="Images\StoreLogo.scale-200.png" />
+    <Content Include="Images\StoreLogo.scale-200_altform-colorful_theme-light.png" />
+    <Content Include="Images\StoreLogo.scale-400.png" />
+    <Content Include="Images\StoreLogo.scale-400_altform-colorful_theme-light.png" />
+    <Content Include="Images\WideTile.scale-100.png" />
+    <Content Include="Images\WideTile.scale-100_altform-colorful_theme-light.png" />
+    <Content Include="Images\WideTile.scale-125.png" />
+    <Content Include="Images\WideTile.scale-125_altform-colorful_theme-light.png" />
+    <Content Include="Images\WideTile.scale-150.png" />
+    <Content Include="Images\WideTile.scale-150_altform-colorful_theme-light.png" />
+    <Content Include="Images\WideTile.scale-200.png" />
+    <Content Include="Images\WideTile.scale-200_altform-colorful_theme-light.png" />
+    <Content Include="Images\WideTile.scale-400.png" />
+    <Content Include="Images\WideTile.scale-400_altform-colorful_theme-light.png" />
+    <Content Include="Images\AppList.scale-100.png" />
+    <Content Include="Images\AppList.scale-100_altform-colorful_theme-light.png" />
+    <Content Include="Images\AppList.scale-125.png" />
+    <Content Include="Images\AppList.scale-125_altform-colorful_theme-light.png" />
+    <Content Include="Images\AppList.scale-150.png" />
+    <Content Include="Images\AppList.scale-150_altform-colorful_theme-light.png" />
+    <Content Include="Images\AppList.scale-200.png" />
+    <Content Include="Images\AppList.scale-200_altform-colorful_theme-light.png" />
+    <Content Include="Images\AppList.scale-400.png" />
+    <Content Include="Images\AppList.scale-400_altform-colorful_theme-light.png" />
+    <Content Include="Images\AppList.targetsize-16.png" />
+    <Content Include="Images\AppList.targetsize-16_altform-lightunplated.png" />
+    <Content Include="Images\AppList.targetsize-16_altform-unplated.png" />
+    <Content Include="Images\AppList.targetsize-20.png" />
+    <Content Include="Images\AppList.targetsize-20_altform-lightunplated.png" />
+    <Content Include="Images\AppList.targetsize-20_altform-unplated.png" />
+    <Content Include="Images\AppList.targetsize-24.png" />
+    <Content Include="Images\AppList.targetsize-24_altform-lightunplated.png" />
+    <Content Include="Images\AppList.targetsize-24_altform-unplated.png" />
+    <Content Include="Images\AppList.targetsize-256.png" />
+    <Content Include="Images\AppList.targetsize-256_altform-lightunplated.png" />
+    <Content Include="Images\AppList.targetsize-256_altform-unplated.png" />
+    <Content Include="Images\AppList.targetsize-30.png" />
+    <Content Include="Images\AppList.targetsize-30_altform-lightunplated.png" />
+    <Content Include="Images\AppList.targetsize-30_altform-unplated.png" />
+    <Content Include="Images\AppList.targetsize-32.png" />
+    <Content Include="Images\AppList.targetsize-32_altform-lightunplated.png" />
+    <Content Include="Images\AppList.targetsize-32_altform-unplated.png" />
+    <Content Include="Images\AppList.targetsize-36.png" />
+    <Content Include="Images\AppList.targetsize-36_altform-lightunplated.png" />
+    <Content Include="Images\AppList.targetsize-36_altform-unplated.png" />
+    <Content Include="Images\AppList.targetsize-40.png" />
+    <Content Include="Images\AppList.targetsize-40_altform-lightunplated.png" />
+    <Content Include="Images\AppList.targetsize-40_altform-unplated.png" />
+    <Content Include="Images\AppList.targetsize-48.png" />
+    <Content Include="Images\AppList.targetsize-48_altform-lightunplated.png" />
+    <Content Include="Images\AppList.targetsize-48_altform-unplated.png" />
+    <Content Include="Images\AppList.targetsize-56.png" />
+    <Content Include="Images\AppList.targetsize-56_altform-lightunplated.png" />
+    <Content Include="Images\AppList.targetsize-56_altform-unplated.png" />
+    <Content Include="Images\AppList.targetsize-60.png" />
+    <Content Include="Images\AppList.targetsize-60_altform-lightunplated.png" />
+    <Content Include="Images\AppList.targetsize-60_altform-unplated.png" />
+    <Content Include="Images\AppList.targetsize-64.png" />
+    <Content Include="Images\AppList.targetsize-64_altform-lightunplated.png" />
+    <Content Include="Images\AppList.targetsize-64_altform-unplated.png" />
+    <Content Include="Images\AppList.targetsize-72.png" />
+    <Content Include="Images\AppList.targetsize-72_altform-lightunplated.png" />
+    <Content Include="Images\AppList.targetsize-72_altform-unplated.png" />
+    <Content Include="Images\AppList.targetsize-80.png" />
+    <Content Include="Images\AppList.targetsize-80_altform-lightunplated.png" />
+    <Content Include="Images\AppList.targetsize-80_altform-unplated.png" />
+    <Content Include="Images\AppList.targetsize-96.png" />
+    <Content Include="Images\AppList.targetsize-96_altform-lightunplated.png" />
+    <Content Include="Images\AppList.targetsize-96_altform-unplated.png" />
+    <Content Include="Images\LargeTile.scale-100.png" />
+    <Content Include="Images\LargeTile.scale-100_altform-colorful_theme-light.png" />
+    <Content Include="Images\LargeTile.scale-125.png" />
+    <Content Include="Images\LargeTile.scale-125_altform-colorful_theme-light.png" />
+    <Content Include="Images\LargeTile.scale-150.png" />
+    <Content Include="Images\LargeTile.scale-150_altform-colorful_theme-light.png" />
+    <Content Include="Images\LargeTile.scale-200.png" />
+    <Content Include="Images\LargeTile.scale-200_altform-colorful_theme-light.png" />
+    <Content Include="Images\LargeTile.scale-400.png" />
+    <Content Include="Images\LargeTile.scale-400_altform-colorful_theme-light.png" />
+    <Content Include="Images\MedTile.scale-100.png" />
+    <Content Include="Images\MedTile.scale-100_altform-colorful_theme-light.png" />
+    <Content Include="Images\MedTile.scale-125.png" />
+    <Content Include="Images\MedTile.scale-125_altform-colorful_theme-light.png" />
+    <Content Include="Images\MedTile.scale-150.png" />
+    <Content Include="Images\MedTile.scale-150_altform-colorful_theme-light.png" />
+    <Content Include="Images\MedTile.scale-200.png" />
+    <Content Include="Images\MedTile.scale-200_altform-colorful_theme-light.png" />
+    <Content Include="Images\MedTile.scale-400.png" />
+    <Content Include="Images\MedTile.scale-400_altform-colorful_theme-light.png" />
+    <Content Include="Images\SmallTile.scale-100.png" />
+    <Content Include="Images\SmallTile.scale-100_altform-colorful_theme-light.png" />
+    <Content Include="Images\SmallTile.scale-125.png" />
+    <Content Include="Images\SmallTile.scale-125_altform-colorful_theme-light.png" />
+    <Content Include="Images\SmallTile.scale-150.png" />
+    <Content Include="Images\SmallTile.scale-150_altform-colorful_theme-light.png" />
+    <Content Include="Images\SmallTile.scale-200.png" />
+    <Content Include="Images\SmallTile.scale-200_altform-colorful_theme-light.png" />
+    <Content Include="Images\SmallTile.scale-400.png" />
+    <Content Include="Images\SmallTile.scale-400_altform-colorful_theme-light.png" />
+    <Content Include="Images\SplashScreen.scale-100.png" />
+    <Content Include="Images\SplashScreen.scale-100_altform-colorful_theme-dark.png" />
+    <Content Include="Images\SplashScreen.scale-100_altform-colorful_theme-light.png" />
+    <Content Include="Images\SplashScreen.scale-125.png" />
+    <Content Include="Images\SplashScreen.scale-125_altform-colorful_theme-dark.png" />
+    <Content Include="Images\SplashScreen.scale-125_altform-colorful_theme-light.png" />
+    <Content Include="Images\SplashScreen.scale-150.png" />
+    <Content Include="Images\SplashScreen.scale-150_altform-colorful_theme-dark.png" />
+    <Content Include="Images\SplashScreen.scale-150_altform-colorful_theme-light.png" />
     <Content Include="Images\SplashScreen.scale-200.png" />
-    <Content Include="Images\LockScreenLogo.scale-200.png" />
-    <Content Include="Images\Square150x150Logo.scale-200.png" />
-    <Content Include="Images\Square44x44Logo.scale-200.png" />
-    <Content Include="Images\Square44x44Logo.targetsize-24_altform-unplated.png" />
-    <Content Include="Images\StoreLogo.png" />
-    <Content Include="Images\Wide310x150Logo.scale-200.png" />
+    <None Include="Execute-AppxRecipe.ps1" />
     <None Include="Register-WingetdevAutoComplete.ps1" />
     <PRIResource Include="Shared\Strings\en-us\winget.resw">
       <SubType>Designer</SubType>
@@ -98,44 +217,40 @@
       copy "$(TargetDir)\resources.pri" "$(TargetDir)\AppInstallerCLI\resources.pri"
     </PostBuildEvent>
   </PropertyGroup>
-  <PropertyGroup Condition="'$(Platform)'=='ARM'">
-    <ConfigServerRid>win10-arm</ConfigServerRid>
-  </PropertyGroup>
   <PropertyGroup Condition="'$(Platform)'=='ARM64'">
-    <ConfigServerRid>win10-arm64</ConfigServerRid>
+    <ConfigServerRid>win-arm64</ConfigServerRid>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Platform)'=='x64'">
-    <ConfigServerRid>win10-x64</ConfigServerRid>
+    <ConfigServerRid>win-x64</ConfigServerRid>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Platform)'=='x86'">
-    <ConfigServerRid>win10-x86</ConfigServerRid>
+    <ConfigServerRid>win-x86</ConfigServerRid>
   </PropertyGroup>
   <Target Name="WinGetIncludeAdditionalFilesInPackage" AfterTargets="_ComputeAppxPackagePayload">
     <PropertyGroup>
-      <WinGetAdditonalPackageFileRoot>$(SolutionDir)</WinGetAdditonalPackageFileRoot>
-      <WinGetAdditonalPackageFileRoot Condition="!Exists('$(WinGetAdditonalPackageFileRoot)\$(PlatformTarget)\$(Configuration)\WindowsPackageManager\WindowsPackageManager.dll')">$(OutputPath)\..\..\..\..</WinGetAdditonalPackageFileRoot>
+      <WinGetAdditionalPackageFileRoot>$(SolutionDir)</WinGetAdditionalPackageFileRoot>
     </PropertyGroup>
-    <Message Importance="normal" Text="WinGetAdditonalPackageFileRoot = $(WinGetAdditonalPackageFileRoot)" />
+    <Message Importance="normal" Text="WinGetAdditionalPackageFileRoot = $(WinGetAdditionalPackageFileRoot)" />
     <ItemGroup>
-      <WinGetAdditionalPackageFile Include="$(WinGetAdditonalPackageFileRoot)\$(PlatformTarget)\$(Configuration)\WindowsPackageManager\WindowsPackageManager.dll">
+      <WinGetAdditionalPackageFile Include="$(WinGetAdditionalPackageFileRoot)\$(PlatformTarget)\$(Configuration)\WindowsPackageManager\WindowsPackageManager.dll">
         <PackagePath>WindowsPackageManager.dll</PackagePath>
       </WinGetAdditionalPackageFile>
-      <WinGetAdditionalPackageFile Include="$(WinGetAdditonalPackageFileRoot)\$(PlatformTarget)\$(Configuration)\Microsoft.Management.Deployment\Microsoft.Management.Deployment.winmd">
+      <WinGetAdditionalPackageFile Include="$(WinGetAdditionalPackageFileRoot)\$(PlatformTarget)\$(Configuration)\Microsoft.Management.Deployment\Microsoft.Management.Deployment.winmd">
         <PackagePath>Microsoft.Management.Deployment.winmd</PackagePath>
       </WinGetAdditionalPackageFile>
-      <WinGetAdditionalPackageFile Include="$(WinGetAdditonalPackageFileRoot)\$(PlatformTarget)\$(Configuration)\Microsoft.Management.Configuration\Microsoft.Management.Configuration.dll">
+      <WinGetAdditionalPackageFile Include="$(WinGetAdditionalPackageFileRoot)\$(PlatformTarget)\$(Configuration)\Microsoft.Management.Configuration\Microsoft.Management.Configuration.dll">
         <PackagePath>Microsoft.Management.Configuration.dll</PackagePath>
       </WinGetAdditionalPackageFile>
-      <WinGetAdditionalPackageFile Include="$(WinGetAdditonalPackageFileRoot)\$(PlatformTarget)\$(Configuration)\Microsoft.Management.Configuration\Microsoft.Management.Configuration.winmd">
+      <WinGetAdditionalPackageFile Include="$(WinGetAdditionalPackageFileRoot)\$(PlatformTarget)\$(Configuration)\Microsoft.Management.Configuration\Microsoft.Management.Configuration.winmd">
         <PackagePath>Microsoft.Management.Configuration.winmd</PackagePath>
       </WinGetAdditionalPackageFile>
-      <WinGetAdditionalPackageFile Include="$(WinGetAdditonalPackageFileRoot)\AnyCPU\$(Configuration)\Microsoft.Management.Configuration.Processor\**\Microsoft.Management.Configuration.Processor.winmd">
+      <WinGetAdditionalPackageFile Include="$(WinGetAdditionalPackageFileRoot)\AnyCPU\$(Configuration)\Microsoft.Management.Configuration.Processor\**\Microsoft.Management.Configuration.Processor.winmd">
         <PackagePath>Microsoft.Management.Configuration.Processor.winmd</PackagePath>
       </WinGetAdditionalPackageFile>
-      <WinGetAdditionalPackageFile Include="$(WinGetAdditonalPackageFileRoot)\AnyCPU\$(Configuration)\Microsoft.Management.Configuration.Projection\**\Microsoft.Management.Configuration.Projection.dll">
+      <WinGetAdditionalPackageFile Include="$(WinGetAdditionalPackageFileRoot)\AnyCPU\$(Configuration)\Microsoft.Management.Configuration.Projection\**\Microsoft.Management.Configuration.Projection.dll">
         <PackagePath>ConfigurationRemotingServer\Microsoft.Management.Configuration.Projection.dll</PackagePath>
       </WinGetAdditionalPackageFile>
-      <WinGetAdditionalPackageFile Include="$(WinGetAdditonalPackageFileRoot)\$(PlatformTarget)\$(Configuration)\ConfigurationRemotingServer\net6.0-windows10.0.19041.0\$(ConfigServerRid)\**\*">
+      <WinGetAdditionalPackageFile Include="$(WinGetAdditionalPackageFileRoot)\$(PlatformTarget)\$(Configuration)\ConfigurationRemotingServer\net8.0-windows10.0.22000.0\$(ConfigServerRid)\**\*">
         <PackagePath>ConfigurationRemotingServer</PackagePath>
         <Recurse>true</Recurse>
       </WinGetAdditionalPackageFile>

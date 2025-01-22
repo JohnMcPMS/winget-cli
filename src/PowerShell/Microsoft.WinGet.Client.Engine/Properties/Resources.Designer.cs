@@ -70,11 +70,29 @@ namespace Microsoft.WinGet.Resources {
         }
         
         /// <summary>
+        ///   Looks up a localized string similar to Completed.
+        /// </summary>
+        internal static string Completed {
+            get {
+                return ResourceManager.GetString("Completed", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Looks up a localized string similar to Debug parameter not supported.
         /// </summary>
         internal static string DebugNotSupported {
             get {
                 return ResourceManager.GetString("DebugNotSupported", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Downloading.
+        /// </summary>
+        internal static string DownloadingMessage {
+            get {
+                return ResourceManager.GetString("DownloadingMessage", resourceCulture);
             }
         }
         
@@ -196,11 +214,11 @@ namespace Microsoft.WinGet.Resources {
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to Microsoft.UI.Xaml.2.7 package is not installed.
+        ///   Looks up a localized string similar to Repair operations involving administrator privileges are not permitted on packages installed within the user scope..
         /// </summary>
-        internal static string MicrosoftUIXaml27Message {
+        internal static string NoAdminRepairForUserScopePackage {
             get {
-                return ResourceManager.GetString("MicrosoftUIXaml27Message", resourceCulture);
+                return ResourceManager.GetString("NoAdminRepairForUserScopePackage", resourceCulture);
             }
         }
         
@@ -214,11 +232,38 @@ namespace Microsoft.WinGet.Resources {
         }
         
         /// <summary>
+        ///   Looks up a localized string similar to The repair command for this package is not available in the Package Manifest. Please reach out to the package publisher for assistance..
+        /// </summary>
+        internal static string NoRepairInfoFound {
+            get {
+                return ResourceManager.GetString("NoRepairInfoFound", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Exporting &apos;{0}&apos;.
+        /// </summary>
+        internal static string ProgressRecordActivityExporting {
+            get {
+                return ResourceManager.GetString("ProgressRecordActivityExporting", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Looks up a localized string similar to Installing &apos;{0}&apos;.
         /// </summary>
         internal static string ProgressRecordActivityInstalling {
             get {
                 return ResourceManager.GetString("ProgressRecordActivityInstalling", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Repairing &apos;{0}&apos;.
+        /// </summary>
+        internal static string ProgressRecordActivityRepairing {
+            get {
+                return ResourceManager.GetString("ProgressRecordActivityRepairing", resourceCulture);
             }
         }
         
@@ -237,6 +282,15 @@ namespace Microsoft.WinGet.Resources {
         internal static string ProgressRecordActivityUpdating {
             get {
                 return ResourceManager.GetString("ProgressRecordActivityUpdating", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Cannot find asset {0}.
+        /// </summary>
+        internal static string ReleaseAssetNotFound {
+            get {
+                return ResourceManager.GetString("ReleaseAssetNotFound", resourceCulture);
             }
         }
         
@@ -268,11 +322,47 @@ namespace Microsoft.WinGet.Resources {
         }
         
         /// <summary>
+        ///   Looks up a localized string similar to The installer technology in use does not match the version currently installed..
+        /// </summary>
+        internal static string RepairDifferentInstallTechnology {
+            get {
+                return ResourceManager.GetString("RepairDifferentInstallTechnology", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to The repair operation was unsuccessful, exiting with Repairer error code: {0}..
+        /// </summary>
+        internal static string RepairerFailure {
+            get {
+                return ResourceManager.GetString("RepairerFailure", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Looks up a localized string similar to Failed to repair winget..
         /// </summary>
         internal static string RepairFailureMessage {
             get {
                 return ResourceManager.GetString("RepairFailureMessage", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Repairing.
+        /// </summary>
+        internal static string Repairing {
+            get {
+                return ResourceManager.GetString("Repairing", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to The current installer technology does not support repair. Please reach out to the package vendor for assistance..
+        /// </summary>
+        internal static string RepairOperationNotSupported {
+            get {
+                return ResourceManager.GetString("RepairOperationNotSupported", resourceCulture);
             }
         }
         
@@ -291,6 +381,24 @@ namespace Microsoft.WinGet.Resources {
         internal static string SingleThreadedApartmentNotSupportedMessage {
             get {
                 return ResourceManager.GetString("SingleThreadedApartmentNotSupportedMessage", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Uninstalling.
+        /// </summary>
+        internal static string Uninstalling {
+            get {
+                return ResourceManager.GetString("Uninstalling", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to An unexpected error happened while trying to repair the package. Error code:{0}.
+        /// </summary>
+        internal static string UnknownRepairFailure {
+            get {
+                return ResourceManager.GetString("UnknownRepairFailure", resourceCulture);
             }
         }
         
@@ -336,15 +444,6 @@ namespace Microsoft.WinGet.Resources {
         internal static string WinGetCLITimeoutExceptionMessage {
             get {
                 return ResourceManager.GetString("WinGetCLITimeoutExceptionMessage", resourceCulture);
-            }
-        }
-        
-        /// <summary>
-        ///   Looks up a localized string similar to Windows Package Manager not supported..
-        /// </summary>
-        internal static string WinGetNotSupportedMessage {
-            get {
-                return ResourceManager.GetString("WinGetNotSupportedMessage", resourceCulture);
             }
         }
     }

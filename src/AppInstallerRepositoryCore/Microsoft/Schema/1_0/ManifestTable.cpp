@@ -213,7 +213,7 @@ namespace AppInstaller::Repository::Microsoft::Schema::V1_0
             }
             else
             {
-                builder.LiteralColumn("");
+                builder.Value(std::string_view{});
             }
 
             builder.As(valueAlias).From(s_ManifestTable_Table_Name);
@@ -431,6 +431,14 @@ namespace AppInstaller::Repository::Microsoft::Schema::V1_0
         }
 
         savepoint.Commit();
+    }
+
+    void ManifestTable::Drop(SQLite::Connection& connection)
+    {
+        SQLite::Builder::StatementBuilder dropTableBuilder;
+        dropTableBuilder.DropTable(s_ManifestTable_Table_Name);
+
+        dropTableBuilder.Execute(connection);
     }
 
     SQLite::rowid_t ManifestTable::Insert(SQLite::Connection& connection, std::initializer_list<ManifestOneToOneValue> values)

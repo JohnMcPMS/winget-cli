@@ -3,10 +3,12 @@
 #include "pch.h"
 #include "Public/winget/SQLiteWrapper.h"
 #include "Public/AppInstallerErrors.h"
+#include "Public/AppInstallerStrings.h"
 #include "ICU/SQLiteICU.h"
 
 #include <wil/result_macros.h>
 
+using namespace std::chrono_literals;
 using namespace std::string_view_literals;
 
 // Enable this to have all Statement constructions output the associated query plan.
@@ -16,11 +18,14 @@ using namespace std::string_view_literals;
 #include <stack>
 #endif
 
+// Connection is used twice
+#define SQLITE_ERROR_MSG(_error_,_connection_) (_connection_ ? sqlite3_errmsg(_connection_) : sqlite3_errstr(_error_))
+
 #define THROW_SQLITE(_error_,_connection_) \
     do { \
         int _ts_sqliteReturnValue = (_error_); \
         sqlite3* _ts_sqliteConnection = (_connection_); \
-        THROW_EXCEPTION_MSG(SQLiteException(_ts_sqliteReturnValue), "%hs", _ts_sqliteConnection ? sqlite3_errmsg(_ts_sqliteConnection) : sqlite3_errstr(_ts_sqliteReturnValue)); \
+        THROW_EXCEPTION_MSG(SQLiteException(_ts_sqliteReturnValue), "%hs", SQLITE_ERROR_MSG(_ts_sqliteReturnValue, _ts_sqliteConnection)); \
     } while (0,0)
 
 #define THROW_IF_SQLITE_FAILED(_statement_,_connection_) \
@@ -144,22 +149,66 @@ namespace AppInstaller::SQLite
                 return {};
             }
         }
+
+        std::string ParameterSpecificsImpl<GUID>::ToLog(const GUID& v)
+        {
+            std::ostringstream strstr;
+            strstr << v;
+            return strstr.str();
+        }
+
+        void ParameterSpecificsImpl<GUID>::Bind(sqlite3_stmt* stmt, int index, const GUID& v)
+        {
+            static_assert(sizeof(v) == 16);
+            THROW_IF_SQLITE_FAILED(sqlite3_bind_blob64(stmt, index, &v, sizeof(v), SQLITE_TRANSIENT), sqlite3_db_handle(stmt));
+        }
+
+        GUID ParameterSpecificsImpl<GUID>::GetColumn(sqlite3_stmt* stmt, int column)
+        {
+            GUID result{};
+
+            const void* blobPtr = sqlite3_column_blob(stmt, column);
+            if (blobPtr)
+            {
+                result = *reinterpret_cast<const GUID*>(blobPtr);
+            }
+
+            return result;
+        }
+
+        void SharedConnection::Disable()
+        {
+            m_active = false;
+        }
+
+        sqlite3* SharedConnection::Get() const
+        {
+            THROW_HR_IF(APPINSTALLER_CLI_ERROR_SQLITE_CONNECTION_TERMINATED, !m_active.load());
+            return m_dbconn.get();
+        }
+
+        sqlite3** SharedConnection::GetPtr()
+        {
+            return &m_dbconn;
+        }
     }
 
     Connection::Connection(const std::string& target, OpenDisposition disposition, OpenFlags flags)
     {
+        m_dbconn = std::make_shared<details::SharedConnection>();
         m_id = GetNextConnectionId();
         AICLI_LOG(SQL, Info, << "Opening SQLite connection #" << m_id << ": '" << target << "' [" << std::hex << static_cast<int>(disposition) << ", " << std::hex << static_cast<int>(flags) << "]");
         // Always force connection serialization until we determine that there are situations where it is not needed
         int resultingFlags = static_cast<int>(disposition) | static_cast<int>(flags) | SQLITE_OPEN_FULLMUTEX;
-        THROW_IF_SQLITE_FAILED(sqlite3_open_v2(target.c_str(), &m_dbconn, resultingFlags, nullptr), nullptr);
+        THROW_IF_SQLITE_FAILED(sqlite3_open_v2(target.c_str(), m_dbconn->GetPtr(), resultingFlags, nullptr), nullptr);
     }
 
     Connection Connection::Create(const std::string& target, OpenDisposition disposition, OpenFlags flags)
     {
         Connection result{ target, disposition, flags };
-        
-        THROW_IF_SQLITE_FAILED(sqlite3_extended_result_codes(result.m_dbconn.get(), 1), result.m_dbconn.get());
+
+        THROW_IF_SQLITE_FAILED(sqlite3_extended_result_codes(result.m_dbconn->Get(), 1), result.m_dbconn->Get());
+        result.SetBusyTimeout(250ms);
 
         return result;
     }
@@ -167,17 +216,17 @@ namespace AppInstaller::SQLite
     void Connection::EnableICU()
     {
         AICLI_LOG(SQL, Verbose, << "Enabling ICU");
-        THROW_IF_SQLITE_FAILED(sqlite3IcuInit(m_dbconn.get()), m_dbconn.get());
+        THROW_IF_SQLITE_FAILED(sqlite3IcuInit(m_dbconn->Get()), m_dbconn->Get());
     }
 
     rowid_t Connection::GetLastInsertRowID()
     {
-        return sqlite3_last_insert_rowid(m_dbconn.get());
+        return sqlite3_last_insert_rowid(m_dbconn->Get());
     }
 
     int Connection::GetChanges() const
     {
-        return sqlite3_changes(m_dbconn.get());
+        return sqlite3_changes(m_dbconn->Get());
     }
 
     size_t Connection::GetID() const
@@ -185,8 +234,31 @@ namespace AppInstaller::SQLite
         return m_id;
     }
 
+    void Connection::SetBusyTimeout(std::chrono::milliseconds timeout)
+    {
+        THROW_IF_SQLITE_FAILED(sqlite3_busy_timeout(m_dbconn->Get(), static_cast<int>(timeout.count())), m_dbconn->Get());
+    }
+
+    bool Connection::SetJournalMode(std::string_view mode)
+    {
+        using namespace AppInstaller::Utility;
+
+        std::ostringstream stream;
+        stream << "PRAGMA journal_mode=" << mode;
+
+        Statement setJournalMode = Statement::Create(*this, stream.str());
+        THROW_HR_IF(E_UNEXPECTED, !setJournalMode.Step());
+        return ToLower(setJournalMode.GetColumn<std::string>(0)) == ToLower(mode);
+    }
+
+    std::shared_ptr<details::SharedConnection> Connection::GetSharedConnection() const
+    {
+        return m_dbconn;
+    }
+
     Statement::Statement(const Connection& connection, std::string_view sql)
     {
+        m_dbconn = connection.GetSharedConnection();
         m_connectionId = connection.GetID();
         m_id = GetNextStatementId();
         AICLI_LOG(SQL, Verbose, << "Preparing statement #" << m_connectionId << '-' << m_id << ": " << sql);
@@ -253,7 +325,7 @@ namespace AppInstaller::SQLite
         return { connection, sql };
     }
 
-    bool Statement::Step(bool failFastOnError)
+    bool Statement::Step(bool closeConnectionOnError)
     {
         AICLI_LOG(SQL, Verbose, << "Stepping statement #" << m_connectionId << '-' << m_id);
         int result = sqlite3_step(m_stmt.get());
@@ -273,20 +345,19 @@ namespace AppInstaller::SQLite
         else
         {
             m_state = State::Error;
-            if (failFastOnError)
+
+            if (closeConnectionOnError)
             {
-                FAIL_FAST_MSG("Critical SQL statement failed");
+                m_dbconn->Disable();
             }
-            else
-            {
-                THROW_SQLITE(result, sqlite3_db_handle(m_stmt.get()));
-            }
+
+            THROW_SQLITE(result, sqlite3_db_handle(m_stmt.get()));
         }
     }
 
-    void Statement::Execute(bool failFastOnError)
+    void Statement::Execute(bool closeConnectionOnError)
     {
-        THROW_HR_IF(E_UNEXPECTED, Step(failFastOnError));
+        THROW_HR_IF(E_UNEXPECTED, Step(closeConnectionOnError));
     }
 
     bool Statement::GetColumnIsNull(int column)
@@ -302,6 +373,70 @@ namespace AppInstaller::SQLite
         sqlite3_reset(m_stmt.get());
         m_state = State::Prepared;
     }
+
+    Transaction::Transaction() : m_inProgress(false)
+    {}
+
+    Transaction::Transaction(Connection& connection, std::string&& name, bool immediateWrite) :
+        m_name(std::move(name))
+    {
+        using namespace std::string_literals;
+
+        Statement begin = Statement::Create(connection, "BEGIN "s + (immediateWrite ? "IMMEDIATE" : "DEFERRED"));
+        m_rollback = Statement::Create(connection, "ROLLBACK");
+        m_commit = Statement::Create(connection, "COMMIT");
+
+        AICLI_LOG(SQL, Verbose, << "Begin transaction: " << m_name);
+        begin.Step();
+    }
+
+    Transaction Transaction::Create(Connection& connection, std::string name, bool immediateWrite)
+    {
+        return { connection, std::move(name), immediateWrite };
+    }
+
+    Transaction::~Transaction()
+    {
+        // Prevent a termination by not throwing on errors here
+        Rollback(false);
+    }
+
+    void Transaction::Rollback(bool throwOnError)
+    {
+        if (m_inProgress)
+        {
+            // Only try rollback once
+            m_inProgress = false;
+
+            try
+            {
+                AICLI_LOG(SQL, Verbose, << "Roll back transaction: " << m_name);
+                m_rollback.Step(true);
+            }
+            catch (...)
+            {
+                if (throwOnError)
+                {
+                    throw;
+                }
+
+                LOG_CAUGHT_EXCEPTION();
+            }
+        }
+    }
+
+    void Transaction::Commit()
+    {
+        if (m_inProgress)
+        {
+            AICLI_LOG(SQL, Verbose, << "Commit transaction: " << m_name);
+            m_commit.Step();
+            m_inProgress = false;
+        }
+    }
+
+    Savepoint::Savepoint() : m_inProgress(false)
+    {}
 
     Savepoint::Savepoint(Connection& connection, std::string&& name) :
         m_name(std::move(name))
@@ -323,20 +458,35 @@ namespace AppInstaller::SQLite
 
     Savepoint::~Savepoint()
     {
-        Rollback();
+        // Prevent a termination by not throwing on errors here
+        Rollback(false);
     }
 
-    void Savepoint::Rollback()
+    void Savepoint::Rollback(bool throwOnError)
     {
         if (m_inProgress)
         {
-            AICLI_LOG(SQL, Verbose, << "Roll back savepoint: " << m_name);
-            m_rollbackTo.Step(true);
-            // 'ROLLBACK TO' *DOES NOT* remove the savepoint from the transaction stack.
-            // In order to remove it, we must RELEASE. Since we just invoked a ROLLBACK TO
-            // this should have the effect of 'committing' nothing.
-            m_release.Step(true);
+            // Only try rollback once
             m_inProgress = false;
+
+            try
+            {
+                AICLI_LOG(SQL, Verbose, << "Roll back savepoint: " << m_name);
+                m_rollbackTo.Step(true);
+                // 'ROLLBACK TO' *DOES NOT* remove the savepoint from the transaction stack.
+                // In order to remove it, we must RELEASE. Since we just invoked a ROLLBACK TO
+                // this should have the effect of 'committing' nothing.
+                m_release.Step(true);
+            }
+            catch (...)
+            {
+                if (throwOnError)
+                {
+                    throw;
+                }
+
+                LOG_CAUGHT_EXCEPTION();
+            }
         }
     }
 
@@ -345,7 +495,7 @@ namespace AppInstaller::SQLite
         if (m_inProgress)
         {
             AICLI_LOG(SQL, Verbose, << "Commit savepoint: " << m_name);
-            m_release.Step(true);
+            m_release.Step();
             m_inProgress = false;
         }
     }

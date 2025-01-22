@@ -27,7 +27,7 @@ param(
     [Parameter(Mandatory=$true)]
     [string]$CertPath,
 
-    [Parameter(Mandatory=$true)]
+    [Parameter()]
     [string]$CertPassword,
 
     [Parameter()]
@@ -37,7 +37,13 @@ param(
     [string]$LocalSourceJson,
 
     [Parameter()]
-    [string]$SourceCert
+    [string]$SourceCert,
+
+    [Parameter()]
+    [string]$TestDataPath,
+
+    [Parameter()]
+    [switch]$ExitBeforeRun
 )
 
 if (-not [System.String]::IsNullOrEmpty($sourceCert))
@@ -46,6 +52,25 @@ if (-not [System.String]::IsNullOrEmpty($sourceCert))
     & certutil.exe -addstore -f "TRUSTEDPEOPLE" $sourceCert
 }
 
-cd $BuildRoot
+Push-Location $BuildRoot
 
-Start-Process -FilePath "LocalhostWebServer.exe" -ArgumentList "StaticFileRoot=$StaticFileRoot CertPath=$CertPath CertPassword=$CertPassword OutCertFile=$OutCertFile LocalSourceJson=$LocalSourceJson"
+$startProcessArguments = @{
+    FilePath = Join-Path $BuildRoot "LocalhostWebServer.exe"
+    ArgumentList = "StaticFileRoot=$StaticFileRoot CertPath=$CertPath CertPassword=$CertPassword OutCertFile=$OutCertFile LocalSourceJson=$LocalSourceJson TestDataPath=$TestDataPath ExitBeforeRun=$ExitBeforeRun"
+    PassThru = $true
+}
+
+if (-not [System.string]::IsNullOrEmpty($env:artifactsDir))
+{
+    $startProcessArguments.RedirectStandardOutput = Join-Path $env:artifactsDir "LocalhostWebServer.out"
+    $startProcessArguments.RedirectStandardError = Join-Path $env:artifactsDir "LocalhostWebServer.err"
+}
+
+$Local:process = Start-Process @startProcessArguments
+
+if ($ExitBeforeRun)
+{
+    Wait-Process -InputObject $Local:process
+}
+
+Pop-Location

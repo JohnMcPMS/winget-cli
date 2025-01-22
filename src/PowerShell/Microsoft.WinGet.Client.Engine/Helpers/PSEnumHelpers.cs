@@ -1,4 +1,4 @@
-﻿// -----------------------------------------------------------------------------
+// -----------------------------------------------------------------------------
 // <copyright file="PSEnumHelpers.cs" company="Microsoft Corporation">
 //     Copyright (c) Microsoft Corporation. Licensed under the MIT License.
 // </copyright>
@@ -8,6 +8,7 @@ namespace Microsoft.WinGet.Client.Engine.Helpers
 {
     using System;
     using Microsoft.Management.Deployment;
+    using Newtonsoft.Json.Linq;
     using Windows.System;
 
     /// <summary>
@@ -15,6 +16,16 @@ namespace Microsoft.WinGet.Client.Engine.Helpers
     /// </summary>
     internal static class PSEnumHelpers
     {
+        /// <summary>
+        /// Checks if the provided enum string value matches the 'Default' value for PS Enums.
+        /// </summary>
+        /// <param name="value">Enum string value.</param>
+        /// <returns>Boolean value.</returns>
+        public static bool IsDefaultEnum(string value)
+        {
+            return string.Equals(value, "Default", StringComparison.OrdinalIgnoreCase);
+        }
+
         /// <summary>
         /// Converts PSPackageInstallMode string value to PackageInstallMode.
         /// </summary>
@@ -95,6 +106,46 @@ namespace Microsoft.WinGet.Client.Engine.Helpers
                 "EqualsCaseInsensitive" => PackageFieldMatchOption.EqualsCaseInsensitive,
                 "StartsWithCaseInsensitive" => PackageFieldMatchOption.StartsWithCaseInsensitive,
                 "ContainsCaseInsensitive" => PackageFieldMatchOption.ContainsCaseInsensitive,
+                _ => throw new InvalidOperationException(),
+            };
+        }
+
+        /// <summary>
+        /// Converts PSPackageInstallerType string value to PackageInstallerType.
+        /// </summary>
+        /// <param name="value">PSPackageInstallerType string value.</param>
+        /// <returns>PackageInstallerType.</returns>
+        public static PackageInstallerType ToPackageInstallerType(string value)
+        {
+            return value switch
+            {
+                "Unknown" => PackageInstallerType.Unknown,
+                "Inno" => PackageInstallerType.Inno,
+                "Wix" => PackageInstallerType.Wix,
+                "Msi" => PackageInstallerType.Msi,
+                "Nullsoft" => PackageInstallerType.Nullsoft,
+                "Zip" => PackageInstallerType.Zip,
+                "Msix" => PackageInstallerType.Msix,
+                "Exe" => PackageInstallerType.Exe,
+                "Burn" => PackageInstallerType.Burn,
+                "MSStore" => PackageInstallerType.MSStore,
+                "Portable" => PackageInstallerType.Portable,
+                _ => throw new InvalidOperationException(),
+            };
+        }
+
+        /// <summary>
+        /// Converts PSPackageRepairMode string value to PackageRepairMode.
+        /// </summary>
+        /// <param name="value">PSPackageRepairMode string value.</param>
+        /// <returns>PackageRepairMode.</returns>
+        public static PackageRepairMode ToPackageRepairMode(string value)
+        {
+            return value switch
+            {
+                "Default" => PackageRepairMode.Default,
+                "Silent" => PackageRepairMode.Silent,
+                "Interactive" => PackageRepairMode.Interactive,
                 _ => throw new InvalidOperationException(),
             };
         }

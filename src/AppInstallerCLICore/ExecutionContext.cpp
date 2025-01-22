@@ -1,13 +1,15 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 #include "pch.h"
-#include "ExecutionContext.h"
-#include "COMContext.h"
-#include "Argument.h"
-#include "winget/UserSettings.h"
 #include "AppInstallerRuntime.h"
+#include "Argument.h"
+#include "COMContext.h"
 #include "Command.h"
-#include "Public/winget/Checkpoint.h"
+#include "ExecutionContext.h"
+#include <winget/Checkpoint.h>
+#include <winget/Reboot.h>
+#include <winget/UserSettings.h>
+#include <winget/NetworkSettings.h>
 
 using namespace AppInstaller::Checkpoints;
 
@@ -272,15 +274,29 @@ namespace AppInstaller::CLI::Execution
                 SignalTerminationHandler::Instance().RemoveContext(context);
             }
         }
+
+        bool ShouldRemoveCheckpointDatabase(HRESULT hr)
+        {
+            switch (hr)
+            {
+            case APPINSTALLER_CLI_ERROR_INSTALL_REBOOT_REQUIRED_FOR_INSTALL:
+            case APPINSTALLER_CLI_ERROR_RESUME_LIMIT_EXCEEDED:
+            case APPINSTALLER_CLI_ERROR_CLIENT_VERSION_MISMATCH:
+                return false;
+            default:
+                return true;
+            }
+        }
     }
 
     Context::~Context()
     {
-        if (Settings::ExperimentalFeature::IsEnabled(ExperimentalFeature::Feature::Resume) && !IsTerminated())
+        if (Settings::ExperimentalFeature::IsEnabled(ExperimentalFeature::Feature::Resume))
         {
-            if (m_checkpointManager)
+            if (m_checkpointManager && (!IsTerminated() || ShouldRemoveCheckpointDatabase(GetTerminationHR())))
             {
                 m_checkpointManager->CleanUpDatabase();
+                AppInstaller::Reboot::UnregisterRestartForWER();
             }
         }
 
@@ -307,6 +323,7 @@ namespace AppInstaller::CLI::Execution
             clone->EnableSignalTerminationHandler();
         }
         CopyArgsToSubContext(clone.get());
+        CopyDataToSubContext(clone.get());
         return clone;
     }
 
@@ -326,6 +343,17 @@ namespace AppInstaller::CLI::Execution
         }
     }
 
+    void Context::CopyDataToSubContext(Context* subContext)
+    {
+#define COPY_DATA_IF_EXISTS(dataType) \
+        if (this->Contains(dataType)) \
+        { \
+            subContext->Add<dataType>(this->Get<dataType>()); \
+        }
+
+        COPY_DATA_IF_EXISTS(Data::InstallerDownloadAuthenticators);
+    }
+
     void Context::EnableSignalTerminationHandler(bool enabled)
     {
         SetSignalTerminationHandlerContext(enabled, this);
@@ -334,6 +362,29 @@ namespace AppInstaller::CLI::Execution
 
     void Context::UpdateForArgs()
     {
+        // Change logging level to Info if Verbose not requested
+        if (Args.Contains(Args::Type::VerboseLogs))
+        {
+            Logging::Log().SetLevel(Logging::Level::Verbose);
+        }
+
+        // Disable warnings if requested
+        if (Args.Contains(Args::Type::IgnoreWarnings))
+        {
+            Reporter.SetLevelMask(Reporter::Level::Warning, false);
+        }
+
+        // Set proxy
+        if (Args.Contains(Args::Type::Proxy))
+        {
+            Network().SetProxyUri(std::string{ Args.GetArg(Args::Type::Proxy) });
+        }
+        else if (Args.Contains(Args::Type::NoProxy))
+        {
+            Network().SetProxyUri(std::nullopt);
+        }
+
+        // Set visual style
         if (Args.Contains(Args::Type::NoVT))
         {
             Reporter.SetStyle(VisualStyle::NoVT);
@@ -448,6 +499,29 @@ namespace AppInstaller::CLI::Execution
     }
 #endif
 
+    void ContextEnumBasedVariantMapActionCallback(const void* map, Data data, EnumBasedVariantMapAction action)
+    {
+        switch (action)
+        {
+        case EnumBasedVariantMapAction::Add:
+            AICLI_LOG(Workflow, Verbose, << "Setting data item: " << data);
+            break;
+        case EnumBasedVariantMapAction::Contains:
+            AICLI_LOG(Workflow, Verbose, << "Checking data item: " << data);
+            break;
+        case EnumBasedVariantMapAction::Get:
+            AICLI_LOG(Workflow, Verbose, << "Getting data item: " << data);
+            break;
+        }
+
+        UNREFERENCED_PARAMETER(map);
+    }
+
+    std::string Context::GetResumeId()
+    {
+        return m_checkpointManager->GetResumeId();
+    }
+
     std::optional<Checkpoint<AutomaticCheckpointData>> Context::LoadCheckpoint(const std::string& resumeId)
     {
         m_checkpointManager = std::make_unique<AppInstaller::Checkpoints::CheckpointManager>(resumeId);
@@ -468,6 +542,9 @@ namespace AppInstaller::CLI::Execution
         {
             m_checkpointManager = std::make_unique<AppInstaller::Checkpoints::CheckpointManager>();
             m_checkpointManager->CreateAutomaticCheckpoint(*this);
+
+            // Register for restart only when we first call checkpoint to support restarting from an unexpected shutdown.
+            AppInstaller::Reboot::RegisterRestartForWER("resume -g " + GetResumeId());
         }
 
         // TODO: Capture context data for checkpoint.

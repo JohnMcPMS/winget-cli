@@ -32,7 +32,10 @@ param (
     $BuildRoot = "",
 
     [switch]
-    $SkipImportModule
+    $SkipImportModule,
+
+    [switch]
+    $Clean
 )
 
 class WinGetModule
@@ -46,7 +49,8 @@ class WinGetModule
     {
         $this.Name = $n
         $this.ModuleRoot = $m
-        $this.Output = "$o\$($this.Name)\"
+        $this.Output = Join-Path $o $this.Name
+        New-Item $this.Output -ItemType Directory -ErrorAction SilentlyContinue
 
         if (Get-Module -Name $this.Name)
         {
@@ -56,11 +60,13 @@ class WinGetModule
 
     [void]PrepareScriptFiles()
     {
+        Write-Verbose "Copying script files: $($this.ModuleRoot) -> $($this.Output)"
         xcopy $this.ModuleRoot $this.Output /d /s /f /y
     }
 
     [void]PrepareBinaryFiles([string] $buildRoot, [string] $config)
     {
+        Write-Verbose "Copying binary files: $buildRoot\AnyCpu\$config\PowerShell\$($this.Name)\* -> $($this.Output)"
         $copyErrors = $null
         Copy-Item "$buildRoot\AnyCpu\$config\PowerShell\$($this.Name)\*" $this.Output -Force -Recurse -ErrorVariable copyErrors -ErrorAction SilentlyContinue
         $copyErrors | ForEach-Object { Write-Warning $_ }
@@ -71,6 +77,7 @@ class WinGetModule
     {
         $x64Path = "$($this.Output)\$location\x64\"
         $x86Path = "$($this.Output)\$location\x86\"
+        $arm64Path = "$($this.Output)\$location\arm64\"
         if (-not (Test-Path $x64Path))
         {
             New-Item $x64Path -ItemType directory
@@ -80,6 +87,11 @@ class WinGetModule
         {
             New-Item $x86Path -ItemType directory
         }
+
+        if (-not (Test-Path $arm64Path))
+        {
+            New-Item $arm64Path -ItemType directory
+        }        
 
         foreach ($f in $files)
         {
@@ -88,6 +100,8 @@ class WinGetModule
             $copyErrors | ForEach-Object { Write-Warning $_ }
             Copy-Item "$buildRoot\x86\$config\$f" "$($this.Output)\$location\x86\" -Force -ErrorVariable copyErrors -ErrorAction SilentlyContinue
             $copyErrors | ForEach-Object { Write-Warning $_ }
+            Copy-Item "$buildRoot\arm64\$config\$f" "$($this.Output)\$location\arm64\" -Force -ErrorVariable copyErrors -ErrorAction SilentlyContinue
+            $copyErrors | ForEach-Object { Write-Warning $_ }            
         }
     }
 
@@ -95,6 +109,7 @@ class WinGetModule
     {
         $x64Path = "$($this.Output)\$location\x64\"
         $x86Path = "$($this.Output)\$location\x86\"
+        $arm64Path = "$($this.Output)\$location\arm64\"        
         if (-not (Test-Path $x64Path))
         {
             New-Item $x64Path -ItemType directory
@@ -105,12 +120,19 @@ class WinGetModule
             New-Item $x86Path -ItemType directory
         }
 
+        if (-not (Test-Path $arm64Path))
+        {
+            New-Item $arm64Path -ItemType directory
+        }
+
         foreach ($f in $files)
         {
             $copyErrors = $null
             Copy-Item "$buildRoot\AnyCpu\$config\$f" "$($this.Output)\$location\x64\" -Force -ErrorVariable copyErrors -ErrorAction SilentlyContinue
             $copyErrors | ForEach-Object { Write-Warning $_ }
             Copy-Item "$buildRoot\AnyCpu\$config\$f" "$($this.Output)\$location\x86\" -Force -ErrorVariable copyErrors -ErrorAction SilentlyContinue
+            $copyErrors | ForEach-Object { Write-Warning $_ }
+            Copy-Item "$buildRoot\AnyCpu\$config\$f" "$($this.Output)\$location\arm64\" -Force -ErrorVariable copyErrors -ErrorAction SilentlyContinue
             $copyErrors | ForEach-Object { Write-Warning $_ }
         }
     }
@@ -161,21 +183,27 @@ if ($BuildRoot -eq "")
     $BuildRoot = "$PSScriptRoot\..\..";
 }
 
+if ($Clean -and (Test-Path $moduleRootOutput))
+{
+    Remove-Item $moduleRootOutput -Recurse
+}
+
 # Modules, they should be in dependency order so that when importing we don't pick up the release modules.
 $local:modules = @()
 if ($moduleToConfigure.HasFlag([ModuleType]::Client))
 {
     Write-Host "Setting up Microsoft.WinGet.Client"
     $module = [WinGetModule]::new("Microsoft.WinGet.Client", "$PSScriptRoot\..\Microsoft.WinGet.Client\ModuleFiles\", $moduleRootOutput)
-    $module.PrepareScriptFiles()
     $module.PrepareBinaryFiles($BuildRoot, $Configuration)
+    $module.PrepareScriptFiles()
     $additionalFiles = @(
         "Microsoft.Management.Deployment.InProc\Microsoft.Management.Deployment.dll"
         "Microsoft.Management.Deployment\Microsoft.Management.Deployment.winmd"
         "WindowsPackageManager\WindowsPackageManager.dll"
         "UndockedRegFreeWinRT\winrtact.dll"
     )
-    $module.AddArchSpecificFiles($additionalFiles, "net6.0-windows10.0.22000.0\SharedDependencies", $BuildRoot, $Configuration)
+    $module.AddArchSpecificFiles($additionalFiles, "net8.0-windows10.0.22000.0\SharedDependencies", $BuildRoot, $Configuration)
+    $module.AddArchSpecificFiles($additionalFiles, "net48\SharedDependencies", $BuildRoot, $Configuration)
     $modules += $module
 }
 
@@ -191,16 +219,16 @@ if ($moduleToConfigure.HasFlag([ModuleType]::Configuration))
 {
     Write-Host "Setting up Microsoft.WinGet.Configuration"
     $module = [WinGetModule]::new("Microsoft.WinGet.Configuration", "$PSScriptRoot\..\Microsoft.WinGet.Configuration\ModuleFiles\", $moduleRootOutput)
-    $module.PrepareScriptFiles()
     $module.PrepareBinaryFiles($BuildRoot, $Configuration)
+    $module.PrepareScriptFiles()
     $additionalFiles = @(
         "Microsoft.Management.Configuration\Microsoft.Management.Configuration.dll"
     )
-    $module.AddArchSpecificFiles($additionalFiles, "net6.0-windows10.0.22000.0\SharedDependencies", $BuildRoot, $Configuration)
+    $module.AddArchSpecificFiles($additionalFiles, "SharedDependencies", $BuildRoot, $Configuration)
     $additionalFiles = @(
-        "Microsoft.Management.Configuration.Projection\net6.0-windows10.0.19041.0\Microsoft.Management.Configuration.Projection.dll"
+        "Microsoft.Management.Configuration.Projection\net8.0-windows10.0.22000.0\Microsoft.Management.Configuration.Projection.dll"
     )
-    $module.AddAnyCpuSpecificFilesToArch($additionalFiles, "net6.0-windows10.0.22000.0\SharedDependencies", $BuildRoot, $Configuration)
+    $module.AddAnyCpuSpecificFilesToArch($additionalFiles, "SharedDependencies", $BuildRoot, $Configuration)
     $modules += $module
 }
 

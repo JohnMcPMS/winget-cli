@@ -1,13 +1,17 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net6.0-windows</TargetFramework>
+    <TargetFramework>net8.0-windows</TargetFramework>
     <OutDir>$(SolutionDir)$(Platform)\$(Configuration)\AppInstallerCLIE2ETests\</OutDir>
     <IsPackable>false</IsPackable>
     <Platforms>x64;x86</Platforms>
     <OutputType>Library</OutputType>
     <DocumentationFile>$(OutDir)\AppInstallerCLIE2ETests.xml</DocumentationFile>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <!--
+    !!! Remove or update this on the next Microsoft.Windows.CsWinRT package version update. !!!
+    -->
+    <WindowsSdkPackageVersion>10.0.22000.53</WindowsSdkPackageVersion>
   </PropertyGroup>
 
   <PropertyGroup>
@@ -21,11 +25,11 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.PowerShell.SDK" Version="7.2.8" />
-    <PackageReference Include="Newtonsoft.Json" Version="13.0.2" />
+    <PackageReference Include="Microsoft.PowerShell.SDK" Version="7.4.6" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
     <PackageReference Include="Microsoft.Msix.Utils" Version="2.1.1" />
     <PackageReference Include="Microsoft.Win32.Registry" Version="5.0.0" />
-    <PackageReference Include="Microsoft.Windows.CsWinRT" Version="2.0.4" />
+    <PackageReference Include="Microsoft.Windows.CsWinRT" Version="2.1.6" />
     <PackageReference Include="nunit" Version="3.12.0" />
     <PackageReference Include="NUnit3TestAdapter" Version="3.15.1" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="16.5.0" />
@@ -33,9 +37,8 @@
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
-    <PackageReference Include="System.Security.Cryptography.Pkcs" Version="6.0.3" />
-    <PackageReference Include="Microsoft.Windows.Compatibility" Version="6.0.6" />
-    <PackageReference Include="System.Security.Cryptography.Xml" Version="6.0.1" />
+    <PackageReference Include="System.Data.SqlClient" Version="4.8.6" />
+    <PackageReference Include="System.Text.RegularExpressions" Version="4.3.1" />
   </ItemGroup>
 
   <!-- CsWinRT properties -->
@@ -50,25 +53,12 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Remove="testdata\configuration\DependencyCycle.yml" />
-    <None Remove="testdata\configuration\DuplicateIdentifiers.yml" />
-    <None Remove="testdata\configuration\Empty.yml" />
-    <None Remove="testdata\configuration\MissingDependency.yml" />
-    <None Remove="testdata\configuration\ModuleMismatch.yml" />
-    <None Remove="testdata\configuration\modules\NoVersion.yml" />
-    <None Remove="testdata\configuration\NoResourceName.yml" />
-    <None Remove="testdata\configuration\NotConfig.yml" />
-    <None Remove="TestData\Configuration\PSGallery_NoSettings.yml" />
-    <None Remove="testdata\configuration\ResourceNotFound.yml" />
-    <None Remove="testdata\configuration\ResourcesNotASequence.yml" />
     <None Remove="TestData\Configuration\ShowDetails_TestRepo_0_3.yml" />
-    <None Remove="testdata\configuration\UnitNotAMap.yml" />
-    <None Remove="testdata\configuration\UnknownVersion.yml" />
     <None Remove="TestData\Configuration\WithParameters_0_3.yml" />
-    <None Remove="TestData\localsource.json" />
-  </ItemGroup>
-
-  <ItemGroup>
+    <None Remove="TestData\empty" />
+    <None Remove="TestData\Manifests\TestUpgradeAddsDependency.1.0.yaml" />
+    <None Remove="TestData\Manifests\TestUpgradeAddsDependency.2.0.yaml" />
+    <None Remove="TestData\Manifests\TestUpgradeAddsDependencyDependent.1.0.yaml" />
     <Content Include="..\..\doc\admx\DesktopAppInstaller.admx" Link="TestData\DesktopAppInstaller.admx">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>

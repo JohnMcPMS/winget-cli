@@ -1,13 +1,13 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
-
 #include "pch.h"
 #include "WorkflowBase.h"
 #include "DependenciesFlow.h"
 #include "InstallFlow.h"
 #include "UpdateFlow.h"
 #include "ManifestComparator.h"
-#include <Microsoft/PinningIndex.h>
+#include <winget/PinningData.h>
+#include <winget/PackageVersionSelection.h>
 
 using namespace AppInstaller::Repository;
 using namespace AppInstaller::Repository::Microsoft;
@@ -71,8 +71,12 @@ namespace AppInstaller::CLI::Workflow
         // we include packages with Pinning pins
         const bool includePinned = m_isSinglePackage || context.Args.Contains(Execution::Args::Type::IncludePinned);
 
+        PinningData pinningData{ PinningData::Disposition::ReadOnly };
+        auto evaluator = pinningData.CreatePinStateEvaluator(includePinned ? PinBehavior::IncludePinned : PinBehavior::ConsiderPins, GetInstalledVersion(package));
+
         // The version keys should have already been sorted by version
-        const auto& versionKeys = package->GetAvailableVersionKeys();
+        auto availableVersions = GetAvailableVersionsForInstalledVersion(package);
+        const auto& versionKeys = availableVersions->GetVersionKeys();
         // Assume that no update versions are applicable
         bool upgradeVersionAvailable = false;
         for (const auto& key : versionKeys)
@@ -83,14 +87,17 @@ namespace AppInstaller::CLI::Workflow
                 // The only way to enter this portion of the statement with isUpgrade is if the version is available
                 if (isUpgrade)
                 {
+                    AICLI_LOG(CLI, Verbose, << "Updating from [" << installedVersion.ToString() << "] to [" << key.Version << "]");
                     upgradeVersionAvailable = true;
                 }
+
+                auto packageVersion = availableVersions->GetVersion(key);
+
                 // Check if the package is pinned
-                if (key.PinnedState == Pinning::PinType::Blocking ||
-                    key.PinnedState == Pinning::PinType::Gating ||
-                    (key.PinnedState == Pinning::PinType::Pinning && !includePinned))
+                PinType pinType = evaluator.EvaluatePinType(packageVersion);
+                if (pinType != Pinning::PinType::Unknown)
                 {
-                    AICLI_LOG(CLI, Info, << "Package [" << package->GetProperty(PackageProperty::Id) << " with Version[" << key.Version << "] from Source[" << key.SourceId << "] has a Pin with type[" << ToString(key.PinnedState) << "]");
+                    AICLI_LOG(CLI, Info, << "Package [" << package->GetProperty(PackageProperty::Id) << " with Version[" << key.Version << "] from Source[" << key.SourceId << "] has a Pin with type[" << ToString(pinType) << "]");
                     if (context.Args.Contains(Execution::Args::Type::Force))
                     {
                         AICLI_LOG(CLI, Info, << "Ignoring pin due to --force argument");
@@ -102,7 +109,6 @@ namespace AppInstaller::CLI::Workflow
                     }
                 }
 
-                auto packageVersion = package->GetAvailableVersion(key);
                 auto manifest = packageVersion->GetManifest();
 
                 // Check applicable Installer
@@ -213,7 +219,7 @@ namespace AppInstaller::CLI::Workflow
             auto updateContextPtr = context.CreateSubContext();
             Execution::Context& updateContext = *updateContextPtr;
             auto previousThreadGlobals = updateContext.SetForCurrentThread();
-            auto installedVersion = match.Package->GetInstalledVersion();
+            auto installedVersion = GetInstalledVersion(match.Package);
 
             updateContext.Add<Execution::Data::Package>(match.Package);
 

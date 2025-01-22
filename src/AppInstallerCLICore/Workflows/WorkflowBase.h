@@ -6,6 +6,7 @@
 #include <winget/ExperimentalFeature.h>
 #include <winget/RepositorySearch.h>
 #include <winget/RepositorySource.h>
+#include <winget/Authentication.h>
 
 #include <string>
 #include <string_view>
@@ -41,6 +42,7 @@ namespace AppInstaller::CLI::Workflow
         Uninstall,
         Upgrade,
         Download,
+        Repair,
     };
 
     // A task in the workflow.
@@ -67,6 +69,7 @@ namespace AppInstaller::CLI::Workflow
         bool IsFunction() const { return m_isFunc; }
         Func Function() const { return m_func; }
         bool ExecuteAlways() const { return m_executeAlways; }
+        void Log() const;
 
     private:
         bool m_isFunc = false;
@@ -77,6 +80,13 @@ namespace AppInstaller::CLI::Workflow
 
     // Helper to determine installed source to use based on context input.
     Repository::PredefinedSource DetermineInstalledSource(const Execution::Context& context);
+
+    // Helper to create authentication arguments from context input.
+    Authentication::AuthenticationArguments GetAuthenticationArguments(const Execution::Context& context);
+
+    // Helper to report exceptions and return the HRESULT.
+    // If context is null, no output will be attempted.
+    HRESULT HandleException(Execution::Context* context, std::exception_ptr exception);
 
     // Helper to report exceptions and return the HRESULT.
     HRESULT HandleException(Execution::Context& context, std::exception_ptr exception);
@@ -320,6 +330,22 @@ namespace AppInstaller::CLI::Workflow
         Execution::Args::Type m_arg;
     };
 
+    // Ensures the local file exists and is not a directory. Or it's a Uri. Default only https is supported at the moment.
+    // Required Args: the one given
+    // Inputs: None
+    // Outputs: None
+    struct VerifyFileOrUri : public WorkflowTask
+    {
+        VerifyFileOrUri(Execution::Args::Type arg, std::vector<std::wstring> supportedSchemes = { L"https" }) :
+            WorkflowTask("VerifyFileOrUri"), m_arg(arg), m_supportedSchemes(std::move(supportedSchemes)) {}
+
+        void operator()(Execution::Context& context) const override;
+
+    private:
+        Execution::Args::Type m_arg;
+        std::vector<std::wstring> m_supportedSchemes;
+    };
+
     // Opens the manifest file provided on the command line.
     // Required Args: Manifest
     // Inputs: None
@@ -331,6 +357,12 @@ namespace AppInstaller::CLI::Workflow
     // Inputs: Package
     // Outputs: None
     void ReportPackageIdentity(Execution::Context& context);
+
+    // Reports the installed package version identity.
+    // Required Args: None
+    // Inputs: InstalledPackageVersion
+    // Outputs: None
+    void ReportInstalledPackageVersionIdentity(Execution::Context& context);
 
     // Reports the manifest's identity.
     // Required Args: None

@@ -109,12 +109,23 @@ namespace AppInstaller::Utility {
         return hasher.Get();
     }
 
+    SHA256::HashBuffer SHA256::ComputeHash(const std::vector<uint8_t>& buffer)
+    {
+        THROW_HR_IF(HRESULT_FROM_WIN32(ERROR_INSUFFICIENT_BUFFER), buffer.size() > std::numeric_limits<uint32_t>::max());
+        return ComputeHash(buffer.data(), static_cast<uint32_t>(buffer.size()));
+    }
+
     SHA256::HashBuffer SHA256::ComputeHash(std::string_view buffer)
     {
         return ComputeHash(reinterpret_cast<const std::uint8_t*>(buffer.data()), static_cast<std::uint32_t>(buffer.size()));
     }
 
     SHA256::HashBuffer SHA256::ComputeHash(std::istream& in)
+    {
+        return ComputeHashDetails(in).Hash;
+    }
+
+    SHA256::HashDetails SHA256::ComputeHashDetails(std::istream& in)
     {
         // Throw exceptions on badbit
         auto excState = in.exceptions();
@@ -125,26 +136,31 @@ namespace AppInstaller::Utility {
         auto buffer = std::make_unique<uint8_t[]>(bufferSize);
 
         SHA256 hasher;
+        uint64_t totalSize = 0;
 
         while (in.good())
         {
             in.read((char*)(buffer.get()), bufferSize);
-            if (in.gcount())
+            std::streamsize bytesRead = in.gcount();
+            if (bytesRead)
             {
-                hasher.Add(buffer.get(), static_cast<size_t>(in.gcount()));
+                hasher.Add(buffer.get(), static_cast<size_t>(bytesRead));
+                totalSize += static_cast<uint64_t>(bytesRead);
             }
         }
 
         if (in.eof())
         {
-            return hasher.Get();
+            HashDetails result;
+            result.Hash = hasher.Get();
+            result.SizeInBytes = totalSize;
+            return result;
         }
         else
         {
             THROW_HR(APPINSTALLER_CLI_ERROR_STREAM_READ_FAILURE);
         }
     }
-
 
     SHA256::HashBuffer SHA256::ComputeHashFromFile(const std::filesystem::path& path)
     {

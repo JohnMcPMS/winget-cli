@@ -14,7 +14,7 @@ The **winget** command line tool enables users to discover, install, upgrade, re
 
 There are several ways to install the **winget** tool:
 
-* The **winget** tool is included in the flight or preview version of [Windows App Installer](https://www.microsoft.com/p/app-installer/9nblggh4nns1?ocid=9nblggh4nns1_ORSEARCH_Bing&rtc=1&activetab=pivot:overviewtab). You must install the preview version of **App Installer** to use **winget**. To gain early access, submit your request to the [Windows Package Manager Insiders Program](https://aka.ms/AppInstaller_InsiderProgram). Participating in the flight ring will guarantee you see the latest preview updates.
+* The **winget** tool is included in the flight or preview version of [Windows App Installer](https://apps.microsoft.com/detail/9nblggh4nns1?ocid=9nblggh4nns1_ORSEARCH_Bing&rtc=1&activetab=pivot:overviewtab). You must install the preview version of **App Installer** to use **winget**. To gain early access, submit your request to the [Windows Package Manager Insiders Program](https://aka.ms/AppInstaller_InsiderProgram). Participating in the flight ring will guarantee you see the latest preview updates.
 
 * Participate in the [Windows Insider Dev Channel](https://insider.windows.com/understand-flighting).
 
@@ -26,7 +26,7 @@ There are several ways to install the **winget** tool:
 
 Installer behavior can be different depending on whether you are running **winget** with administrator privileges.
 
-* When running **winget** without administrator privileges, some applications may [require elevation](https://docs.microsoft.com/windows/security/identity-protection/user-account-control/how-user-account-control-works) to install. When the installer runs, Windows will prompt you to [elevate](https://docs.microsoft.com/windows/security/identity-protection/user-account-control/how-user-account-control-works). If you choose not to elevate, the application will fail to install.  
+* When running **winget** without administrator privileges, some applications may [require elevation](https://docs.microsoft.com/windows/security/identity-protection/user-account-control/how-user-account-control-works) to install. When the installer runs, Windows will prompt you to [elevate](https://docs.microsoft.com/windows/security/identity-protection/user-account-control/how-user-account-control-works). If you choose not to elevate, the application will fail to install.
 
 * When running **winget** in an Administrator Command Prompt, you will not see [elevation prompts](https://docs.microsoft.com/windows/security/identity-protection/user-account-control/how-user-account-control-works) if the application requires it. Always use caution when running your command prompt as an administrator, and only install applications you trust.
 
@@ -52,7 +52,7 @@ The current preview of the **winget** tool supports the following commands.
 | [source](source.md) | Adds, removes, and updates the Windows Package Manager repositories accessed by the **winget** tool. |
 | [search](search.md) | Searches for an application. |
 | [list](list.md) | Display installed packages. |
-| [upgrade](upgrade.md) |  Upgrades the given package. | 
+| [upgrade](upgrade.md) |  Upgrades the given package. |
 | [uninstall](uninstall.md) | Uninstalls the given package. |
 | [hash](hash.md) | Generates the SHA256 hash for the installer. |
 | [validate](validate.md) | Validates a manifest file for submission to the Windows Package Manager repository. |
@@ -97,13 +97,13 @@ The current version of the **winget** tool supports the following types of insta
 You can author batch scripts and PowerShell scripts to install multiple applications.
 
 ```CMD
-@echo off  
-Echo Install Powertoys and Terminal  
-REM Powertoys  
-winget install Microsoft.Powertoys  
-if %ERRORLEVEL% EQU 0 Echo Powertoys installed successfully.  
-REM Terminal  
-winget install Microsoft.WindowsTerminal  
+@echo off
+Echo Install Powertoys and Terminal
+REM Powertoys
+winget install Microsoft.Powertoys
+if %ERRORLEVEL% EQU 0 Echo Powertoys installed successfully.
+REM Terminal
+winget install Microsoft.WindowsTerminal
 if %ERRORLEVEL% EQU 0 Echo Terminal installed successfully. %ERRORLEVEL%
 ```
 

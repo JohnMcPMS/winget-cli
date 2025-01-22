@@ -398,12 +398,13 @@ namespace AppInstaller::Repository::Microsoft
                 Manifest::Manifest manifest;
                 manifest.DefaultLocalization.Add<Manifest::Localization::Tags>({ "ARP" });
 
-                // Use the key name as the Id, as it is supposed to be unique.
-                // TODO: We probably want something better here, like constructing the value as
-                //       `Publisher.DisplayName`. We would need to ensure that there are no matches
-                //       against the rest of the data however (might happen if same package is
-                //       installed for multiple architectures/languages).
-                manifest.Id = productCode;
+                // Construct a unique name for this entry
+                const char separator = '\\';
+
+                std::ostringstream stream;
+                stream << "ARP" << separator << scope << separator << architecture << separator << productCode;
+
+                manifest.Id = stream.str();
 
                 manifest.Installers.emplace_back();
                 // TODO: This likely needs some cleanup applied, as it looks like INNO tends to append an "_is#"
@@ -491,7 +492,7 @@ namespace AppInstaller::Repository::Microsoft
                 try
                 {
                     // Use the ProductCode as a unique key for the path
-                    manifestIdOpt = index.AddManifest(manifest, Utility::ConvertToUTF16(manifest.Installers[0].ProductCode));
+                    manifestIdOpt = index.AddManifest(manifest);
                 }
                 catch (...)
                 {
@@ -529,6 +530,11 @@ namespace AppInstaller::Repository::Microsoft
                 // Pick up UninstallString and QuietUninstallString for uninstall.
                 AddMetadataIfPresent(arpKey, UninstallString, index, manifestId, PackageVersionMetadata::StandardUninstallCommand);
                 AddMetadataIfPresent(arpKey, QuietUninstallString, index, manifestId, PackageVersionMetadata::SilentUninstallCommand);
+
+                // Pick up ModifyPath for repair.
+                AddMetadataIfPresent(arpKey, ModifyPath, index, manifestId, PackageVersionMetadata::StandardModifyCommand);
+                AddMetadataIfPresent(arpKey, NoModify, index, manifestId, PackageVersionMetadata::NoModify);
+                AddMetadataIfPresent(arpKey, NoRepair, index, manifestId, PackageVersionMetadata::NoRepair);
 
                 // Pick up Language to enable proper selection of language for upgrade.
                 AddMetadataIfPresent(arpKey, Language, index, manifestId, PackageVersionMetadata::InstalledLocale);

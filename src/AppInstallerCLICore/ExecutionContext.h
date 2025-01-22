@@ -7,7 +7,7 @@
 #include "ExecutionContextData.h"
 #include "CompletionData.h"
 #include "CheckpointManager.h"
-#include "Public/winget/Checkpoint.h"
+#include <winget/Checkpoint.h>
 
 #include <string_view>
 
@@ -74,6 +74,7 @@ namespace AppInstaller::CLI::Execution
         Resume = 0x200,
         RebootRequired = 0x400,
         RegisterResume = 0x800,
+        InstallerExecutionUseRepair = 0x1000,
     };
 
     DEFINE_ENUM_FLAG_OPERATORS(ContextFlag);
@@ -84,10 +85,13 @@ namespace AppInstaller::CLI::Execution
     bool WaitForAppShutdownEvent();
 #endif
 
+    // Callback to log data actions.
+    void ContextEnumBasedVariantMapActionCallback(const void* map, Data data, EnumBasedVariantMapAction action);
+
     // The context within which all commands execute.
     // Contains input/output via Execution::Reporter and
     // arguments via Execution::Args.
-    struct Context : EnumBasedVariantMap<Data, details::DataMapping>
+    struct Context : EnumBasedVariantMap<Data, details::DataMapping, ContextEnumBasedVariantMapActionCallback>
     {
         Context(std::ostream& out, std::istream& in) : Reporter(out, in) {}
 
@@ -172,6 +176,9 @@ namespace AppInstaller::CLI::Execution
         bool ShouldExecuteWorkflowTask(const Workflow::WorkflowTask& task);
 #endif
 
+        // Returns the resume id.
+        std::string GetResumeId();
+
         // Called by the resume command. Loads the checkpoint manager with the resume id and returns the automatic checkpoint.
         std::optional<AppInstaller::Checkpoints::Checkpoint<AppInstaller::Checkpoints::AutomaticCheckpointData>> LoadCheckpoint(const std::string& resumeId);
 
@@ -184,6 +191,9 @@ namespace AppInstaller::CLI::Execution
     protected:
         // Copies the args that are also needed in a sub-context. E.g., silent
         void CopyArgsToSubContext(Context* subContext);
+
+        // Copies the execution data that are also needed in a sub-context. E.g., shared installer download authenticator map
+        void CopyDataToSubContext(Context* subContext);
 
         // Neither virtual functions nor member fields can be inside AICLI_DISABLE_TEST_HOOKS
         // or we could have ODR violations that lead to nasty bugs. So we will simply never

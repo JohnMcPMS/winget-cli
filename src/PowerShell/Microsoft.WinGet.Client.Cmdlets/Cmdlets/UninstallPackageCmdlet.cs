@@ -21,9 +21,12 @@ namespace Microsoft.WinGet.Client.Commands
         Constants.WinGetNouns.Package,
         DefaultParameterSetName = Constants.FoundSet,
         SupportsShouldProcess = true)]
+    [Alias("uswgp")]
     [OutputType(typeof(PSUninstallResult))]
     public sealed class UninstallPackageCmdlet : PackageCmdlet
     {
+        private UninstallPackageCommand command = null;
+
         /// <summary>
         /// Gets or sets the desired mode for the uninstallation process.
         /// </summary>
@@ -37,11 +40,17 @@ namespace Microsoft.WinGet.Client.Commands
         public SwitchParameter Force { get; set; }
 
         /// <summary>
+        /// Gets or sets the path to the logging file.
+        /// </summary>
+        [Parameter(ValueFromPipelineByPropertyName = true)]
+        public string Log { get; set; }
+
+        /// <summary>
         /// Uninstalls a package from the local system.
         /// </summary>
         protected override void ProcessRecord()
         {
-            var command = new UninstallPackageCommand(
+            this.command = new UninstallPackageCommand(
                         this,
                         this.PSCatalogPackage,
                         this.Version,
@@ -51,7 +60,18 @@ namespace Microsoft.WinGet.Client.Commands
                         this.Moniker,
                         this.Source,
                         this.Query);
-            command.Uninstall(this.Mode.ToString(), this.MatchOption.ToString(), this.Force.ToBool());
+            this.command.Uninstall(this.MatchOption.ToString(), this.Mode.ToString(), this.Force.ToBool());
+        }
+
+        /// <summary>
+        /// Interrupts currently running code within the command.
+        /// </summary>
+        protected override void StopProcessing()
+        {
+            if (this.command != null)
+            {
+                this.command.Cancel();
+            }
         }
     }
 }

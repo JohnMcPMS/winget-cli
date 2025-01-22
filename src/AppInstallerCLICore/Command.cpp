@@ -3,9 +3,12 @@
 #include "pch.h"
 #include "Command.h"
 #include "Resources.h"
+#include "Sixel.h"
 #include <winget/UserSettings.h>
 #include <AppInstallerRuntime.h>
 #include <winget/Locale.h>
+#include <winget/Reboot.h>
+#include <winget/Authentication.h>
 
 using namespace std::string_view_literals;
 using namespace AppInstaller::Utility::literals;
@@ -40,8 +43,39 @@ namespace AppInstaller::CLI
 
     void Command::OutputIntroHeader(Execution::Reporter& reporter) const
     {
+        auto infoOut = reporter.Info();
+        VirtualTerminal::ConstructedSequence indent;
+
+        if (reporter.SixelsEnabled())
+        {
+            try
+            {
+                std::filesystem::path imagePath = Runtime::GetPathTo(Runtime::PathName::ImageAssets);
+
+                if (!imagePath.empty())
+                {
+                    // This image matches the target pixel size. If changing the target size, choose the most appropriate image.
+                    imagePath /= "AppList.targetsize-40.png";
+
+                    VirtualTerminal::Sixel::Image wingetIcon{ imagePath };
+
+                    // Using a height of 2 to match the two lines of header.
+                    UINT imageHeightCells = 2;
+                    UINT imageWidthCells = 2 * imageHeightCells;
+
+                    wingetIcon.RenderSizeInCells(imageWidthCells, imageHeightCells);
+                    wingetIcon.RenderTo(infoOut);
+
+                    indent = VirtualTerminal::Cursor::Position::Forward(static_cast<int16_t>(imageWidthCells));
+                    infoOut << VirtualTerminal::Cursor::Position::Up(static_cast<int16_t>(imageHeightCells) - 1);
+                }
+            }
+            CATCH_LOG();
+        }
+
         auto productName = Runtime::IsReleaseBuild() ? Resource::String::WindowsPackageManager : Resource::String::WindowsPackageManagerPreview;
-        reporter.Info() << productName(Runtime::GetClientVersion()) << std::endl << Resource::String::MainCopyrightNotice << std::endl;
+        infoOut << indent << productName(Runtime::GetClientVersion()) << std::endl
+            << indent << Resource::String::MainCopyrightNotice << std::endl;
     }
 
     void Command::OutputHelp(Execution::Reporter& reporter, const CommandException* exception) const
@@ -611,6 +645,7 @@ namespace AppInstaller::CLI
         }
 
         // Special handling for multi-query arguments:
+        execArgs.MakeMultiQueryContainUniqueValues();
         execArgs.MoveMultiQueryToSingleQueryIfNeeded();
     }
 
@@ -635,7 +670,7 @@ namespace AppInstaller::CLI
                 throw GroupPolicyException(arg.GroupPolicy());
             }
 
-            if (arg.AdminSetting() != AdminSetting::Unknown && !Settings::IsAdminSettingEnabled(arg.AdminSetting()) && execArgs.Contains(arg.ExecArgType()))
+            if (arg.AdminSetting() != BoolAdminSetting::Unknown && !Settings::IsAdminSettingEnabled(arg.AdminSetting()) && execArgs.Contains(arg.ExecArgType()))
             {
                 auto setting = Settings::AdminSettingToString(arg.AdminSetting());
                 AICLI_LOG(CLI, Error, << "Trying to use argument: " << arg.Name() << " disabled by admin setting " << setting);
@@ -703,6 +738,22 @@ namespace AppInstaller::CLI
             }
         }
 
+        if (execArgs.Contains(Execution::Args::Type::InstallerArchitecture))
+        {
+            Utility::Architecture selectedArch = Utility::ConvertToArchitectureEnum(std::string(execArgs.GetArg(Execution::Args::Type::InstallerArchitecture)));
+            if (selectedArch == Utility::Architecture::Unknown)
+            {
+                std::vector<Utility::LocIndString> applicableArchitectures;
+                for (Utility::Architecture i : Utility::GetAllArchitectures())
+                {
+                    applicableArchitectures.emplace_back(Utility::ToString(i));
+                }
+
+                auto validOptions = Utility::Join(", "_liv, applicableArchitectures);
+                throw CommandException(Resource::String::InvalidArgumentValueError(Argument::ForType(Execution::Args::Type::InstallerArchitecture).Name(), validOptions));
+            }
+        }
+
         if (execArgs.Contains(Execution::Args::Type::Locale))
         {
             if (!Locale::IsWellFormedBcp47Tag(execArgs.GetArg(Execution::Args::Type::Locale)))
@@ -715,7 +766,7 @@ namespace AppInstaller::CLI
         {
             if (Manifest::ConvertToScopeEnum(execArgs.GetArg(Execution::Args::Type::InstallScope)) == Manifest::ScopeEnum::Unknown)
             {
-                auto validOptions = Utility::Join(", "_liv, std::vector<Utility::LocIndString>{ "user"_lis, "machine"_lis});
+                auto validOptions = Utility::Join(", "_liv, std::vector<Utility::LocIndString>{ "user"_lis, "machine"_lis });
                 throw CommandException(Resource::String::InvalidArgumentValueError(ArgumentCommon::ForType(Execution::Args::Type::InstallScope).Name, validOptions));
             }
         }
@@ -726,6 +777,15 @@ namespace AppInstaller::CLI
             if (selectedInstallerType == Manifest::InstallerTypeEnum::Unknown)
             {
                 throw CommandException(Resource::String::InvalidArgumentValueErrorWithoutValidValues(Argument::ForType(Execution::Args::Type::InstallerType).Name()));
+            }
+        }
+
+        if (execArgs.Contains(Execution::Args::Type::AuthenticationMode))
+        {
+            if (Authentication::ConvertToAuthenticationMode(execArgs.GetArg(Execution::Args::Type::AuthenticationMode)) == Authentication::AuthenticationMode::Unknown)
+            {
+                auto validOptions = Utility::Join(", "_liv, std::vector<Utility::LocIndString>{ "interactive"_lis, "silentPreferred"_lis, "silent"_lis });
+                throw CommandException(Resource::String::InvalidArgumentValueError(ArgumentCommon::ForType(Execution::Args::Type::AuthenticationMode).Name, validOptions));
             }
         }
 
@@ -850,14 +910,7 @@ namespace AppInstaller::CLI
         if (!Settings::GroupPolicies().IsEnabled(Settings::TogglePolicy::Policy::WinGet))
         {
             AICLI_LOG(CLI, Error, << "WinGet is disabled by group policy");
-            throw GroupPolicyException(Settings::TogglePolicy::Policy::WinGet);
-        }
-
-        // Block CLI execution if WinGetCommandLineInterfaces is disabled by Policy
-        if (!Settings::GroupPolicies().IsEnabled(Settings::TogglePolicy::Policy::WinGetCommandLineInterfaces))
-        {
-            AICLI_LOG(CLI, Error, << "WinGet is disabled by group policy");
-            throw GroupPolicyException(Settings::TogglePolicy::Policy::WinGetCommandLineInterfaces);
+            throw Settings::GroupPolicyException::GroupPolicyException(Settings::TogglePolicy::Policy::WinGet);
         }
 
         AICLI_LOG(CLI, Info, << "Executing command: " << Name());
@@ -870,16 +923,46 @@ namespace AppInstaller::CLI
             ExecuteInternal(context);
         }
 
-        if (context.Args.Contains(Execution::Args::Type::OpenLogs))
-        {   
-            // TODO: Consider possibly adding functionality that if the context contains 'Execution::Args::Type::Log' to open the path provided for the log
-            // The above was omitted initially as a security precaution to ensure that user input to '--log' wouldn't be passed directly to ShellExecute
-            ShellExecute(NULL, NULL, Runtime::GetPathTo(Runtime::PathName::DefaultLogLocation).wstring().c_str(), NULL, NULL, SW_SHOWNORMAL);
-        }
-
-        if (context.Args.Contains(Execution::Args::Type::Wait))
+        // NOTE: Reboot logic will still run even if the context is terminated (not including unhandled exceptions).
+        if (context.Args.Contains(Execution::Args::Type::AllowReboot) &&
+            WI_IsFlagSet(context.GetFlags(), Execution::ContextFlag::RebootRequired))
         {
-            context.Reporter.PromptForEnter();
+            context.Reporter.Warn() << Resource::String::InitiatingReboot << std::endl;
+
+            if (context.Args.Contains(Execution::Args::Type::Wait))
+            {
+                context.Reporter.PromptForEnter();
+            }
+
+            if (WI_IsFlagSet(context.GetFlags(), Execution::ContextFlag::RegisterResume))
+            {
+                // RegisterResume context flag assumes we already wrote to the RunOnce registry.
+                // Since we are about to initiate a restart, this is no longer needed as a safety net.
+                Reboot::UnregisterRestartForWER();
+
+                context.ClearFlags(Execution::ContextFlag::RegisterResume);
+            }
+
+            context.ClearFlags(Execution::ContextFlag::RebootRequired);
+
+            if (!Reboot::InitiateReboot())
+            {
+                context.Reporter.Error() << Resource::String::FailedToInitiateReboot << std::endl;
+            }
+        }
+        else
+        {
+            if (context.Args.Contains(Execution::Args::Type::OpenLogs))
+            {
+                // TODO: Consider possibly adding functionality that if the context contains 'Execution::Args::Type::Log' to open the path provided for the log
+                // The above was omitted initially as a security precaution to ensure that user input to '--log' wouldn't be passed directly to ShellExecute
+                ShellExecute(NULL, NULL, Runtime::GetPathTo(Runtime::PathName::DefaultLogLocation).wstring().c_str(), NULL, NULL, SW_SHOWNORMAL);
+            }
+
+            if (context.Args.Contains(Execution::Args::Type::Wait))
+            {
+                context.Reporter.PromptForEnter();
+            }
         }
     }
 

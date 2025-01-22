@@ -85,6 +85,7 @@ namespace AppInstaller::CLI::Workflow
             static std::unique_ptr<MachineArchitectureComparator> Create(const Execution::Context& context, const Repository::IPackageVersion::Metadata& metadata)
             {
                 std::vector<Utility::Architecture> allowedArchitectures;
+                bool skipApplicabilityCheck = false;
 
                 if (context.Contains(Execution::Data::AllowedArchitectures))
                 {
@@ -95,6 +96,12 @@ namespace AppInstaller::CLI::Workflow
                 {
                     // Arguments provided in command line
                     allowedArchitectures.emplace_back(Utility::ConvertToArchitectureEnum(context.Args.GetArg(Execution::Args::Type::InstallArchitecture)));
+                }
+                else if (context.Args.Contains(Execution::Args::Type::InstallerArchitecture))
+                {
+                    // Arguments provided in command line. Also skips applicability check.
+                    allowedArchitectures.emplace_back(Utility::ConvertToArchitectureEnum(context.Args.GetArg(Execution::Args::Type::InstallerArchitecture)));
+                    skipApplicabilityCheck = true;
                 }
                 else
                 {
@@ -152,7 +159,7 @@ namespace AppInstaller::CLI::Workflow
                         }
 
                         // If the architecture is applicable and not already in our result set...
-                        if (Utility::IsApplicableArchitecture(architecture) != Utility::InapplicableArchitecture &&
+                        if ((skipApplicabilityCheck || Utility::IsApplicableArchitecture(architecture) != Utility::InapplicableArchitecture) &&
                             Utility::IsApplicableArchitecture(architecture, result) == Utility::InapplicableArchitecture)
                         {
                             result.push_back(architecture);
@@ -210,17 +217,18 @@ namespace AppInstaller::CLI::Workflow
                 return result;
             }
 
-            bool IsFirstBetter(const Manifest::ManifestInstaller& first, const Manifest::ManifestInstaller& second) override
+            details::ComparisonResult IsFirstBetter(const Manifest::ManifestInstaller& first, const Manifest::ManifestInstaller& second) override
             {
                 auto arch1 = CheckAllowedArchitecture(first.Arch);
                 auto arch2 = CheckAllowedArchitecture(second.Arch);
 
                 if (arch1 > arch2)
                 {
-                    return true;
+                    // A match with the primary architecture is strong
+                    return (first.Arch == GetStrongArchitectureMatch() ? details::ComparisonResult::StrongPositive : details::ComparisonResult::WeakPositive);
                 }
 
-                return false;
+                return details::ComparisonResult::Negative;
             }
 
         private:
@@ -243,6 +251,13 @@ namespace AppInstaller::CLI::Workflow
                     installer.UnsupportedOSArchitectures.end(),
                     Utility::GetSystemArchitecture());
                 return unsupportedItr != installer.UnsupportedOSArchitectures.end();
+            }
+
+            Utility::Architecture GetStrongArchitectureMatch()
+            {
+                // If we have a preferential order, treat the first entry as strong.
+                // Otherwise, treat the system architecture as strong (which is always first in the default order).
+                return m_allowedArchitectures.empty() ? Utility::GetSystemArchitecture() : m_allowedArchitectures.front();
             }
 
             std::vector<Utility::Architecture> m_allowedArchitectures;
@@ -313,11 +328,11 @@ namespace AppInstaller::CLI::Workflow
                 }
             }
 
-            bool IsFirstBetter(const Manifest::ManifestInstaller& first, const Manifest::ManifestInstaller& second) override
+            details::ComparisonResult IsFirstBetter(const Manifest::ManifestInstaller& first, const Manifest::ManifestInstaller& second) override
             {
                 if (m_preference.empty())
                 {
-                    return false;
+                    return details::ComparisonResult::Negative;
                 }
 
                 for (Manifest::InstallerTypeEnum installerTypePreference : m_preference)
@@ -332,15 +347,16 @@ namespace AppInstaller::CLI::Workflow
 
                     if (isFirstInstallerTypePreferred && isSecondInstallerTypePreferred)
                     {
-                        return false;
+                        return details::ComparisonResult::Negative;
                     }
                     else if (isFirstInstallerTypePreferred != isSecondInstallerTypePreferred)
                     {
-                        return isFirstInstallerTypePreferred;
+                        // Treating this as a weak positive because one can use requirements to guarantee the installer type if necessary.
+                        return (isFirstInstallerTypePreferred ? details::ComparisonResult::WeakPositive : details::ComparisonResult::Negative);
                     }
                 }
 
-                return false;
+                return details::ComparisonResult::Negative;
             }
 
         private:
@@ -355,12 +371,12 @@ namespace AppInstaller::CLI::Workflow
             }
         };
 
-        struct InstalledTypeComparator : public details::ComparisonField
+        struct InstalledTypeFilter : public details::FilterField
         {
-            InstalledTypeComparator(Manifest::InstallerTypeEnum installedType) :
-                details::ComparisonField("Installed Type"), m_installedType(installedType) {}
+            InstalledTypeFilter(Manifest::InstallerTypeEnum installedType) :
+                details::FilterField("Installed Type"), m_installedType(installedType) {}
 
-            static std::unique_ptr<InstalledTypeComparator> Create(const Repository::IPackageVersion::Metadata& installationMetadata)
+            static std::unique_ptr<InstalledTypeFilter> Create(const Repository::IPackageVersion::Metadata& installationMetadata)
             {
                 auto installerTypeItr = installationMetadata.find(Repository::PackageVersionMetadata::InstalledType);
                 if (installerTypeItr != installationMetadata.end())
@@ -368,7 +384,7 @@ namespace AppInstaller::CLI::Workflow
                     Manifest::InstallerTypeEnum installedType = Manifest::ConvertToInstallerTypeEnum(installerTypeItr->second);
                     if (installedType != Manifest::InstallerTypeEnum::Unknown)
                     {
-                        return std::make_unique<InstalledTypeComparator>(installedType);
+                        return std::make_unique<InstalledTypeFilter>(installedType);
                     }
                 }
 
@@ -377,22 +393,7 @@ namespace AppInstaller::CLI::Workflow
 
             InapplicabilityFlags IsApplicable(const Manifest::ManifestInstaller& installer) override
             {
-                // The installer is applicable if it's type or any of its ARP entries' type matches the installed type
-                if (Manifest::IsInstallerTypeCompatible(installer.EffectiveInstallerType(), m_installedType))
-                {
-                    return InapplicabilityFlags::None;
-                }
-
-                auto itr = std::find_if(
-                    installer.AppsAndFeaturesEntries.begin(),
-                    installer.AppsAndFeaturesEntries.end(),
-                    [=](AppsAndFeaturesEntry arpEntry) { return Manifest::IsInstallerTypeCompatible(arpEntry.InstallerType, m_installedType); });
-                if (itr != installer.AppsAndFeaturesEntries.end())
-                {
-                    return InapplicabilityFlags::None;
-                }
-
-                return InapplicabilityFlags::InstalledType;
+                return IsInstallerCompatibleWith(installer, m_installedType) ? InapplicabilityFlags::None : InapplicabilityFlags::InstalledType;
             }
 
             std::string ExplainInapplicable(const Manifest::ManifestInstaller& installer) override
@@ -414,12 +415,27 @@ namespace AppInstaller::CLI::Workflow
                 return result;
             }
 
-            bool IsFirstBetter(const Manifest::ManifestInstaller& first, const Manifest::ManifestInstaller& second) override
+        private:
+            // The installer is compatible if it's type or any of its ARP entries' type matches the installed type
+            static bool IsInstallerCompatibleWith(const Manifest::ManifestInstaller& installer, Manifest::InstallerTypeEnum type)
             {
-                return (first.EffectiveInstallerType() == m_installedType && second.EffectiveInstallerType() != m_installedType);
+                if (Manifest::IsInstallerTypeCompatible(installer.EffectiveInstallerType(), type))
+                {
+                    return true;
+                }
+
+                auto itr = std::find_if(
+                    installer.AppsAndFeaturesEntries.begin(),
+                    installer.AppsAndFeaturesEntries.end(),
+                    [=](AppsAndFeaturesEntry arpEntry) { return Manifest::IsInstallerTypeCompatible(arpEntry.InstallerType, type); });
+                if (itr != installer.AppsAndFeaturesEntries.end())
+                {
+                    return true;
+                }
+
+                return false;
             }
 
-        private:
             Manifest::InstallerTypeEnum m_installedType;
         };
 
@@ -540,9 +556,15 @@ namespace AppInstaller::CLI::Workflow
                 return result;
             }
 
-            bool IsFirstBetter(const Manifest::ManifestInstaller& first, const Manifest::ManifestInstaller& second) override
+            details::ComparisonResult IsFirstBetter(const Manifest::ManifestInstaller& first, const Manifest::ManifestInstaller& second) override
             {
-                return m_preference != Manifest::ScopeEnum::Unknown && (first.Scope == m_preference && second.Scope != m_preference);
+                if (m_preference != Manifest::ScopeEnum::Unknown && first.Scope == m_preference && second.Scope != m_preference)
+                {
+                    // When the second input is unknown, this is a weak result. If it is not (and therefore the opposite of the preference), this is strong.
+                    return (second.Scope == Manifest::ScopeEnum::Unknown ? details::ComparisonResult::WeakPositive : details::ComparisonResult::StrongPositive);
+                }
+
+                return details::ComparisonResult::Negative;
             }
 
         private:
@@ -669,11 +691,11 @@ namespace AppInstaller::CLI::Workflow
                 return result;
             }
 
-            bool IsFirstBetter(const Manifest::ManifestInstaller& first, const Manifest::ManifestInstaller& second) override
+            details::ComparisonResult IsFirstBetter(const Manifest::ManifestInstaller& first, const Manifest::ManifestInstaller& second) override
             {
                 if (m_preference.empty())
                 {
-                    return false;
+                    return details::ComparisonResult::Negative;
                 }
 
                 for (auto const& preferredLocale : m_preference)
@@ -683,13 +705,14 @@ namespace AppInstaller::CLI::Workflow
 
                     if (firstScore >= Locale::MinimumDistanceScoreAsCompatibleMatch || secondScore >= Locale::MinimumDistanceScoreAsCompatibleMatch)
                     {
-                        return firstScore > secondScore;
+                        // This could probably be enriched to always check all locales and determine strong/weak based off of the MinimumDistanceScoreAsCompatibleMatch.
+                        return (firstScore > secondScore ? details::ComparisonResult::StrongPositive : details::ComparisonResult::Negative);
                     }
                 }
 
                 // At this point, the installer locale matches no preference.
                 // if first is unknown and second is no match for sure, we might prefer unknown one.
-                return first.Locale.empty() && !second.Locale.empty();
+                return (first.Locale.empty() && !second.Locale.empty() ? details::ComparisonResult::WeakPositive : details::ComparisonResult::Negative);
             }
 
         private:
@@ -758,23 +781,53 @@ namespace AppInstaller::CLI::Workflow
 
     ManifestComparator::ManifestComparator(const Execution::Context& context, const Repository::IPackageVersion::Metadata& installationMetadata)
     {
+        // Filters based on installer's MinOSVersion
         AddFilter(std::make_unique<OSVersionFilter>());
+        // Filters out portable installers if they are not supported by the system
         AddFilter(std::make_unique<PortableInstallFilter>());
+        // Filters based on the scope of a currently installed package
         AddFilter(InstalledScopeFilter::Create(installationMetadata));
+        // Filters based on the market region of the system
         AddFilter(MarketFilter::Create());
+        // Filters based on the installer type compatability, including with AppsAndFeaturesEntry declarations
+        AddFilter(InstalledTypeFilter::Create(installationMetadata));
 
         // Filter order is not important, but comparison order determines priority.
+        // Note that all comparators are also filters and their comparison function will only be called on
+        // installers that both match the required criteria.
+        // 
+        // The comparators are ordered by the `IsFirstBetter` method, which uses the following algorithm:
+        //  - Each comparison between two installers can return one of { Strong, Weak, Negative }
+        //  - Installers are compared in both directions, going through the list of comparators as defined here
+        //  - The first Strong result in either direction is given priority
+        //  - If no Strong results, the first Weak result is used
+        //  - If all Negative results, then the two installers are equal in priority (meaning the first one in the list is kept as "better")
+        // 
         // TODO: There are improvements to be made here around ordering, especially in the context of implicit vs explicit vs command line preferences.
-        AddComparator(InstalledTypeComparator::Create(installationMetadata));
+
+        // Filters based on exact matches for requirements or compatible matches for preferences
+        // Only applies when preference exists:
+        // Strong if first is compatible and better match than second
+        // Weak if first is unknown and second is not
         AddComparator(LocaleComparator::Create(context.Args, installationMetadata));
+        // Filters only if a requirement is present and it cannot be satisfied by the installer (including installer types that we can control scope in code)
+        // Only applies when preference exists:
+        // Strong if first matches preference and second does not and is not Unknown
+        // Weak if first matches preference and second is Unknown
         AddComparator(ScopeComparator::Create(context));
+        // Filters architectures out that are not supported or are not in the preferences/requirements/inputs.
+        // Strong if first equals the earliest architecture in the allowed list and second does not [default means the system architecture]
+        // Weak if first is better match for system architecture than second
         AddComparator(MachineArchitectureComparator::Create(context, installationMetadata));
+        // Filters installer types out that are not in preferences or requirements.
+        // Only applies when preference exists:
+        // Weak if first is in preference list and second is not
         AddComparator(InstallerTypeComparator::Create(context.Args));
     }
 
     InstallerAndInapplicabilities ManifestComparator::GetPreferredInstaller(const Manifest::Manifest& manifest)
     {
-        AICLI_LOG(CLI, Info, << "Starting installer selection.");
+        AICLI_LOG(CLI, Verbose, << "Starting installer selection.");
 
         const Manifest::ManifestInstaller* result = nullptr;
         std::vector<InapplicabilityFlags> inapplicabilitiesInstallers;
@@ -813,7 +866,7 @@ namespace AppInstaller::CLI::Workflow
             auto inapplicability = filter->IsApplicable(installer);
             if (inapplicability != InapplicabilityFlags::None)
             {
-                AICLI_LOG(CLI, Info, << "Installer " << installer << " not applicable: " << filter->ExplainInapplicable(installer));
+                AICLI_LOG(CLI, Verbose, << "Installer " << installer << " not applicable: " << filter->ExplainInapplicable(installer));
                 WI_SetAllFlags(inapplicabilityResult, inapplicability);
             }
         }
@@ -825,19 +878,64 @@ namespace AppInstaller::CLI::Workflow
         const Manifest::ManifestInstaller& first,
         const Manifest::ManifestInstaller& second)
     {
+        // The priority will still be used as a tie-break between weak results.
+        std::optional<std::string_view> firstWeakComparator;
+        bool firstWeakComparatorResult = false;
+
         for (auto comparator : m_comparators)
         {
-            if (comparator->IsFirstBetter(first, second))
+            details::ComparisonResult forwardCompare = comparator->IsFirstBetter(first, second);
+            details::ComparisonResult reverseCompare = comparator->IsFirstBetter(second, first);
+
+            // Should not happen, but if it does it points at a serious bug that should be fixed.
+            if (forwardCompare != details::ComparisonResult::Negative && reverseCompare != details::ComparisonResult::Negative)
             {
-                AICLI_LOG(CLI, Verbose, << "Installer " << first << " is better than " << second << " due to: " << comparator->Name());
+                AICLI_LOG(CLI, Error, << "Installer " << first << " and " << second << " are both better than each other?");
+                THROW_HR(E_UNEXPECTED);
+            }
+
+            if (forwardCompare == details::ComparisonResult::StrongPositive)
+            {
+                AICLI_LOG(CLI, Verbose, << "Installer " << first << " is better [strong] than " << second << " due to: " << comparator->Name());
                 return true;
             }
-            else if (comparator->IsFirstBetter(second, first))
+
+            if (reverseCompare == details::ComparisonResult::StrongPositive)
             {
                 // Second is better by this comparator, don't allow a lower priority one to override that.
-                AICLI_LOG(CLI, Verbose, << "Installer " << second << " is better than " << first << " due to: " << comparator->Name());
+                AICLI_LOG(CLI, Verbose, << "Installer " << second << " is better [strong] than " << first << " due to: " << comparator->Name());
                 return false;
             }
+
+            // Save the first weak result that we get
+            if (!firstWeakComparator)
+            {
+                if (forwardCompare == details::ComparisonResult::WeakPositive)
+                {
+                    firstWeakComparator = comparator->Name();
+                    firstWeakComparatorResult = true;
+                }
+                else if (reverseCompare == details::ComparisonResult::WeakPositive)
+                {
+                    firstWeakComparator = comparator->Name();
+                    firstWeakComparatorResult = false;
+                }
+            }
+        }
+
+        // If we found a weak result (and no strong result because we made it here), return it.
+        if (firstWeakComparator)
+        {
+            if (firstWeakComparatorResult)
+            {
+                AICLI_LOG(CLI, Verbose, << "Installer " << first << " is better [weak] than " << second << " due to: " << *firstWeakComparator);
+            }
+            else
+            {
+                AICLI_LOG(CLI, Verbose, << "Installer " << second << " is better [weak] than " << first << " due to: " << *firstWeakComparator);
+            }
+
+            return firstWeakComparatorResult;
         }
 
         // Equal, and thus not better

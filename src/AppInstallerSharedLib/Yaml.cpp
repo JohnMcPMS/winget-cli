@@ -45,6 +45,8 @@ namespace AppInstaller::YAML
                 return "Writer"sv;
             case Exception::Type::Emitter:
                 return "Emitter"sv;
+            case Exception::Type::Policy:
+                return "Policy"sv;
             }
 
             return "Unknown"sv;
@@ -96,6 +98,35 @@ namespace AppInstaller::YAML
             }
 
             return Node::TagType::Unknown;
+        }
+
+        DocumentSchemaHeader ExtractSchemaHeaderFromYaml( const std::string& yamlDocument, size_t rootNodeLine)
+        {
+            std::istringstream input(yamlDocument);
+            std::string line;
+            size_t currentLine = 1;
+
+            // Search for the schema header string in the comments before the root node.
+            while (currentLine < rootNodeLine && std::getline(input, line))
+            {
+                std::string comment = Utility::Trim(line);
+
+                // Check if the line is a comment
+                if (!comment.empty() && comment[0] == '#')
+                {
+                    size_t pos = line.find(DocumentSchemaHeader::YamlLanguageServerKey);
+
+                    // Check if the comment contains the schema header string
+                    if (pos != std::string::npos)
+                    {
+                        return DocumentSchemaHeader(std::move(comment), YAML::Mark{ currentLine, pos});
+                    }
+                }
+
+                currentLine++;
+            }
+
+            return {};
         }
     }
 
@@ -269,6 +300,71 @@ namespace AppInstaller::YAML
         return result;
     }
 
+    // Gets a child node from the mapping by its name.
+    Node& Node::GetChildNode(std::string_view key)
+    {
+        Require(Type::Mapping);
+
+        auto itr = m_mapping->begin();
+        for (; itr != m_mapping->end(); itr++)
+        {
+            if (Utility::CaseInsensitiveEquals(itr->first.m_scalar, key))
+            {
+                break;
+            }
+        }
+
+        if (itr == m_mapping->end())
+        {
+            return s_globalInvalidNode;
+        }
+
+        auto firstFound = itr;
+        for (++itr; itr != m_mapping->end(); itr++)
+        {
+            if (Utility::CaseInsensitiveEquals(itr->first.m_scalar, key))
+            {
+                break;
+            }
+        }
+
+        THROW_HR_IF(APPINSTALLER_CLI_ERROR_YAML_DUPLICATE_MAPPING_KEY, itr != m_mapping->end());
+        Node& result = firstFound->second;
+        return result;
+    }
+
+    const Node& Node::GetChildNode(std::string_view key) const
+    {
+        Require(Type::Mapping);
+
+        auto itr = m_mapping->begin();
+        for (; itr != m_mapping->end(); itr++)
+        {
+            if (Utility::CaseInsensitiveEquals(itr->first.m_scalar, key))
+            {
+                break;
+            }
+        }
+
+        if (itr == m_mapping->end())
+        {
+            return s_globalInvalidNode;
+        }
+
+        auto firstFound = itr;
+        for (++itr; itr != m_mapping->end(); itr++)
+        {
+            if (Utility::CaseInsensitiveEquals(itr->first.m_scalar, key))
+            {
+                break;
+            }
+        }
+
+        THROW_HR_IF(APPINSTALLER_CLI_ERROR_YAML_DUPLICATE_MAPPING_KEY, itr != m_mapping->end());
+        const Node& result = firstFound->second;
+        return result;
+    }
+
     Node& Node::operator[](size_t index)
     {
         Require(Type::Sequence);
@@ -342,14 +438,22 @@ namespace AppInstaller::YAML
 
     std::optional<int64_t> Node::try_as_dispatch(int64_t*) const
     {
-        try
-        {
-            return std::optional{ std::stoll(m_scalar) };
-        }
-        catch(...)
+        if (m_scalar.empty())
         {
             return {};
         }
+
+        const char* begin = m_scalar.c_str();
+        char* end = nullptr;
+        errno = 0;
+        int64_t result = static_cast<int64_t>(strtoll(begin, &end, 0));
+
+        if (errno == ERANGE || static_cast<size_t>(end - begin) != m_scalar.length())
+        {
+            return {};
+        }
+
+        return result;
     }
 
     int Node::as_dispatch(int*) const
@@ -396,6 +500,82 @@ namespace AppInstaller::YAML
         }
 
         return {};
+    }
+
+    void Node::MergeSequenceNode(Node other, std::string_view key, bool caseInsensitive)
+    {
+        Require(Type::Sequence);
+        other.Require(Type::Sequence);
+
+        auto getKeyValue = [&](const YAML::Node& node) {
+            auto keyNode = caseInsensitive ? node.GetChildNode(key) : node[key];
+            if (keyNode.IsNull())
+            {
+                THROW_HR(APPINSTALLER_CLI_ERROR_YAML_INVALID_DATA);
+            }
+
+            auto keyValue = keyNode.as<std::string>();
+            return caseInsensitive ? std::string{ Utility::FoldCase(std::string_view{keyValue}) } : keyValue;
+        };
+
+        std::map<std::string, Node> newSequenceMap;
+        for (Node& node : m_sequence.value())
+        {
+            node.Require(Type::Mapping);
+            auto keyValue = getKeyValue(node);
+            newSequenceMap.emplace(std::move(keyValue), std::move(node));
+        }
+
+        for (Node& node : other.m_sequence.value())
+        {
+            node.Require(Type::Mapping);
+            auto keyValue = getKeyValue(node);
+            if (newSequenceMap.find(keyValue) == newSequenceMap.end())
+            {
+                newSequenceMap.emplace(std::move(keyValue), std::move(node));
+            }
+            else
+            {
+                newSequenceMap[keyValue].MergeMappingNode(node, caseInsensitive);
+            }
+        }
+
+        m_sequence.reset();
+        std::vector<Node> newSequence;
+        for (const auto& keyValuePair : newSequenceMap)
+        {
+            newSequence.push_back(keyValuePair.second);
+        }
+
+        m_sequence = std::move(newSequence);
+    }
+
+    void Node::MergeMappingNode(Node other, bool caseInsensitive)
+    {
+        Require(Type::Mapping);
+        other.Require(Type::Mapping);
+
+        std::multimap<Node, Node> uniques;
+        for (auto& keyValuePair : other.m_mapping.value())
+        {
+            if (caseInsensitive)
+            {
+                auto node = GetChildNode(keyValuePair.first.as<std::string>());
+                if (node.IsNull())
+                {
+                    uniques.emplace(std::move(keyValuePair));
+                }
+            }
+            else
+            {
+                if (m_mapping->count(keyValuePair.first) == 0)
+                {
+                    uniques.emplace(std::move(keyValuePair));
+                }
+            }
+        }
+
+        m_mapping->merge(uniques);
     }
 
     Node Load(std::string_view input)
@@ -450,6 +630,66 @@ namespace AppInstaller::YAML
         return Load(input, &hashOut);
     }
 
+    Document LoadDocument(std::string_view input)
+    {
+        Wrapper::Parser parser(input);
+        Wrapper::Document document = parser.Load();
+
+        if (document.HasRoot())
+        {
+            const Node root = document.GetRoot();
+            const DocumentSchemaHeader schemaHeader = ExtractSchemaHeaderFromYaml(parser.GetEncodedInput(), root.Mark().line);
+
+            return { root, schemaHeader };
+        }
+        else
+        {
+            // Return an empty root and schema header.
+            return {};
+        }
+    }
+
+    Document LoadDocument(const std::string& input)
+    {
+        return LoadDocument(static_cast<std::string_view>(input));
+    }
+
+    Document LoadDocument(std::istream& input, Utility::SHA256::HashBuffer* hashOut)
+    {
+        Wrapper::Parser parser(input, hashOut);
+        Wrapper::Document document = parser.Load();
+
+        if (document.HasRoot())
+        {
+            const Node root = document.GetRoot();
+            const DocumentSchemaHeader schemaHeader = ExtractSchemaHeaderFromYaml(parser.GetEncodedInput(), root.Mark().line);
+
+            return { root, schemaHeader };
+        }
+        else
+        {
+            // Return an empty root and schema header.
+            return {};
+        }
+    }
+
+    Document LoadDocument(const std::filesystem::path& input, Utility::SHA256::HashBuffer* hashOut)
+    {
+        std::ifstream stream(input, std::ios_base::in | std::ios_base::binary);
+        THROW_LAST_ERROR_IF(stream.fail());
+        return LoadDocument(stream, hashOut);
+    }
+
+    Document LoadDocument(const std::filesystem::path& input)
+    {
+        return LoadDocument(input, nullptr);
+    }
+
+    Document LoadDocument(const std::filesystem::path& input, Utility::SHA256::HashBuffer& hashOut)
+    {
+        return LoadDocument(input, &hashOut);
+    }
+
     Emitter::Emitter() :
         m_document(std::make_unique<Wrapper::Document>(true))
     {
@@ -495,12 +735,12 @@ namespace AppInstaller::YAML
             break;
         case AppInstaller::YAML::Key:
             CheckInput(InputType::Key);
-            m_scalarInfo = InputType::Key;
+            m_scalarType = InputType::Key;
             SetAllowedInputs<InputType::Scalar>();
             break;
         case AppInstaller::YAML::Value:
             CheckInput(InputType::Value);
-            m_scalarInfo = InputType::Value;
+            m_scalarType = InputType::Value;
             SetAllowedInputs<InputType::Scalar, InputType::BeginMap, InputType::BeginSeq>();
             break;
         default:
@@ -514,25 +754,26 @@ namespace AppInstaller::YAML
     {
         CheckInput(InputType::Scalar);
 
-        int id = m_document->AddScalar(value);
+        int id = m_document->AddScalar(value, m_scalarStyle.value_or(ScalarStyle::Any));
+        m_scalarStyle = std::nullopt;
 
-        if (!m_scalarInfo)
+        if (!m_scalarType)
         {
             // Part of a sequence
             AppendNode(id);
             // No change to allowed inputs
         }
-        else if (m_scalarInfo.value() == InputType::Key)
+        else if (m_scalarType.value() == InputType::Key)
         {
             m_keyId = id;
-            m_scalarInfo = std::nullopt;
+            m_scalarType = std::nullopt;
             SetAllowedInputs<InputType::Value, InputType::BeginMap, InputType::BeginSeq>();
         }
-        else if (m_scalarInfo.value() == InputType::Value)
+        else if (m_scalarType.value() == InputType::Value)
         {
             // Mapping pair complete
             AppendNode(id);
-            m_scalarInfo = std::nullopt;
+            m_scalarType = std::nullopt;
             SetAllowedInputsForContainer();
         }
         else
@@ -560,6 +801,14 @@ namespace AppInstaller::YAML
     Emitter& Emitter::operator<<(bool value)
     {
         return operator<<(value ? "true"sv : "false"sv);
+    }
+
+    Emitter& Emitter::operator<<(ScalarStyle style)
+    {
+        m_scalarStyle = style;
+        // Because without this you get a C26815...
+        (void)0;
+        return *this;
     }
 
     std::string Emitter::str()

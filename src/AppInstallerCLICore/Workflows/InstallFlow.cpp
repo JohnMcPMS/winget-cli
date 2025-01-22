@@ -132,7 +132,7 @@ namespace AppInstaller::CLI::Workflow
                 case ExpectedReturnCodeEnum::RebootRequiredToFinish:
                     return ExpectedReturnCode(returnCode, APPINSTALLER_CLI_ERROR_INSTALL_REBOOT_REQUIRED_TO_FINISH, Resource::String::InstallFlowReturnCodeRebootRequiredToFinish);
                 case ExpectedReturnCodeEnum::RebootRequiredForInstall:
-                    return ExpectedReturnCode(returnCode, APPINSTALLER_CLI_ERROR_INSTALL_REBOOT_REQUIRED_TO_INSTALL, Resource::String::InstallFlowReturnCodeRebootRequiredForInstall);
+                    return ExpectedReturnCode(returnCode, APPINSTALLER_CLI_ERROR_INSTALL_REBOOT_REQUIRED_FOR_INSTALL, Resource::String::InstallFlowReturnCodeRebootRequiredForInstall);
                 case ExpectedReturnCodeEnum::RebootInitiated:
                     return ExpectedReturnCode(returnCode, APPINSTALLER_CLI_ERROR_INSTALL_REBOOT_INITIATED, Resource::String::InstallFlowReturnCodeRebootInitiated);
                 case ExpectedReturnCodeEnum::CancelledByUser:
@@ -145,6 +145,8 @@ namespace AppInstaller::CLI::Workflow
                     return ExpectedReturnCode(returnCode, APPINSTALLER_CLI_ERROR_INSTALL_BLOCKED_BY_POLICY, Resource::String::InstallFlowReturnCodeBlockedByPolicy);
                 case ExpectedReturnCodeEnum::SystemNotSupported:
                     return ExpectedReturnCode(returnCode, APPINSTALLER_CLI_ERROR_INSTALL_SYSTEM_NOT_SUPPORTED, Resource::String::InstallFlowReturnCodeSystemNotSupported);
+                case ExpectedReturnCodeEnum::Custom:
+                    return ExpectedReturnCode(returnCode, APPINSTALLER_CLI_ERROR_INSTALL_CUSTOM_ERROR, Resource::String::InstallFlowReturnCodeCustomError);
                 default:
                     THROW_HR(E_UNEXPECTED);
                 }
@@ -189,6 +191,7 @@ namespace AppInstaller::CLI::Workflow
         void MsixInstall(Execution::Context& context)
         {
             std::string uri;
+            Deployment::Options deploymentOptions;
             if (context.Contains(Execution::Data::InstallerPath))
             {
                 uri = context.Get<Execution::Data::InstallerPath>().u8string();
@@ -196,7 +199,10 @@ namespace AppInstaller::CLI::Workflow
             else
             {
                 uri = context.Get<Execution::Data::Installer>()->Url;
+                deploymentOptions.ExpectedDigests = context.Get<Execution::Data::MsixDigests>();
             }
+
+            deploymentOptions.SkipReputationCheck = WI_IsFlagSet(context.GetFlags(), Execution::ContextFlag::InstallerTrusted);
 
             bool isMachineScope = Manifest::ConvertToScopeEnum(context.Args.GetArg(Execution::Args::Type::InstallScope)) == Manifest::ScopeEnum::Machine;
 
@@ -220,11 +226,11 @@ namespace AppInstaller::CLI::Workflow
                     {
                         if (isMachineScope)
                         {
-                            return Deployment::AddPackageMachineScope(uri, callback);
+                            return Deployment::AddPackageMachineScope(uri, deploymentOptions, callback);
                         }
                         else
                         {
-                            return Deployment::AddPackageWithDeferredFallback(uri, WI_IsFlagSet(context.GetFlags(), Execution::ContextFlag::InstallerTrusted), callback);
+                            return Deployment::AddPackageWithDeferredFallback(uri, deploymentOptions, callback);
                         }
                     });
             }
@@ -464,6 +470,8 @@ namespace AppInstaller::CLI::Workflow
 
     void ReportInstallerResult::operator()(Execution::Context& context) const
     {
+        bool isRepair = WI_IsFlagSet(context.GetFlags(), Execution::ContextFlag::InstallerExecutionUseRepair);
+
         DWORD installResult = context.Get<Execution::Data::OperationReturnCode>();
         const auto& additionalSuccessCodes = context.Get<Execution::Data::Installer>()->InstallerSuccessCodes;
         if (installResult != 0 && (std::find(additionalSuccessCodes.begin(), additionalSuccessCodes.end(), installResult) == additionalSuccessCodes.end()))
@@ -484,8 +492,8 @@ namespace AppInstaller::CLI::Workflow
                     context.Reporter.Warn() << returnCode.Message << std::endl;
                     terminationHR = S_OK;
                     break;
-                case APPINSTALLER_CLI_ERROR_INSTALL_REBOOT_REQUIRED_TO_INSTALL:
-                    // REBOOT_REQUIRED_TO_INSTALL is treated as an error since installation has not yet completed.
+                case APPINSTALLER_CLI_ERROR_INSTALL_REBOOT_REQUIRED_FOR_INSTALL:
+                    // REBOOT_REQUIRED_FOR_INSTALL is treated as an error since installation has not yet completed.
                     context.SetFlags(ContextFlag::RebootRequired);
                     // TODO: Add separate workflow to handle restart registration for resume.
                     context.SetFlags(ContextFlag::RegisterResume);
@@ -495,7 +503,7 @@ namespace AppInstaller::CLI::Workflow
                 if (FAILED(terminationHR))
                 {
                     context.Reporter.Error() << returnCode.Message << std::endl;
-                    auto returnResponseUrl = expectedReturnCodeItr->second.ReturnResponseUrl;
+                    const auto& returnResponseUrl = expectedReturnCodeItr->second.ReturnResponseUrl;
                     if (!returnResponseUrl.empty())
                     {
                         context.Reporter.Error() << Resource::String::RelatedLink << ' ' << returnResponseUrl << std::endl;
@@ -506,7 +514,15 @@ namespace AppInstaller::CLI::Workflow
             if (FAILED(terminationHR))
             {
                 const auto& manifest = context.Get<Execution::Data::Manifest>();
-                Logging::Telemetry().LogInstallerFailure(manifest.Id, manifest.Version, manifest.Channel, m_installerType, installResult);
+
+                if (isRepair)
+                {
+                    Logging::Telemetry().LogRepairFailure(manifest.Id, manifest.Version, m_installerType, installResult);
+                }
+                else
+                {
+                    Logging::Telemetry().LogInstallerFailure(manifest.Id, manifest.Version, manifest.Channel, m_installerType, installResult);
+                }
 
                 if (m_isHResult)
                 {
@@ -533,7 +549,14 @@ namespace AppInstaller::CLI::Workflow
         }
         else
         {
-            context.Reporter.Info() << Resource::String::InstallFlowInstallSuccess << std::endl;
+            if (isRepair)
+            {
+                context.Reporter.Info() << Resource::String::RepairFlowRepairSuccess << std::endl;
+            }
+            else
+            {
+                context.Reporter.Info() << Resource::String::InstallFlowInstallSuccess << std::endl;
+            }
         }
     }
 
@@ -599,7 +622,7 @@ namespace AppInstaller::CLI::Workflow
             Workflow::InstallDependencies <<
             Workflow::DownloadInstaller <<
             Workflow::InstallPackageInstaller <<
-            Workflow::InitiateRebootIfApplicable();
+            Workflow::RegisterStartupAfterReboot();
     }
 
     void EnsureSupportForInstall(Execution::Context& context)
@@ -610,6 +633,21 @@ namespace AppInstaller::CLI::Workflow
         }
 
         const auto& installer = context.Get<Execution::Data::Installer>();
+
+        // This check is only necessary for the Repair workflow when operating on an installer with RepairBehavior set to Installer.
+        if (WI_IsFlagSet(context.GetFlags(), Execution::ContextFlag::InstallerExecutionUseRepair))
+        {
+            if (installer->RepairBehavior != RepairBehaviorEnum::Installer)
+            {
+                return;
+            }
+
+            // At present, the installer repair behavior scenario is restricted to Exe, Inno, Nullsoft, and Burn installer types.
+            if (!DoesInstallerTypeRequireRepairBehaviorForRepair(installer->EffectiveInstallerType()))
+            {
+                return;
+            }
+        }
 
         // This installer cannot be run elevated, but we are running elevated.
         // Implementation of de-elevation is complex; simply block for now.
@@ -826,7 +864,7 @@ namespace AppInstaller::CLI::Workflow
             for (auto&& upgradeCode : upgradeCodes)
             {
                 AppsAndFeaturesEntry entry = baseEntry;
-                entry.UpgradeCode= std::move(upgradeCode).get();
+                entry.UpgradeCode = std::move(upgradeCode).get();
                 entries.push_back(std::move(entry));
             }
 

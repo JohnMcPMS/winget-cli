@@ -52,6 +52,18 @@ namespace AppInstaller::CLI::Workflow
         std::string_view arg = context.Args.GetArg(Args::Type::SourceArg);
         std::string_view type = context.Args.GetArg(Args::Type::SourceType);
 
+        // In the absence of a specified type, the default is Microsoft.PreIndexed.Package for comparison.
+        // The default type assignment to the source takes place during the add operation (Source::Add in Repository.cpp).
+        // This is necessary for the comparison to function correctly; otherwise, it would allow the addition of multiple
+        // sources with different names but the same argument for all default type cases.
+        // For example, the following commands would be allowed, but they acts as different alias to same source:
+        //      winget source add "mysource1" "https:\\mysource" --trust - level trusted
+        //      winget source add "mysource2" "https:\\mysource" --trust - level trusted
+        if (type.empty())
+        {
+            type = Repository::Source::GetDefaultSourceType();
+        }
+
         for (const auto& details : sourceList)
         {
             if (Utility::ICUCaseInsensitiveEquals(details.Name, name))
@@ -107,8 +119,16 @@ namespace AppInstaller::CLI::Workflow
             std::string_view name = context.Args.GetArg(Args::Type::SourceName);
             std::string_view arg = context.Args.GetArg(Args::Type::SourceArg);
             std::string_view type = context.Args.GetArg(Args::Type::SourceType);
+            bool isExplicit = context.Args.Contains(Args::Type::SourceExplicit);
 
-            Repository::Source sourceToAdd{ name, arg, type };
+            Repository::SourceTrustLevel trustLevel = Repository::SourceTrustLevel::None;
+            if (context.Args.Contains(Execution::Args::Type::SourceTrustLevel))
+            {
+                std::vector<std::string> trustLevelArgs = Utility::Split(std::string{ context.Args.GetArg(Execution::Args::Type::SourceTrustLevel) }, '|', true);
+                trustLevel = Repository::ConvertToSourceTrustLevelFlag(trustLevelArgs);
+            }
+
+            Repository::Source sourceToAdd{ name, arg, type, trustLevel, isExplicit};
 
             if (context.Args.Contains(Execution::Args::Type::CustomHeader))
             {
@@ -117,6 +137,12 @@ namespace AppInstaller::CLI::Workflow
                 {
                     context.Reporter.Warn() << Resource::String::HeaderArgumentNotApplicableForNonRestSourceWarning << std::endl;
                 }
+            }
+
+            if (sourceToAdd.GetInformation().Authentication.Type == Authentication::AuthenticationType::Unknown)
+            {
+                context.Reporter.Error() << Resource::String::SourceAddFailedAuthenticationNotSupported << std::endl;
+                AICLI_TERMINATE_CONTEXT(APPINSTALLER_CLI_ERROR_AUTHENTICATION_TYPE_NOT_SUPPORTED);
             }
 
             context << Workflow::HandleSourceAgreements(sourceToAdd);
@@ -150,6 +176,8 @@ namespace AppInstaller::CLI::Workflow
             table.OutputLine({ Resource::LocString(Resource::String::SourceListArg), source.Arg });
             table.OutputLine({ Resource::LocString(Resource::String::SourceListData), source.Data });
             table.OutputLine({ Resource::LocString(Resource::String::SourceListIdentifier), source.Identifier });
+            table.OutputLine({ Resource::LocString(Resource::String::SourceListTrustLevel), Repository::GetSourceTrustLevelForDisplay(source.TrustLevel)});
+            table.OutputLine({ Resource::LocString(Resource::String::SourceListExplicit), std::string{ Utility::ConvertBoolToString(source.Explicit) }});
 
             if (source.LastUpdateTime == Utility::ConvertUnixEpochToSystemClock(0))
             {
@@ -175,10 +203,10 @@ namespace AppInstaller::CLI::Workflow
             }
             else
             {
-                Execution::TableOutput<2> table(context.Reporter, { Resource::String::SourceListName, Resource::String::SourceListArg });
+                Execution::TableOutput<3> table(context.Reporter, { Resource::String::SourceListName, Resource::String::SourceListArg, Resource::String::SourceListExplicit });
                 for (const auto& source : sources)
                 {
-                    table.OutputLine({ source.Name, source.Arg });
+                    table.OutputLine({ source.Name, source.Arg, std::string{ Utility::ConvertBoolToString(source.Explicit) }});
                 }
                 table.Complete();
             }
@@ -193,6 +221,7 @@ namespace AppInstaller::CLI::Workflow
         }
 
         const std::vector<Repository::SourceDetails>& sources = context.Get<Data::SourceList>();
+
         for (const auto& sd : sources)
         {
             Repository::Source source{ sd.Name };
@@ -297,6 +326,10 @@ namespace AppInstaller::CLI::Workflow
                 s.Arg = source.Arg;
                 s.Data = source.Data;
                 s.Identifier = source.Identifier;
+
+                std::vector<std::string_view> sourceTrustLevels = Repository::SourceTrustLevelFlagToList(source.TrustLevel);
+                s.TrustLevel = std::vector<std::string>(sourceTrustLevels.begin(), sourceTrustLevels.end());
+                s.Explicit = source.Explicit;
                 context.Reporter.Info() << s.ToJsonString() << std::endl;
             }
         }

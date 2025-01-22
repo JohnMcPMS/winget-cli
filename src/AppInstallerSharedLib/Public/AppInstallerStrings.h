@@ -104,11 +104,15 @@ namespace AppInstaller::Utility
 
     using NormalizedString = NormalizedUTF8<NORM_FORM::NormalizationKC, true>;
 
-    // Compares the two UTF8 strings in a case insensitive manner.
+    // Compares the two UTF8 strings in a case-insensitive manner.
     // Use this if one of the values is a known value, and thus ToLower is sufficient.
     bool CaseInsensitiveEquals(std::string_view a, std::string_view b);
 
-    // Returns if a UTF8 string is contained within a vector in a case insensitive manner.
+    // Compares the two UTF16 strings in a case-insensitive manner.
+    // Use this if one of the values is a known value, and thus ToLower is sufficient.
+    bool CaseInsensitiveEquals(std::wstring_view a, std::wstring_view b);
+
+    // Returns if a UTF8 string is contained within a vector in a case-insensitive manner.
     bool CaseInsensitiveContains(const std::vector<std::string_view>& a, std::string_view b);
 
     // Determines if string a starts with string b.
@@ -119,7 +123,7 @@ namespace AppInstaller::Utility
     // Use this if one of the values is a known value, and thus ToLower is sufficient.
     bool CaseInsensitiveContainsSubstring(std::string_view a, std::string_view b);
 
-    // Compares the two UTF8 strings in a case insensitive manner, using ICU for case folding.
+    // Compares the two UTF8 strings in a case-insensitive manner, using ICU for case folding.
     bool ICUCaseInsensitiveEquals(std::string_view a, std::string_view b);
 
     // Determines if string a starts with string b, using ICU for case folding.
@@ -181,6 +185,9 @@ namespace AppInstaller::Utility
 
     // Converts the candidate path part into one suitable for the actual file system
     std::string MakeSuitablePathPart(std::string_view candidate);
+
+    // Splits the file name part off of the given URI.
+    std::pair<std::string, std::filesystem::path> SplitFileNameFromURI(std::string_view uri);
 
     // Gets the file name part of the given URI.
     std::filesystem::path GetFileNameFromURI(std::string_view uri);
@@ -250,8 +257,11 @@ namespace AppInstaller::Utility
     // Join a string vector using the provided separator.
     LocIndString Join(LocIndView separator, const std::vector<LocIndString>& vector);
 
-    // Splits the string using the provided separator.
-    std::vector<std::string> Split(const std::string& input, char separator);
+    // Join a string vector using the provided separator.
+    std::string Join(std::string_view separator, const std::vector<std::string>& vector);
+
+    // Splits the string using the provided separator. Entries can also be trimmed.
+    std::vector<std::string> Split(const std::string& input, char separator, bool trim = false);
 
     // Format an input string by replacing placeholders {index} with provided values at corresponding indices.
     // Note: After upgrading to C++20, this function should be deprecated in favor of std::format.
@@ -268,4 +278,18 @@ namespace AppInstaller::Utility
 
     // Converts the given GUID value to a string.
     std::string ConvertGuidToString(const GUID& value);
+
+    // Creates a new GUID and returns the string value.
+    std::wstring CreateNewGuidNameWString();
+
+    // Converts the input string to a DWORD value using std::stoul and returns a boolean value based on the resulting DWORD value.
+    bool IsDwordFlagSet(const std::string& value);
+
+    // Finds the next control code index that would be replaced.
+    // Returns std::string::npos if not found.
+    size_t FindControlCodeToConvert(std::string_view input, size_t offset = 0);
+
+    // Converts most control codes in the input to their corresponding control picture in the output.
+    // Exempts tab, line feed, and carriage return from being replaced.
+    std::string ConvertControlCodesToPictures(std::string_view input);
 }

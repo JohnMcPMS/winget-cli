@@ -3,13 +3,8 @@
 #pragma once
 #include "ExecutionContextData.h"
 #include "ExecutionContext.h"
-#include "Public/winget/Checkpoint.h"
+#include <winget/Checkpoint.h>
 #include <guiddef.h>
-
-namespace AppInstaller::Repository::Microsoft
-{
-    struct CheckpointDatabase;
-}
 
 namespace AppInstaller::Checkpoints
 {
@@ -29,6 +24,9 @@ namespace AppInstaller::Checkpoints
 
         // Gets the file path of the checkpoint database.
         static std::filesystem::path GetCheckpointDatabasePath(const std::string_view& resumeId, bool createCheckpointDirectory = false);
+
+        // Gets the resume id.
+        std::string GetResumeId() { return m_resumeId; };
 
         // Gets the automatic checkpoint.
         std::optional<Checkpoint<AutomaticCheckpointData>> GetAutomaticCheckpoint();

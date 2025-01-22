@@ -22,6 +22,7 @@ namespace AppInstaller::Settings
         SourceAutoUpdateIntervalInMinutes,
         AdditionalSources,
         AllowedSources,
+        DefaultProxy,
         Max,
     };
 
@@ -45,6 +46,7 @@ namespace AppInstaller::Settings
             BypassCertificatePinningForMicrosoftStore,
             WinGetCommandLineInterfaces,
             Configuration,
+            ProxyCommandLineOptions,
             Max,
         };
 
@@ -82,6 +84,8 @@ namespace AppInstaller::Settings
         std::string Type;
         std::string Data;
         std::string Identifier;
+        std::vector<std::string> TrustLevel;
+        bool Explicit = false;
 
 #ifndef AICLI_DISABLE_TEST_HOOKS
         Certificates::PinningConfiguration PinningConfiguration;
@@ -146,6 +150,7 @@ namespace AppInstaller::Settings
         )
 
         POLICY_MAPPING_VALUE_SPECIALIZATION(ValuePolicy::SourceAutoUpdateIntervalInMinutes, uint32_t, "SourceAutoUpdateInterval"sv, Registry::Value::Type::DWord);
+        POLICY_MAPPING_VALUE_SPECIALIZATION(ValuePolicy::DefaultProxy, std::string, "DefaultProxy"sv, Registry::Value::Type::String);
 
         POLICY_MAPPING_LIST_SPECIALIZATION(ValuePolicy::AdditionalSources, SourceFromPolicy, "AdditionalSources"sv);
         POLICY_MAPPING_LIST_SPECIALIZATION(ValuePolicy::AllowedSources, SourceFromPolicy, "AllowedSources"sv);

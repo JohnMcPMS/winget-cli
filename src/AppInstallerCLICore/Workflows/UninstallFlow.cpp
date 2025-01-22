@@ -11,6 +11,7 @@
 #include <AppInstallerDeployment.h>
 #include <AppInstallerSynchronization.h>
 #include <winget/Runtime.h>
+#include <winget/PackageVersionSelection.h>
 
 using namespace AppInstaller::CLI::Execution;
 using namespace AppInstaller::Manifest;
@@ -34,9 +35,8 @@ namespace AppInstaller::CLI::Workflow
                 std::string SourceIdentifier;
             };
 
-            void AddIfRemoteAndNotPresent(const std::shared_ptr<IPackageVersion>& packageVersion)
+            void AddIfRemoteAndNotPresent(Source&& source, const Utility::LocIndString& identifier)
             {
-                auto source = packageVersion->GetSource();
                 const auto details = source.GetDetails();
                 if (!source.ContainsAvailablePackages())
                 {
@@ -51,7 +51,17 @@ namespace AppInstaller::CLI::Workflow
                     }
                 }
 
-                Items.emplace_back(Item{ packageVersion->GetProperty(PackageVersionProperty::Id), std::move(source), details.Identifier });
+                Items.emplace_back(Item{ identifier, std::move(source), details.Identifier });
+            }
+
+            void AddIfRemoteAndNotPresent(const std::shared_ptr<IPackageVersion>& packageVersion)
+            {
+                AddIfRemoteAndNotPresent(packageVersion->GetSource(), packageVersion->GetProperty(PackageVersionProperty::Id));
+            }
+
+            void AddIfRemoteAndNotPresent(const std::shared_ptr<IPackage>& package)
+            {
+                AddIfRemoteAndNotPresent(package->GetSource(), package->GetProperty(PackageProperty::Id));
             }
 
             std::vector<Item> Items;
@@ -60,8 +70,81 @@ namespace AppInstaller::CLI::Workflow
 
     void UninstallSinglePackage(Execution::Context& context)
     {
+        std::shared_ptr<ICompositePackage> package = context.Get<Execution::Data::Package>();
+        std::shared_ptr<IPackage> installed = package->GetInstalled();
+        std::vector<Repository::PackageVersionKey> installedVersionKeys;
+        if (installed)
+        {
+            installedVersionKeys = installed->GetVersionKeys();
+        }
+
+        // Handle multiple installed versions when we have been told to uninstall all of them.
+        if (installedVersionKeys.size() > 1 && context.Args.Contains(Execution::Args::Type::AllVersions))
+        {
+            bool allSucceeded = true;
+            size_t versionsCount = installedVersionKeys.size();
+            size_t versionsProgress = 0;
+
+            for (const auto& key : installedVersionKeys)
+            {
+                context.Reporter.Info() << '(' << ++versionsProgress << '/' << versionsCount << ") "_liv;
+
+                // We want to do best effort to uninstall all versions regardless of previous failures
+                auto subContextPtr = context.CreateSubContext();
+                Execution::Context& uninstallContext = *subContextPtr;
+                auto previousThreadGlobals = uninstallContext.SetForCurrentThread();
+
+                uninstallContext.Add<Execution::Data::Package>(package);
+                uninstallContext.Add<Execution::Data::InstalledPackageVersion>(installed->GetVersion(key));
+
+                // Prevent individual exceptions from breaking out of the loop
+                try
+                {
+                    uninstallContext <<
+                        Workflow::UninstallSinglePackageVersion;
+                }
+                catch (...)
+                {
+                    uninstallContext.SetTerminationHR(Workflow::HandleException(uninstallContext, std::current_exception()));
+                }
+
+                uninstallContext.Reporter.Info() << std::endl;
+
+                if (uninstallContext.IsTerminated())
+                {
+                    if (context.IsTerminated() && context.GetTerminationHR() == E_ABORT)
+                    {
+                        // This means that the subcontext being terminated is due to an overall abort
+                        context.Reporter.Info() << Resource::String::Cancelled << std::endl;
+                        return;
+                    }
+
+                    allSucceeded = false;
+                }
+            }
+
+            if (!allSucceeded)
+            {
+                AICLI_TERMINATE_CONTEXT(APPINSTALLER_CLI_ERROR_MULTIPLE_UNINSTALL_FAILED);
+            }
+        }
+        else if (installedVersionKeys.size() > 1 && !context.Args.Contains(Execution::Args::Type::TargetVersion))
+        {
+            context.Reporter.Error() << Resource::String::UninstallFailedDueToMultipleVersions << std::endl;
+            AICLI_TERMINATE_CONTEXT(APPINSTALLER_CLI_ERROR_MULTIPLE_APPLICATIONS_FOUND);
+        }
+        else
+        {
+            context <<
+                Workflow::GetInstalledPackageVersion <<
+                Workflow::UninstallSinglePackageVersion;
+        }
+    }
+
+    void UninstallSinglePackageVersion(Execution::Context& context)
+    {
         context <<
-            Workflow::GetInstalledPackageVersion <<
+            Workflow::ReportInstalledPackageVersionIdentity <<
             Workflow::EnsureSupportForUninstall <<
             Workflow::GetUninstallInfo <<
             Workflow::GetDependenciesInfoForUninstall <<
@@ -123,6 +206,13 @@ namespace AppInstaller::CLI::Workflow
     void GetUninstallInfo(Execution::Context& context)
     {
         auto installedPackageVersion = context.Get<Execution::Data::InstalledPackageVersion>();
+
+        if (!installedPackageVersion)
+        {
+            AICLI_LOG(CLI, Verbose, << "No installed package version; cannot get uninstall information.");
+            return;
+        }
+
         const std::string installedTypeString = installedPackageVersion->GetMetadata()[PackageVersionMetadata::InstalledType];
         switch (ConvertToInstallerTypeEnum(installedTypeString))
         {
@@ -207,7 +297,15 @@ namespace AppInstaller::CLI::Workflow
 
     void ExecuteUninstaller(Execution::Context& context)
     {
-        const std::string installedTypeString = context.Get<Execution::Data::InstalledPackageVersion>()->GetMetadata()[PackageVersionMetadata::InstalledType];
+        auto installedPackageVersion = context.Get<Execution::Data::InstalledPackageVersion>();
+
+        if (!installedPackageVersion)
+        {
+            AICLI_LOG(CLI, Verbose, << "No installed package version; cannot uninstall.");
+            return;
+        }
+
+        const std::string installedTypeString = installedPackageVersion->GetMetadata()[PackageVersionMetadata::InstalledType];
         InstallerTypeEnum installerType = ConvertToInstallerTypeEnum(installedTypeString);
 
         Synchronization::CrossProcessInstallLock lock;
@@ -311,12 +409,12 @@ namespace AppInstaller::CLI::Workflow
         UninstallCorrelatedSources correlatedSources;
 
         // Start with the installed version
-        correlatedSources.AddIfRemoteAndNotPresent(package->GetInstalledVersion());
+        correlatedSources.AddIfRemoteAndNotPresent(GetInstalledVersion(package));
 
         // Then look through all available versions
-        for (const auto& versionKey : package->GetAvailableVersionKeys())
+        for (const auto& availablePackage : package->GetAvailable())
         {
-            correlatedSources.AddIfRemoteAndNotPresent(package->GetAvailableVersion(versionKey));
+            correlatedSources.AddIfRemoteAndNotPresent(availablePackage);
         }
 
         // Finally record the uninstall for each found value

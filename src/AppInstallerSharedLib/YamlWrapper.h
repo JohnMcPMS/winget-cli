@@ -41,7 +41,7 @@ namespace AppInstaller::YAML::Wrapper
         Node GetRoot();
 
         // Adds a scalar node to the document.
-        int AddScalar(std::string_view value);
+        int AddScalar(std::string_view value, ScalarStyle style = ScalarStyle::Any);
 
         // Adds a sequence node to the document.
         int AddSequence();
@@ -82,6 +82,9 @@ namespace AppInstaller::YAML::Wrapper
 
         // Loads the next document from the input, if one exists.
         Document Load();
+
+        // Retrieves the input that was used to create the parser with the correct encoding scheme.
+        const std::string& GetEncodedInput() const { return m_input; }
 
     private:
         // Determines the type of encoding in use, transforming the input as necessary.

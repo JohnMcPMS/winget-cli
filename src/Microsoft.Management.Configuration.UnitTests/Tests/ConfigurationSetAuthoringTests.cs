@@ -7,9 +7,13 @@
 namespace Microsoft.Management.Configuration.UnitTests.Tests
 {
     using System;
+    using System.Collections.Generic;
     using Microsoft.Management.Configuration.UnitTests.Fixtures;
     using Microsoft.Management.Configuration.UnitTests.Helpers;
     using Microsoft.VisualBasic;
+    using Microsoft.VisualStudio.TestPlatform.PlatformAbstractions.Interfaces;
+    using Windows.Foundation.Collections;
+    using Windows.Storage.Streams;
     using Xunit;
     using Xunit.Abstractions;
 
@@ -17,6 +21,7 @@ namespace Microsoft.Management.Configuration.UnitTests.Tests
     /// Unit tests for configuration set authoring (creating objects).
     /// </summary>
     [Collection("UnitTestCollection")]
+    [InProc]
     [OutOfProc]
     public class ConfigurationSetAuthoringTests : ConfigurationProcessorTestBase
     {
@@ -70,7 +75,6 @@ namespace Microsoft.Management.Configuration.UnitTests.Tests
             ConfigurationUnitIntent testIntent = ConfigurationUnitIntent.Assert;
 
             ConfigurationUnit testUnit = this.ConfigurationUnit();
-
             testUnit.Type = testName;
             Assert.Equal(testName, testUnit.Type);
             testUnit.Identifier = testIdentifier;
@@ -100,12 +104,144 @@ namespace Microsoft.Management.Configuration.UnitTests.Tests
         }
 
         /// <summary>
-        /// This test is to ensure that real tests are added when Serialize is implemented.
+        /// Basic sanity check to verify that nested value sets can be serialized successfully.
         /// </summary>
         [Fact]
-        public void ConfigurationSetSerializeNotImplemented()
+        public void ConfigurationSetSerializeNestedValueSets()
         {
-            Assert.Throws<NotImplementedException>(() => this.ConfigurationSet().Serialize(null));
+            ConfigurationSet testSet = this.ConfigurationSet();
+
+            testSet.SchemaVersion = "0.2";
+            ConfigurationUnit testUnit = this.ConfigurationUnit();
+            string testName = "Test Name";
+            string testIdentifier = "Test Identifier";
+            testUnit.Type = testName;
+            testUnit.Identifier = testIdentifier;
+
+            ValueSet innerValueSet = new ValueSet();
+            innerValueSet.Add("innerKey", "innerValue");
+
+            ValueSet outerValueSet = new ValueSet();
+            outerValueSet.Add("outerKey", innerValueSet);
+            testUnit.Metadata = outerValueSet;
+            testSet.Units.Add(testUnit);
+
+            InMemoryRandomAccessStream stream = new InMemoryRandomAccessStream();
+            testSet.Serialize(stream);
+
+            string yamlOutput = this.ReadStream(stream);
+            Assert.NotNull(yamlOutput);
+        }
+
+        /// <summary>
+        /// Test for unique unit environment calculation.
+        /// </summary>
+        [Fact]
+        public void ConfigurationSet_UnitEnvironments()
+        {
+            ConfigurationSet testSet = this.ConfigurationSet();
+
+            Dictionary<string, string> firstProperty = new Dictionary<string, string>();
+            firstProperty.Add("property", "value1");
+
+            Dictionary<string, string> secondProperty = new Dictionary<string, string>();
+            secondProperty.Add("property", "value2");
+
+            Helpers.ConfigurationEnvironmentData[] environments = new Helpers.ConfigurationEnvironmentData[]
+            {
+                new () { ProcessorIdentifier = "dsc3" },
+                new () { ProcessorIdentifier = "pwsh" },
+                new () { ProcessorIdentifier = "dsc3", Context = SecurityContext.Elevated },
+                new () { ProcessorIdentifier = "pwsh", Context = SecurityContext.Restricted },
+                new () { ProcessorIdentifier = "dsc3", ProcessorProperties = firstProperty },
+                new () { ProcessorIdentifier = "pwsh", ProcessorProperties = firstProperty },
+                new () { ProcessorIdentifier = "pwsh", ProcessorProperties = secondProperty },
+                new () { ProcessorIdentifier = "dsc3", Context = SecurityContext.Restricted, ProcessorProperties = firstProperty },
+                new () { ProcessorIdentifier = "pwsh", Context = SecurityContext.Elevated, ProcessorProperties = firstProperty },
+            };
+
+            foreach (int index in new int[] { 0, 1, 1, 2, 3, 5, 4, 6, 7, 8, 2, 7, 7, 7 })
+            {
+                Assert.True(index < environments.Length);
+                testSet.Units.Add(environments[index].ApplyToUnit(this.ConfigurationUnit()));
+            }
+
+            var uniqueEnvironments = testSet.GetUnitEnvironments();
+            this.EnsureEnvironmentEquivalence(environments, uniqueEnvironments);
+        }
+
+        /// <summary>
+        /// Test for unique unit environment calculation with group units.
+        /// </summary>
+        [Fact]
+        public void ConfigurationSet_GroupUnitEnvironments()
+        {
+            ConfigurationSet testSet = this.ConfigurationSet();
+
+            Dictionary<string, string> firstProperty = new Dictionary<string, string>();
+            firstProperty.Add("property", "value1");
+
+            Dictionary<string, string> secondProperty = new Dictionary<string, string>();
+            secondProperty.Add("property", "value2");
+
+            Helpers.ConfigurationEnvironmentData[] environments = new Helpers.ConfigurationEnvironmentData[]
+            {
+                new () { ProcessorIdentifier = "dsc3" },
+                new () { ProcessorIdentifier = "pwsh" },
+                new () { ProcessorIdentifier = "dsc3", Context = SecurityContext.Elevated },
+                new () { ProcessorIdentifier = "pwsh", Context = SecurityContext.Restricted },
+                new () { ProcessorIdentifier = "dsc3", ProcessorProperties = firstProperty },
+                new () { ProcessorIdentifier = "pwsh", ProcessorProperties = firstProperty },
+                new () { ProcessorIdentifier = "pwsh", ProcessorProperties = secondProperty },
+                new () { ProcessorIdentifier = "dsc3", Context = SecurityContext.Restricted, ProcessorProperties = firstProperty },
+                new () { ProcessorIdentifier = "pwsh", Context = SecurityContext.Elevated, ProcessorProperties = firstProperty },
+                new (), // The default environment for the group unit
+            };
+
+            foreach (int index in new int[] { 0, 1, 1, 3, 5, 4, 6, 8 })
+            {
+                Assert.True(index < environments.Length);
+                testSet.Units.Add(environments[index].ApplyToUnit(this.ConfigurationUnit()));
+            }
+
+            var groupUnit = this.ConfigurationUnit();
+            groupUnit.IsGroup = true;
+
+            foreach (int index in new int[] { 7, 5, 2 })
+            {
+                Assert.True(index < environments.Length);
+                groupUnit.Units.Add(environments[index].ApplyToUnit(this.ConfigurationUnit()));
+            }
+
+            testSet.Units.Add(groupUnit);
+
+            var uniqueEnvironments = testSet.GetUnitEnvironments();
+            this.EnsureEnvironmentEquivalence(environments, uniqueEnvironments);
+        }
+
+        private void EnsureEnvironmentEquivalence(Helpers.ConfigurationEnvironmentData[] expectedEnvironments, IList<ConfigurationEnvironment>? actualEnvironments)
+        {
+            Assert.NotNull(actualEnvironments);
+            Assert.Equal(expectedEnvironments.Length, actualEnvironments.Count);
+
+            bool[] foundEnvironments = new bool[expectedEnvironments.Length];
+            foreach (var actual in actualEnvironments)
+            {
+                for (int i = 0; i < expectedEnvironments.Length; i++)
+                {
+                    var expected = expectedEnvironments[i];
+                    if (actual.Context == expected.Context && actual.ProcessorIdentifier == expected.ProcessorIdentifier && expected.PropertiesEqual(actual.ProcessorProperties))
+                    {
+                        foundEnvironments[i] = true;
+                        break;
+                    }
+                }
+            }
+
+            for (int i = 0; i < foundEnvironments.Length; i++)
+            {
+                Assert.True(foundEnvironments[i], $"Found expected environment: {i}");
+            }
         }
     }
 }

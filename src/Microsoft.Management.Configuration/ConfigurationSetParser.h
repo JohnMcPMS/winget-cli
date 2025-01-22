@@ -3,13 +3,14 @@
 #pragma once
 #include <ConfigurationUnit.h>
 #include <ConfigurationSet.h>
+#include <ConfigurationSetUtilities.h>
 #include <winget/Yaml.h>
 #include <winrt/Windows.Storage.Streams.h>
+#include <functional>
 #include <memory>
 #include <string_view>
+#include <utility>
 #include <vector>
-
-using namespace std::string_view_literals;
 
 namespace winrt::Microsoft::Management::Configuration::implementation
 {
@@ -18,6 +19,9 @@ namespace winrt::Microsoft::Management::Configuration::implementation
     {
         // Create a parser from the given bytes (the encoding is detected).
         static std::unique_ptr<ConfigurationSetParser> Create(std::string_view input);
+
+        // Create a parser for the given schema version.
+        static std::unique_ptr<ConfigurationSetParser> CreateForSchemaVersion(std::string schemaVersion);
 
         // Determines if the given value is a recognized schema version.
         // This will only return true for a version that we fully recognize.
@@ -37,7 +41,7 @@ namespace winrt::Microsoft::Management::Configuration::implementation
         static std::string GetSchemaVersionForUri(std::string_view value);
 
         // Gets the latest schema version.
-        static hstring LatestVersion();
+        static std::pair<hstring, Windows::Foundation::Uri> LatestVersion();
 
         virtual ~ConfigurationSetParser() noexcept = default;
 
@@ -52,7 +56,7 @@ namespace winrt::Microsoft::Management::Configuration::implementation
         // Retrieves the schema version of the parser.
         virtual hstring GetSchemaVersion() = 0;
 
-        using ConfigurationSetPtr = decltype(make_self<wil::details::module_count_wrapper<implementation::ConfigurationSet>>());
+        using ConfigurationSetPtr = winrt::com_ptr<implementation::ConfigurationSet>;
 
         // Retrieve the configuration set from the parser.
         ConfigurationSetPtr GetConfigurationSet() const { return m_configurationSet; }
@@ -72,50 +76,21 @@ namespace winrt::Microsoft::Management::Configuration::implementation
         // The column related to the result code.
         uint32_t Column() const { return m_column; }
 
+        // Parse a ValueSet from the given input.
+        Windows::Foundation::Collections::ValueSet ParseValueSet(std::string_view input);
+
+        // Parse a string array from the given input.
+        std::vector<hstring> ParseStringArray(std::string_view input);
+
     protected:
         ConfigurationSetParser() = default;
+
+        // Sets (or resets) the document to parse.
+        virtual void SetDocument(AppInstaller::YAML::Node&& document) = 0;
 
         // Set the error state
         void SetError(hresult result, std::string_view field = {}, std::string_view value = {}, uint32_t line = 0, uint32_t column = 0);
         void SetError(hresult result, std::string_view field, const AppInstaller::YAML::Mark& mark, std::string_view value = {});
-
-        // The various field names that are used in parsing.
-        enum class FieldName
-        {
-            // v0.1 and v0.2
-            ConfigurationVersion,
-            Properties,
-            Resource,
-            Directives,
-            Settings,
-            Assertions,
-            Id,
-            DependsOn,
-
-            // Universal
-            Resources,
-            ModuleDirective,
-
-            // v0.3
-            Schema,
-            Metadata,
-            Parameters,
-            Variables,
-            Type,
-            Description,
-            Name,
-            IsGroupMetadata,
-            DefaultValue,
-            AllowedValues,
-            MinimumLength,
-            MaximumLength,
-            MinimumValue,
-            MaximumValue,
-        };
-
-        // Gets the value of the field name.
-        static std::string_view GetFieldName(FieldName fieldName);
-        static hstring GetFieldNameHString(FieldName fieldName);
 
         ConfigurationSetPtr m_configurationSet;
         hresult m_result;
@@ -125,31 +100,37 @@ namespace winrt::Microsoft::Management::Configuration::implementation
         uint32_t m_column = 0;
 
         // Gets the given `field` from the `parent` node, checking against the requirement and type.
-        const AppInstaller::YAML::Node& GetAndEnsureField(const AppInstaller::YAML::Node& parent, FieldName field, bool required, std::optional<AppInstaller::YAML::Node::Type> type);
+        const AppInstaller::YAML::Node& GetAndEnsureField(const AppInstaller::YAML::Node& parent, ConfigurationField field, bool required, std::optional<AppInstaller::YAML::Node::Type> type);
 
         // Errors if the given `field` is present.
-        void EnsureFieldAbsent(const AppInstaller::YAML::Node& parent, FieldName field);
+        void EnsureFieldAbsent(const AppInstaller::YAML::Node& parent, ConfigurationField field);
 
         // Parse the ValueSet named `field` from the given `node`.
-        void ParseValueSet(const AppInstaller::YAML::Node& node, FieldName field, bool required, const Windows::Foundation::Collections::ValueSet& valueSet);
+        void ParseValueSet(const AppInstaller::YAML::Node& node, ConfigurationField field, bool required, const Windows::Foundation::Collections::ValueSet& valueSet);
 
         // Parse the mapping named `field` from the given `node`.
-        void ParseMapping(const AppInstaller::YAML::Node& node, FieldName field, bool required, AppInstaller::YAML::Node::Type elementType, std::function<void(std::string, const AppInstaller::YAML::Node&)> operation);
+        void ParseMapping(const AppInstaller::YAML::Node& node, ConfigurationField field, bool required, AppInstaller::YAML::Node::Type elementType, std::function<void(std::string, const AppInstaller::YAML::Node&)> operation);
 
         // Parse the sequence named `field` from the given `node`.
-        void ParseSequence(const AppInstaller::YAML::Node& node, FieldName field, bool required, std::optional<AppInstaller::YAML::Node::Type> elementType, std::function<void(const AppInstaller::YAML::Node&)> operation);
+        void ParseSequence(const AppInstaller::YAML::Node& node, ConfigurationField field, bool required, std::optional<AppInstaller::YAML::Node::Type> elementType, std::function<void(const AppInstaller::YAML::Node&)> operation);
+
+        // Parse the sequence from the given `node`.
+        void ParseSequence(const AppInstaller::YAML::Node& node, std::string_view nameForErrors, std::optional<AppInstaller::YAML::Node::Type> elementType, std::function<void(const AppInstaller::YAML::Node&)> operation);
 
         // Gets the string value in `field` from the given `node`, setting this value on `unit` using the `propertyFunction`.
-        void GetStringValueForUnit(const AppInstaller::YAML::Node& node, FieldName field, bool required, ConfigurationUnit* unit, void(ConfigurationUnit::* propertyFunction)(const hstring& value));
+        void GetStringValueForUnit(const AppInstaller::YAML::Node& node, ConfigurationField field, bool required, ConfigurationUnit* unit, void(ConfigurationUnit::* propertyFunction)(const hstring& value));
 
         // Gets the string array in `field` from the given `node`, setting this value on `unit` using the `propertyFunction`.
-        void GetStringArrayForUnit(const AppInstaller::YAML::Node& node, FieldName field, bool required, ConfigurationUnit* unit, void(ConfigurationUnit::* propertyFunction)(std::vector<hstring>&& value));
+        void GetStringArrayForUnit(const AppInstaller::YAML::Node& node, ConfigurationField field, bool required, ConfigurationUnit* unit, void(ConfigurationUnit::* propertyFunction)(std::vector<hstring>&& value));
 
         // Validates the unit's Type property for correctness and consistency with the metadata. Should be called after parsing the Metadata value.
-        void ValidateType(ConfigurationUnit* unit, const AppInstaller::YAML::Node& unitNode, FieldName typeField, bool moveModuleNameToMetadata, bool moduleNameRequiredInType);
+        void ValidateType(ConfigurationUnit* unit, const AppInstaller::YAML::Node& unitNode, ConfigurationField typeField, bool moveModuleNameToMetadata, bool moduleNameRequiredInType);
 
         // Parses an object from the given node, attempting to treat it as the requested type if possible.
-        void ParseObject(const AppInstaller::YAML::Node& node, FieldName fieldForErrors, Windows::Foundation::PropertyType type, Windows::Foundation::IInspectable& result);
+        void ParseObject(const AppInstaller::YAML::Node& node, ConfigurationField fieldForErrors, Windows::Foundation::PropertyType type, Windows::Foundation::IInspectable& result);
+
+        // Extracts the security context from the metadata in the given unit; if not present use `defaultContext`.
+        void ExtractSecurityContext(implementation::ConfigurationUnit* unit, SecurityContext defaultContext = SecurityContext::Current);
 
     private:
         // Support older schema parsing.

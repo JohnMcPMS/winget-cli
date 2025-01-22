@@ -4,12 +4,11 @@
 #include "Resources.h"
 #include "PinFlow.h"
 #include "TableOutput.h"
-#include "Microsoft/PinningIndex.h"
-#include <winget/SQLiteStorageBase.h>
-#include "winget/RepositorySearch.h"
+#include <winget/PinningData.h>
+#include <winget/RepositorySearch.h>
+#include <winget/PackageVersionSelection.h>
 
 using namespace AppInstaller::Repository;
-using namespace AppInstaller::SQLite;
 
 namespace AppInstaller::CLI::Workflow
 {
@@ -32,6 +31,26 @@ namespace AppInstaller::CLI::Workflow
             }
         }
 
+        void GetPinKeysForInstalled(const std::shared_ptr<IPackageVersion>& installedVersion, std::set<Pinning::PinKey>& pinKeys)
+        {
+            auto installedType = Manifest::ConvertToInstallerTypeEnum(installedVersion->GetMetadata()[PackageVersionMetadata::InstalledType]);
+            std::vector<Utility::LocIndString> propertyStrings;
+
+            if (Manifest::DoesInstallerTypeUsePackageFamilyName(installedType))
+            {
+                propertyStrings = installedVersion->GetMultiProperty(PackageVersionMultiProperty::PackageFamilyName);
+            }
+            else if (Manifest::DoesInstallerTypeUseProductCode(installedType))
+            {
+                propertyStrings = installedVersion->GetMultiProperty(PackageVersionMultiProperty::ProductCode);
+            }
+
+            for (const auto& value : propertyStrings)
+            {
+                pinKeys.emplace(Pinning::PinKey::GetPinKeyForInstalled(value));
+            }
+        }
+
         std::set<Pinning::PinKey> GetPinKeysForPackage(Execution::Context& context)
         {
             auto package = context.Get<Execution::Data::Package>();
@@ -40,21 +59,20 @@ namespace AppInstaller::CLI::Workflow
 
             if (context.Args.Contains(Execution::Args::Type::PinInstalled))
             {
-                auto installedVersion = package->GetInstalledVersion();
+                auto installedVersion = GetInstalledVersion(package);
                 if (installedVersion)
                 {
-                    pinKeys.emplace(Pinning::PinKey::GetPinKeyForInstalled(installedVersion->GetProperty(PackageVersionProperty::Id)));
+                    GetPinKeysForInstalled(installedVersion, pinKeys);
                 }
             }
             else
             {
-                auto packageVersionKeys = package->GetAvailableVersionKeys();
-                for (const auto& versionKey : packageVersionKeys)
+                auto availablePackages = package->GetAvailable();
+                for (const auto& availablePackage : availablePackages)
                 {
-                    auto availableVersion = package->GetAvailableVersion(versionKey);
                     pinKeys.emplace(
-                        availableVersion->GetProperty(PackageVersionProperty::Id).get(),
-                        availableVersion->GetProperty(PackageVersionProperty::SourceIdentifier).get());
+                        availablePackage->GetProperty(PackageProperty::Id).get(),
+                        availablePackage->GetSource().GetIdentifier());
                 }
             }
 
@@ -81,22 +99,21 @@ namespace AppInstaller::CLI::Workflow
 
     void OpenPinningIndex::operator()(Execution::Context& context) const
     {
-        auto openDisposition = m_readOnly ? SQLiteStorageBase::OpenDisposition::Read : SQLiteStorageBase::OpenDisposition::ReadWrite;
-        auto pinningIndex = PinningIndex::OpenOrCreateDefault(openDisposition);
-        if (!pinningIndex)
+        auto pinningData = Pinning::PinningData{ m_readOnly ? Pinning::PinningData::Disposition::ReadOnly : Pinning::PinningData::Disposition::ReadWrite };
+        if (!m_readOnly && !pinningData)
         {
             AICLI_LOG(CLI, Error, << "Unable to open pinning index.");
             context.Reporter.Error() << Resource::String::PinCannotOpenIndex << std::endl;
             AICLI_TERMINATE_CONTEXT(APPINSTALLER_CLI_ERROR_CANNOT_OPEN_PINNING_INDEX);
         }
 
-        context.Add<Execution::Data::PinningIndex>(std::move(pinningIndex));
+        context.Add<Execution::Data::PinningData>(std::move(pinningData));
     }
 
     void GetAllPins(Execution::Context& context)
     {
         AICLI_LOG(CLI, Info, << "Getting all existing pins");
-        context.Add<Execution::Data::Pins>(context.Get<Execution::Data::PinningIndex>()->GetAllPins());
+        context.Add<Execution::Data::Pins>(context.Get<Execution::Data::PinningData>().GetAllPins());
     }
 
     void SearchPin(Execution::Context& context)
@@ -104,12 +121,12 @@ namespace AppInstaller::CLI::Workflow
         auto pinKeys = GetPinKeysForPackage(context);
 
         auto package = context.Get<Execution::Data::Package>();
-        auto pinningIndex = context.Get<Execution::Data::PinningIndex>();
+        auto pinningData = context.Get<Execution::Data::PinningData>();
 
         std::vector<Pinning::Pin> pins;
         for (const auto& pinKey : pinKeys)
         {
-            auto pin = pinningIndex->GetPin(pinKey);
+            auto pin = pinningData.GetPin(pinKey);
             if (pin)
             {
                 pins.emplace_back(std::move(pin.value()));
@@ -124,7 +141,7 @@ namespace AppInstaller::CLI::Workflow
         auto pinKeys = GetPinKeysForPackage(context);
 
         auto package = context.Get<Execution::Data::Package>();
-        auto pinningIndex = context.Get<Execution::Data::PinningIndex>();
+        auto pinningData = context.Get<Execution::Data::PinningData>();
         auto installedVersion = context.Get<Execution::Data::InstalledPackageVersion>();
 
         std::vector<Pinning::Pin> pinsToAddOrUpdate;
@@ -133,7 +150,7 @@ namespace AppInstaller::CLI::Workflow
             auto pin = CreatePin(context, pinKey);
             AICLI_LOG(CLI, Info, << "Evaluating Pin " << pin.ToString());
 
-            auto existingPin = pinningIndex->GetPin(pinKey);
+            auto existingPin = pinningData.GetPin(pinKey);
             if (existingPin)
             {
                 Utility::LocIndString packageNameToReport;
@@ -143,7 +160,7 @@ namespace AppInstaller::CLI::Workflow
                 }
                 else
                 {
-                    auto availableVersion = package->GetAvailableVersion({ pinKey.SourceId, "", "" });
+                    auto availableVersion = GetAvailablePackageFromSource(package, pinKey.SourceId)->GetLatestVersion();
                     if (availableVersion)
                     {
                         packageNameToReport = availableVersion->GetProperty(PackageVersionProperty::Name);
@@ -183,7 +200,7 @@ namespace AppInstaller::CLI::Workflow
             for (const auto& pin : pinsToAddOrUpdate)
 
             {
-                pinningIndex->AddOrUpdatePin(pin);
+                pinningData.AddOrUpdatePin(pin);
             }
 
             context.Reporter.Info() << Resource::String::PinAdded << std::endl;
@@ -195,18 +212,16 @@ namespace AppInstaller::CLI::Workflow
         auto package = context.Get<Execution::Data::Package>();
         auto pins = context.Get<Execution::Data::Pins>();
 
-        auto pinningIndex = context.Get<Execution::Data::PinningIndex>();
+        auto pinningData = context.Get<Execution::Data::PinningData>();
         bool pinExists = false;
 
         // Note that if a source was specified in the command line,
         // that will be the only one we get version keys from.
         // So, we remove pins from all sources unless one was provided.
-        auto packageVersionKeys = package->GetAvailableVersionKeys();
-
         for (const auto& pin : pins)
         {
             AICLI_LOG(CLI, Info, << "Removing Pin " << pin.GetKey().ToString());
-            pinningIndex->RemovePin(pin.GetKey());
+            pinningData.RemovePin(pin.GetKey());
             pinExists = true;
         }
 
@@ -258,15 +273,19 @@ namespace AppInstaller::CLI::Workflow
                 else
                 {
                     // This ensures we get the info from the right source if it exists on multiple
-                    auto availableVersion = match.Package->GetAvailableVersion({ pinKey.SourceId, "", "" });
-                    if (availableVersion)
+                    auto availablePackage = GetAvailablePackageFromSource(match.Package, pinKey.SourceId);
+                    if (availablePackage)
                     {
-                        packageName = availableVersion->GetProperty(PackageVersionProperty::Name);
-                        sourceName = availableVersion->GetProperty(PackageVersionProperty::SourceName);
+                        auto availableVersion = availablePackage->GetLatestVersion();
+                        if (availableVersion)
+                        {
+                            packageName = availableVersion->GetProperty(PackageVersionProperty::Name);
+                            sourceName = availableVersion->GetProperty(PackageVersionProperty::SourceName);
+                        }
                     }
                 }
 
-                auto installedVersion = match.Package->GetInstalledVersion();
+                auto installedVersion = GetInstalledVersion(match.Package);
                 if (installedVersion)
                 {
                     packageName = installedVersion->GetProperty(PackageVersionProperty::Name);
@@ -307,7 +326,7 @@ namespace AppInstaller::CLI::Workflow
             }
         }
 
-        if (context.Get<Execution::Data::PinningIndex>()->ResetAllPins(sourceId))
+        if (context.Get<Execution::Data::PinningData>().ResetAllPins(sourceId))
         {
             context.Reporter.Info() << Resource::String::PinResetSuccessful << std::endl;
         }

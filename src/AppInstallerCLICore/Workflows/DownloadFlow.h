@@ -24,6 +24,7 @@ namespace AppInstaller::CLI::Workflow
     void GetInstallerDownloadPath(Execution::Context& context);
 
     // Downloads the file referenced by the Installer.
+    // This workflow task is also used by MSStoreDownload task.
     // Required Args: None
     // Inputs: Installer, Manifest
     // Outputs: HashPair, InstallerPath
@@ -84,4 +85,11 @@ namespace AppInstaller::CLI::Workflow
     // Inputs: Installer
     // Outputs: None
     void EnsureSupportForDownload(Execution::Context& context);
+
+    // This method initializes an empty InstallerDownloadAuthenticators map.
+    // InstallerDownloadAuthenticators map is for reusing authenticators when downloading multiple installers.
+    // Required Args: None
+    // Inputs: None
+    // Outputs: New empty InstallerDownloadAuthenticators
+    void InitializeInstallerDownloadAuthenticatorsMap(Execution::Context& context);
 }

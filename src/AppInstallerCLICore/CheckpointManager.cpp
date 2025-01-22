@@ -6,11 +6,12 @@
 #include "ExecutionContextData.h"
 #include <AppInstallerRuntime.h>
 
+using namespace AppInstaller::CLI;
+using namespace AppInstaller::Repository::Microsoft;
+using namespace AppInstaller::SQLite;
+
 namespace AppInstaller::Checkpoints
 {
-    using namespace AppInstaller::CLI;
-    using namespace AppInstaller::Repository::Microsoft;
-    using namespace AppInstaller::SQLite;
 
     // This checkpoint name is reserved for the starting checkpoint which captures the automatic metadata.
     constexpr std::string_view s_AutomaticCheckpoint = "automatic"sv;
@@ -82,6 +83,8 @@ namespace AppInstaller::Checkpoints
                 automaticCheckpoint.SetMany(AutomaticCheckpointData::Arguments, argument, values);
             }
         }
+
+        automaticCheckpoint.Set(AutomaticCheckpointData::ResumeCount, {}, std::to_string(0));
     }
 
     void LoadCommandArgsFromAutomaticCheckpoint(CLI::Execution::Context& context, Checkpoint<AutomaticCheckpointData>& automaticCheckpoint)

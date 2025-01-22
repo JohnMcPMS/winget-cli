@@ -2,7 +2,7 @@
 // Licensed under the MIT License.
 namespace Microsoft.Management.Configuration
 {
-    [contractversion(2)]
+    [contractversion(3)]
     apicontract Contract{};
 
     // The current state of a configuration set.
@@ -72,6 +72,32 @@ namespace Microsoft.Management.Configuration
         // The configuration unit was not run due to a precondition not being met.
         // For example, if a dependency fails to be applied, this will be set.
         Precondition,
+    };
+
+    // A security context; typically used to define the context in which a configuration unit should be processed.
+    [contract(Microsoft.Management.Configuration.Contract, 3)]
+    enum SecurityContext
+    {
+        // The default value; indicates that the configuration unit should be processed at the caller's current level.
+        Current,
+        // A standard user without administrator privileges.
+        Restricted,
+        // A user with administrator privileges.
+        Elevated,
+    };
+
+    // Information about the environment in which a configuration is processed.
+    [contract(Microsoft.Management.Configuration.Contract, 3)]
+    runtimeclass ConfigurationEnvironment
+    {
+        // The security context in which a configuration is processed.
+        SecurityContext Context;
+
+        // A string that identifies the processor that should be used for the configuration.
+        String ProcessorIdentifier;
+
+        // Processor specific properties.
+        Windows.Foundation.Collections.IMap<String, String> ProcessorProperties{ get; };
     };
 
     // Information on a result for a single unit of configuration.
@@ -245,6 +271,8 @@ namespace Microsoft.Management.Configuration
         //  Dependencies, Metadata, and Settings will by new containers with identical values inside
         //  Details will be the same value (not a copy, just another reference)
         //  State, ResultInformation, and ShouldApply will be their default constructed state
+        //  IsGroup will be false and child units will not be copied
+        //  Environment will be copied
         ConfigurationUnit Copy();
 
         [contract(Microsoft.Management.Configuration.Contract, 2)]
@@ -255,6 +283,14 @@ namespace Microsoft.Management.Configuration
 
             // The configuration units that are part of this unit (if IsGroup is true).
             Windows.Foundation.Collections.IVector<ConfigurationUnit> Units;
+        }
+
+        [contract(Microsoft.Management.Configuration.Contract, 3)]
+        {
+            // The environment in which to process the configuration unit.
+            // This defines the initial processing environment state used by the configuration system,
+            // and may be overridden by the processor later.
+            ConfigurationEnvironment Environment{ get; };
         }
     }
 
@@ -278,7 +314,7 @@ namespace Microsoft.Management.Configuration
 
         // The state of the configuration set for this event (the ConfigurationSet can be used to get the current state, which may be different).
         ConfigurationSetState SetState{ get; };
-            
+
         // The state of the configuration unit for this event (the ConfigurationUnit can be used to get the current state, which may be different).
         ConfigurationUnitState UnitState{ get; };
 
@@ -368,7 +404,7 @@ namespace Microsoft.Management.Configuration
         String SchemaVersion;
 
         // Only changes for this set are sent to this event.
-        // This includes things like: start/stop of the entire set for application or test, start/stop of a unit for application or test.
+        // This includes things like: start/stop of the entire set for application, start/stop of a unit for application.
         event Windows.Foundation.TypedEventHandler<ConfigurationSet, ConfigurationSetChangeData> ConfigurationSetChange;
 
         // Writes the configuration set to the given stream.
@@ -392,6 +428,12 @@ namespace Microsoft.Management.Configuration
             // Will be set to the schema version when read in, and default to the latest if created manually.
             // Setting SchemaUri to a different value will change SchemaVersion.
             Windows.Foundation.Uri SchemaUri;
+        }
+
+        [contract(Microsoft.Management.Configuration.Contract, 3)]
+        {
+            // Gets the union of environments as defined by all of the active units within the set.
+            Windows.Foundation.Collections.IVector<ConfigurationEnvironment> GetUnitEnvironments();
         }
     }
 
@@ -503,6 +545,80 @@ namespace Microsoft.Management.Configuration
 
         // Creates a configuration unit processor for the given unit.
         IConfigurationUnitProcessor CreateUnitProcessor(ConfigurationUnit unit);
+    }
+
+    // The result of applying an individual unit settings with an IConfigurationGroupProcessor.
+    [contract(Microsoft.Management.Configuration.Contract, 1)]
+    interface IApplyGroupMemberSettingsResult
+    {
+        // The configuration unit.
+        ConfigurationUnit Unit{ get; };
+
+        // The state of the unit.
+        // Properties other than `Unit` are not valid unless this value is `Completed`.
+        ConfigurationUnitState State{ get; };
+
+        // Will be true if the configuration unit was in the desired state (Test returns true) prior to the apply action.
+        Boolean PreviouslyInDesiredState{ get; };
+
+        // Indicates whether a reboot is required after the settings were applied.
+        Boolean RebootRequired{ get; };
+
+        // The result of applying the configuration unit.
+        IConfigurationUnitResultInformation ResultInformation{ get; };
+    }
+
+    // The result of applying the settings with an IConfigurationGroupProcessor.
+    [contract(Microsoft.Management.Configuration.Contract, 2)]
+    interface IApplyGroupSettingsResult
+    {
+        // The configuration group object (set or unit).
+        Object Group{ get; };
+
+        // Indicates whether a reboot is required after the settings were applied.
+        Boolean RebootRequired{ get; };
+
+        // The result of applying the configuration unit group.
+        IConfigurationUnitResultInformation ResultInformation{ get; };
+
+        // Results for each configuration unit in the group.
+        Windows.Foundation.Collections.IVector<IApplyGroupMemberSettingsResult> UnitResults{ get; };
+    }
+
+    // The result of testing the settings with an IConfigurationGroupProcessor.
+    [contract(Microsoft.Management.Configuration.Contract, 2)]
+    interface ITestGroupSettingsResult
+    {
+        // The configuration group object (set or unit).
+        Object Group{ get; };
+
+        // The result (if any) of running Test on the configuration unit group.
+        ConfigurationTestResult TestResult{ get; };
+
+        // The result of testing the configuration unit group.
+        // This is not the response for the test, but rather contains information about the actual attempt to run the test.
+        IConfigurationUnitResultInformation ResultInformation{ get; };
+
+        // Results for each configuration unit in the group.
+        Windows.Foundation.Collections.IVector<ITestSettingsResult> UnitResults{ get; };
+    }
+
+    // Provides access to a specific configuration unit group within the runtime.
+    // An object returned by `CreateUnitProcessor` or `CreateSetProcessor` can implement this interface to indicate that it can take
+    // the responsibility of executing the units that it contains.
+    [contract(Microsoft.Management.Configuration.Contract, 2)]
+    interface IConfigurationGroupProcessor
+    {
+        // The configuration group object (set or unit).
+        Object Group{ get; };
+
+        // Determines if the system is already in the state described by the configuration unit group.
+        // Progress is expected for every descendant unit and finally the group unit itself.
+        Windows.Foundation.IAsyncOperation<ITestGroupSettingsResult> TestGroupSettingsAsync(Windows.Foundation.EventHandler<ITestSettingsResult> progressHandler);
+
+        // Applies the state described in the configuration unit group.
+        // Progress is expected for every descendant unit and finally the group unit itself.
+        Windows.Foundation.IAsyncOperation<IApplyGroupSettingsResult> ApplyGroupSettingsAsync(Windows.Foundation.EventHandler<IApplyGroupMemberSettingsResult> progressHandler);
     }
 
     // The level of the diagnostic information.
@@ -784,7 +900,7 @@ namespace Microsoft.Management.Configuration
         Boolean GenerateTelemetryEvents;
 
         // Only top level configuration changes are sent to this event.
-        // This includes things like: creation of a new set for intent to run, start/stop of a set for application or test, deletion of a not started set.
+        // This includes things like: creation of a new set for intent to run, start/stop of a set for application, deletion of a not started set.
         event Windows.Foundation.TypedEventHandler<ConfigurationSet, ConfigurationChangeData> ConfigurationChange;
 
         // Gets the configuration sets that have already been applied or with the intent to be applied (this may include in progress sets or those that are waiting on others).
@@ -880,6 +996,7 @@ namespace Microsoft.Management.Configuration
         interface Windows.Foundation.Collections.IVectorView<ApplyConfigurationUnitResult>;
         interface Windows.Foundation.Collections.IVectorView<TestConfigurationUnitResult>;
         interface Windows.Foundation.Collections.IVectorView<ConfigurationSet>;
+        interface Windows.Foundation.Collections.IVector<ConfigurationEnvironment>;
     }
 
     // Provides a way to centralize the distribution of interfaces relevant to specific implementations of IConfigurationSetProcessorFactory.

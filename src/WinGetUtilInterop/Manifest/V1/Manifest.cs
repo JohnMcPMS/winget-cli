@@ -1,17 +1,15 @@
-﻿// -----------------------------------------------------------------------
+// -----------------------------------------------------------------------------
 // <copyright file="Manifest.cs" company="Microsoft Corporation">
-//     Copyright (c) Microsoft Corporation. All rights reserved.
+//     Copyright (c) Microsoft Corporation. Licensed under the MIT License.
 // </copyright>
-// -----------------------------------------------------------------------
+// -----------------------------------------------------------------------------
 
 namespace Microsoft.WinGetUtil.Models.V1
 {
-    using System;
     using System.Collections.Generic;
     using System.IO;
-    using System.Linq;
+    using Microsoft.WinGetUtil.Common;
     using YamlDotNet.Serialization;
-    using YamlDotNet.Serialization.NamingConventions;
 
     /// <summary>
     /// Class that defines the structure of the manifest. Uses YamlDotNet
@@ -137,7 +135,7 @@ namespace Microsoft.WinGetUtil.Models.V1
         /// Gets or sets the release notes in default locale.
         /// </summary>
         public string ReleaseNotes { get; set; }
-        
+
         /// <summary>
         /// Gets or sets the manifest documentation.
         /// </summary>
@@ -280,17 +278,17 @@ namespace Microsoft.WinGetUtil.Models.V1
         /// <summary>
         /// Gets or sets a value indicating whether the default installer behavior aborts terminal.
         /// </summary>
-        public bool InstallerAbortsTerminal { get; set; }
+        public bool? InstallerAbortsTerminal { get; set; }
 
         /// <summary>
         /// Gets or sets a value indicating whether the default installer behavior requires explicit install location.
         /// </summary>
-        public bool InstallLocationRequired { get; set; }
+        public bool? InstallLocationRequired { get; set; }
 
         /// <summary>
         /// Gets or sets a value indicating whether the default installer behavior requires explicit upgrade.
         /// </summary>
-        public bool RequireExplicitUpgrade { get; set; }
+        public bool? RequireExplicitUpgrade { get; set; }
 
         /// <summary>
         /// Gets or sets the default installer release date.
@@ -305,7 +303,7 @@ namespace Microsoft.WinGetUtil.Models.V1
         /// <summary>
         /// Gets or sets a value indicating whether to display install warnings.
         /// </summary>
-        public bool DisplayInstallWarnings { get; set; }
+        public bool? DisplayInstallWarnings { get; set; }
 
         /// <summary>
         /// Gets or sets the default list of apps and features entries.
@@ -323,6 +321,21 @@ namespace Microsoft.WinGetUtil.Models.V1
         public List<InstallerExpectedReturnCode> ExpectedReturnCodes { get; set; }
 
         /// <summary>
+        /// Gets or sets a value indicating whether the installer is prohibited from being downloaded for offline installation.
+        /// </summary>
+        public bool? DownloadCommandProhibited { get; set; }
+
+        /// <summary>
+        /// Gets or sets a value indicating whether the install location should be added directly to the PATH environment variable.
+        /// </summary>
+        public bool? ArchiveBinariesDependOnPath { get; set; }
+
+        /// <summary>
+        /// Gets or sets the default repair behavior.
+        /// </summary>
+        public string RepairBehavior { get; set; }
+
+        /// <summary>
         /// Gets or sets collection of ManifestInstaller. At least one is required.
         /// </summary>
         public List<ManifestInstaller> Installers { get; set; }
@@ -331,11 +344,6 @@ namespace Microsoft.WinGetUtil.Models.V1
         /// Gets or sets collection of additional ManifestLocalization.
         /// </summary>
         public List<ManifestLocalization> Localization { get; set; }
-
-        /// <summary>
-        /// Gets or sets a value indicating whether the installer is prohibited from being downloaded for offline installation.
-        /// </summary>
-        public bool DownloadCommandProhibited { get; set; }
 
         /// <summary>
         /// Deserialize a stream reader into a Manifest object.
@@ -371,7 +379,7 @@ namespace Microsoft.WinGetUtil.Models.V1
         public static Manifest CreateManifestFromStreamReader(StreamReader streamReader)
         {
             streamReader.BaseStream.Seek(0, SeekOrigin.Begin);
-            var deserializer = CreateDeserializer();
+            var deserializer = Helpers.CreateDeserializer();
             return deserializer.Deserialize<Manifest>(streamReader);
         }
 
@@ -382,7 +390,7 @@ namespace Microsoft.WinGetUtil.Models.V1
         /// <returns>Manifest object populated and validated.</returns>
         public static Manifest CreateManifestFromString(string value)
         {
-            var deserializer = CreateDeserializer();
+            var deserializer = Helpers.CreateDeserializer();
             return deserializer.Deserialize<Manifest>(value);
         }
 
@@ -452,6 +460,28 @@ namespace Microsoft.WinGetUtil.Models.V1
                 }
             }
 
+            if (this.Documentations != null)
+            {
+                foreach (var docs in this.Documentations)
+                {
+                    if (!string.IsNullOrEmpty(docs.DocumentUrl))
+                    {
+                        uris.Add(docs.DocumentUrl);
+                    }
+                }
+            }
+
+            if (this.Icons != null)
+            {
+                foreach (var icon in this.Icons)
+                {
+                    if (!string.IsNullOrEmpty(icon.IconUrl))
+                    {
+                        uris.Add(icon.IconUrl);
+                    }
+                }
+            }
+
             return uris;
         }
 
@@ -483,23 +513,7 @@ namespace Microsoft.WinGetUtil.Models.V1
             // Equality of Manifest consist on only these properties.
             return (this.Id == other.Id) &&
                    (this.Version == other.Version) &&
-                   (this.InstallerLocale == other.InstallerLocale) &&
-                   (this.Scope == other.Scope) &&
-                   (this.InstallerType == other.InstallerType) &&
-                   (this.Switches == other.Switches) &&
                    this.CompareInstallers(other.Installers);
-        }
-
-        /// <summary>
-        /// Helper to deserialize the manifest.
-        /// </summary>
-        /// <returns>IDeserializer object.</returns>
-        private static IDeserializer CreateDeserializer()
-        {
-            var deserializer = new DeserializerBuilder().
-                WithNamingConvention(PascalCaseNamingConvention.Instance).
-                IgnoreUnmatchedProperties();
-            return deserializer.Build();
         }
 
         private bool CompareInstallers(List<ManifestInstaller> installers)

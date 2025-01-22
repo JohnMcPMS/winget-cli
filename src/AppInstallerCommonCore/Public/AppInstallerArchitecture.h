@@ -1,9 +1,10 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 #pragma once
-
+#include <optional>
 #include <vector>
 #include <winget/LocIndependent.h>
+#include <winrt/Windows.System.h>
 
 namespace AppInstaller::Utility
 {
@@ -22,6 +23,9 @@ namespace AppInstaller::Utility
     // Converts a string to corresponding enum
     Architecture ConvertToArchitectureEnum(std::string_view archStr);
 
+    // Converts an ProcessorArchitecture to an Architecture
+    std::optional<Architecture> ConvertToArchitectureEnum(winrt::Windows::System::ProcessorArchitecture architecture);
+
     // Converts an Architecture to a string_view
     LocIndView ToString(Architecture architecture);
 
@@ -30,6 +34,9 @@ namespace AppInstaller::Utility
 
     // Gets the set of architectures that are applicable to the current system
     const std::vector<Architecture>& GetApplicableArchitectures();
+
+    // Gets the set of architectures that are supported by winget
+    const std::vector<Architecture>& GetAllArchitectures();
 
     // Gets if an architecture is applicable to the system
     // Returns the priority in the applicable architecture list if the architecture is applicable. 0 has lowest priority.

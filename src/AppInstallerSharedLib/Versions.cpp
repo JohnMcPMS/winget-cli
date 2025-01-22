@@ -8,6 +8,7 @@ namespace AppInstaller::Utility
 {
     using namespace std::string_view_literals;
 
+    static constexpr std::string_view s_Digit_Characters = "0123456789"sv;
     static constexpr std::string_view s_Version_Part_Latest = "Latest"sv;
     static constexpr std::string_view s_Version_Part_Unknown = "Unknown"sv;
 
@@ -16,6 +17,12 @@ namespace AppInstaller::Utility
 
     Version::Version(std::string&& version, std::string_view splitChars)
     {
+        Assign(std::move(version), splitChars);
+    }
+
+    RawVersion::RawVersion(std::string version, std::string_view splitChars)
+    {
+        m_trimPrefix = false;
         Assign(std::move(version), splitChars);
     }
 
@@ -41,7 +48,7 @@ namespace AppInstaller::Utility
 
     void Version::Assign(std::string version, std::string_view splitChars)
     {
-        m_version = std::move(version);
+        m_version = std::move(Utility::Trim(version));
 
         // Process approximate comparator if applicable
         std::string baseVersion = m_version;
@@ -54,6 +61,14 @@ namespace AppInstaller::Utility
         {
             m_approximateComparator = ApproximateComparator::GreaterThan;
             baseVersion = m_version.substr(s_Approximate_Greater_Than.length(), m_version.length() - s_Approximate_Greater_Than.length());
+        }
+
+        // If there is a digit before the split character, or no split characters exist, trim off all leading non-digit characters
+        size_t digitPos = baseVersion.find_first_of(s_Digit_Characters);
+        size_t splitPos = baseVersion.find_first_of(splitChars);
+        if (m_trimPrefix && digitPos != std::string::npos && (splitPos == std::string::npos || digitPos < splitPos))
+        {
+            baseVersion.erase(0, digitPos);
         }
 
         // Then parse the base version
@@ -122,16 +137,12 @@ namespace AppInstaller::Utility
             return (thisIsUnknown && !otherIsUnknown);
         }
 
-        for (size_t i = 0; i < m_parts.size(); ++i)
+        const Part emptyPart{};
+        for (size_t i = 0; i < std::max(m_parts.size(), other.m_parts.size()); ++i)
         {
-            if (i >= other.m_parts.size())
-            {
-                // All parts equal to this point
-                break;
-            }
-
-            const Part& partA = m_parts[i];
-            const Part& partB = other.m_parts[i];
+            // Whichever version is shorter, we need to pad it with empty parts
+            const Part& partA = (i >= m_parts.size()) ? emptyPart : m_parts[i];
+            const Part& partB = (i >= other.m_parts.size()) ? emptyPart : other.m_parts[i];
 
             if (partA < partB)
             {
@@ -144,17 +155,8 @@ namespace AppInstaller::Utility
             // else parts are equal, so continue to next part
         }
 
-        // All parts tested were equal
-        if (m_parts.size() == other.m_parts.size())
-        {
-            return ApproximateCompareLessThan(other);
-        }
-        else
-        {
-            // Else this is only less if there are more parts in other.
-            return m_parts.size() < other.m_parts.size();
-        }
-        
+        // All parts were compared and found to be equal
+        return ApproximateCompareLessThan(other);
     }
 
     bool Version::operator>(const Version& other) const
@@ -281,7 +283,8 @@ namespace AppInstaller::Utility
 
     Version::Part::Part(const std::string& part)
     {
-        const char* begin = part.c_str();
+        std::string interimPart = Utility::Trim(part.c_str());
+        const char* begin = interimPart.c_str();
         char* end = nullptr;
         errno = 0;
         Integer = strtoull(begin, &end, 10);
@@ -289,9 +292,9 @@ namespace AppInstaller::Utility
         if (errno == ERANGE)
         {
             Integer = 0;
-            Other = part;
+            Other = interimPart;
         }
-        else if (static_cast<size_t>(end - begin) != part.length())
+        else if (static_cast<size_t>(end - begin) != interimPart.length())
         {
             Other = end;
         }
@@ -300,7 +303,7 @@ namespace AppInstaller::Utility
     }
 
     Version::Part::Part(uint64_t integer, std::string other) :
-        Integer(integer), Other(std::move(other))
+        Integer(integer), Other(std::move(Utility::Trim(other)))
     {
         m_foldedOther = Utility::FoldCase(static_cast<std::string_view>(Other));
     }
@@ -468,7 +471,7 @@ namespace AppInstaller::Utility
         THROW_HR_IF(E_INVALIDARG, splitChars != DefaultSplitChars);
 
         // First split off any trailing build metadata
-        std::string interimVersion = version;
+        std::string interimVersion = Utility::Trim(version);
         size_t buildMetadataPos = interimVersion.find('+', 0);
 
         if (buildMetadataPos != std::string::npos)
@@ -644,5 +647,65 @@ namespace AppInstaller::Utility
         }
 
         return false;
+    }
+
+    OpenTypeFontVersion::OpenTypeFontVersion(std::string&& version)
+    {
+        Assign(std::move(version), DefaultSplitChars);
+    }
+
+    void OpenTypeFontVersion::Assign(std::string version, std::string_view splitChars)
+    {
+        // Open type version requires using the default split character
+        THROW_HR_IF(E_INVALIDARG, splitChars != DefaultSplitChars);
+
+        // Split on default split character.
+        std::vector<std::string> parts = Split(version, '.', true);
+
+        std::string majorString;
+        std::string minorString;
+
+        // Font version must have a "major.minor" part.
+        if (parts.size() >= 2)
+        {
+            // Find first digit and trim all preceding characters. 
+            std::string firstPart = parts[0];
+            size_t majorStartIndex = firstPart.find_first_of(s_Digit_Characters);
+
+            if (majorStartIndex != std::string::npos)
+            {
+                firstPart.erase(0, majorStartIndex);
+            }
+
+            size_t majorEndIndex = firstPart.find_last_of(s_Digit_Characters);
+            majorString = firstPart.substr(0, majorEndIndex + 1);
+
+            // Parse and verify minor part.
+            std::string secondPart = parts[1];
+            size_t endPos = secondPart.find_first_not_of(s_Digit_Characters);
+
+            // If a non-digit character exists, trim off the remainder.
+            if (endPos != std::string::npos)
+            {
+                secondPart.erase(endPos, secondPart.length());
+            }
+
+            minorString = secondPart;
+        }
+
+        // Verify results.
+        if (!majorString.empty() && !minorString.empty())
+        {
+            m_parts.emplace_back(majorString);
+            m_parts.emplace_back(minorString);
+            m_version = Utility::Join(DefaultSplitChars, { majorString, minorString });
+
+            Trim();
+        }
+        else
+        {
+            m_version = s_Version_Part_Unknown;
+            m_parts.emplace_back(0, std::string{ s_Version_Part_Unknown });
+        }
     }
 }

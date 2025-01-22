@@ -94,6 +94,21 @@
     <Filter Include="Microsoft\Schema\Checkpoint_1_0">
       <UniqueIdentifier>{a3f9c7ed-f487-40d6-9ee7-e9a052e55c29}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Rest\Schema\1_7">
+      <UniqueIdentifier>{f42acfce-4fc0-435b-a9a2-bf5528aecbcc}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Rest\Schema\1_7\Json">
+      <UniqueIdentifier>{7fd6c265-81c0-4c6e-87b2-24bef117e21d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Microsoft\Schema\2_0">
+      <UniqueIdentifier>{34442899-29e5-4183-96ba-a1e8740146be}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Rest\Schema\1_9">
+      <UniqueIdentifier>{8edd7018-8836-4b15-84c1-998391e19038}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Rest\Schema\1_9\Json">
+      <UniqueIdentifier>{7464e3ff-7a60-4bb6-8806-70562382043b}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="pch.h">
@@ -204,9 +219,6 @@
     <ClInclude Include="Rest\RestSourceFactory.h">
       <Filter>Rest</Filter>
     </ClInclude>
-    <ClInclude Include="Rest\Schema\RestHelper.h">
-      <Filter>Rest\Schema</Filter>
-    </ClInclude>
     <ClInclude Include="Rest\Schema\1_0\Json\ManifestDeserializer.h">
       <Filter>Rest\Schema\1_0\Json</Filter>
     </ClInclude>
@@ -235,9 +247,6 @@
       <Filter>Microsoft</Filter>
     </ClInclude>
     <ClInclude Include="Rest\Schema\InformationResponseDeserializer.h">
-      <Filter>Rest\Schema</Filter>
-    </ClInclude>
-    <ClInclude Include="Rest\Schema\HttpClientHelper.h">
       <Filter>Rest\Schema</Filter>
     </ClInclude>
     <ClInclude Include="Rest\Schema\1_1\Interface.h">
@@ -315,9 +324,6 @@
     <ClInclude Include="Microsoft\Schema\Portable_1_0\PortableTable.h">
       <Filter>Microsoft\Schema\Portable_1_0</Filter>
     </ClInclude>
-    <ClInclude Include="Microsoft\PortableIndex.h">
-      <Filter>Microsoft</Filter>
-    </ClInclude>
     <ClInclude Include="Microsoft\Schema\IPortableIndex.h">
       <Filter>Microsoft\Schema</Filter>
     </ClInclude>
@@ -375,9 +381,6 @@
     <ClInclude Include="Microsoft\Schema\ICheckpointDatabase.h">
       <Filter>Microsoft\Schema</Filter>
     </ClInclude>
-    <ClInclude Include="Microsoft\CheckpointDatabase.h">
-      <Filter>Microsoft</Filter>
-    </ClInclude>
     <ClInclude Include="Microsoft\Schema\Checkpoint_1_0\CheckpointDataTable.h">
       <Filter>Microsoft\Schema\Checkpoint_1_0</Filter>
     </ClInclude>
@@ -392,6 +395,84 @@
     </ClInclude>
     <ClInclude Include="SourceUpdateChecks.h">
       <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Rest\Schema\1_7\Interface.h">
+      <Filter>Rest\Schema\1_7</Filter>
+    </ClInclude>
+    <ClInclude Include="Rest\Schema\AuthenticationInfoParser.h">
+      <Filter>Rest\Schema</Filter>
+    </ClInclude>
+    <ClInclude Include="Public\winget\PinningData.h">
+      <Filter>Public\winget</Filter>
+    </ClInclude>
+    <ClInclude Include="Public\winget\PortableIndex.h">
+      <Filter>Public\winget</Filter>
+    </ClInclude>
+    <ClInclude Include="Public\winget\CheckpointDatabase.h">
+      <Filter>Public\winget</Filter>
+    </ClInclude>
+    <ClInclude Include="Public\winget\InstalledStatus.h">
+      <Filter>Public\winget</Filter>
+    </ClInclude>
+    <ClInclude Include="Public\winget\PackageVersionSelection.h">
+      <Filter>Public\winget</Filter>
+    </ClInclude>
+    <ClInclude Include="Rest\Schema\1_7\Json\ManifestDeserializer.h">
+      <Filter>Rest\Schema\1_7\Json</Filter>
+    </ClInclude>
+    <ClInclude Include="Microsoft\Schema\2_0\CommandsTable.h">
+      <Filter>Microsoft\Schema\2_0</Filter>
+    </ClInclude>
+    <ClInclude Include="Microsoft\Schema\2_0\Interface.h">
+      <Filter>Microsoft\Schema\2_0</Filter>
+    </ClInclude>
+    <ClInclude Include="Microsoft\Schema\2_0\PackagesTable.h">
+      <Filter>Microsoft\Schema\2_0</Filter>
+    </ClInclude>
+    <ClInclude Include="Microsoft\Schema\2_0\OneToManyTableWithMap.h">
+      <Filter>Microsoft\Schema\2_0</Filter>
+    </ClInclude>
+    <ClInclude Include="Microsoft\Schema\2_0\SearchResultsTable.h">
+      <Filter>Microsoft\Schema\2_0</Filter>
+    </ClInclude>
+    <ClInclude Include="Microsoft\Schema\2_0\TagsTable.h">
+      <Filter>Microsoft\Schema\2_0</Filter>
+    </ClInclude>
+    <ClInclude Include="Microsoft\Schema\2_0\SystemReferenceStringTable.h">
+      <Filter>Microsoft\Schema\2_0</Filter>
+    </ClInclude>
+    <ClInclude Include="Microsoft\Schema\2_0\PackageFamilyNameTable.h">
+      <Filter>Microsoft\Schema\2_0</Filter>
+    </ClInclude>
+    <ClInclude Include="Microsoft\Schema\2_0\NormalizedPackageNameTable.h">
+      <Filter>Microsoft\Schema\2_0</Filter>
+    </ClInclude>
+    <ClInclude Include="Microsoft\Schema\2_0\NormalizedPackagePublisherTable.h">
+      <Filter>Microsoft\Schema\2_0</Filter>
+    </ClInclude>
+    <ClInclude Include="Microsoft\Schema\2_0\ProductCodeTable.h">
+      <Filter>Microsoft\Schema\2_0</Filter>
+    </ClInclude>
+    <ClInclude Include="Microsoft\Schema\2_0\UpgradeCodeTable.h">
+      <Filter>Microsoft\Schema\2_0</Filter>
+    </ClInclude>
+    <ClInclude Include="Microsoft\Schema\2_0\PackageUpdateTrackingTable.h">
+      <Filter>Microsoft\Schema\2_0</Filter>
+    </ClInclude>
+    <ClInclude Include="Microsoft\Schema\SQLiteIndexContextData.h">
+      <Filter>Microsoft\Schema</Filter>
+    </ClInclude>
+    <ClInclude Include="Microsoft\SQLiteIndexSourceV1.h">
+      <Filter>Microsoft</Filter>
+    </ClInclude>
+    <ClInclude Include="Microsoft\SQLiteIndexSourceV2.h">
+      <Filter>Microsoft</Filter>
+    </ClInclude>
+    <ClInclude Include="Rest\Schema\1_9\Json\ManifestDeserializer.h">
+      <Filter>Rest\Schema\1_9\Json</Filter>
+    </ClInclude>
+    <ClInclude Include="Rest\Schema\1_9\Interface.h">
+      <Filter>Rest\Schema\1_9</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -464,9 +545,6 @@
     <ClCompile Include="Rest\RestSourceFactory.cpp">
       <Filter>Rest</Filter>
     </ClCompile>
-    <ClCompile Include="Rest\Schema\RestHelper.cpp">
-      <Filter>Rest\Schema</Filter>
-    </ClCompile>
     <ClCompile Include="Rest\Schema\1_0\Json\ManifestDeserializer_1_0.cpp">
       <Filter>Rest\Schema\1_0\Json</Filter>
     </ClCompile>
@@ -490,9 +568,6 @@
     </ClCompile>
     <ClCompile Include="Microsoft\PredefinedWriteableSourceFactory.cpp">
       <Filter>Microsoft</Filter>
-    </ClCompile>
-    <ClCompile Include="Rest\Schema\HttpClientHelper.cpp">
-      <Filter>Rest\Schema</Filter>
     </ClCompile>
     <ClCompile Include="Rest\Schema\1_1\RestInterface_1_1.cpp">
       <Filter>Rest\Schema\1_1</Filter>
@@ -616,6 +691,54 @@
     </ClCompile>
     <ClCompile Include="Microsoft\Schema\Pinning_1_0\PinningIndexInterface_1_0.cpp">
       <Filter>Microsoft\Schema\Pinning_1_0</Filter>
+    </ClCompile>
+    <ClCompile Include="Rest\Schema\1_7\RestInterface_1_7.cpp">
+      <Filter>Rest\Schema\1_7</Filter>
+    </ClCompile>
+    <ClCompile Include="Rest\Schema\AuthenticationInfoParser.cpp">
+      <Filter>Rest\Schema</Filter>
+    </ClCompile>
+    <ClCompile Include="PinningData.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="PackageVersionSelection.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Rest\Schema\1_7\Json\ManifestDeserializer_1_7.cpp">
+      <Filter>Rest\Schema\1_7\Json</Filter>
+    </ClCompile>
+    <ClCompile Include="Microsoft\Schema\2_0\Interface_2_0.cpp">
+      <Filter>Microsoft\Schema\2_0</Filter>
+    </ClCompile>
+    <ClCompile Include="Microsoft\Schema\2_0\PackagesTable.cpp">
+      <Filter>Microsoft\Schema\2_0</Filter>
+    </ClCompile>
+    <ClCompile Include="Microsoft\Schema\2_0\OneToManyTableWithMap.cpp">
+      <Filter>Microsoft\Schema\2_0</Filter>
+    </ClCompile>
+    <ClCompile Include="Microsoft\Schema\2_0\SearchResultsTable_2_0.cpp">
+      <Filter>Microsoft\Schema\2_0</Filter>
+    </ClCompile>
+    <ClCompile Include="Microsoft\Schema\ISQLiteIndex.cpp">
+      <Filter>Microsoft\Schema</Filter>
+    </ClCompile>
+    <ClCompile Include="Microsoft\Schema\2_0\SystemReferenceStringTable.cpp">
+      <Filter>Microsoft\Schema\2_0</Filter>
+    </ClCompile>
+    <ClCompile Include="Microsoft\Schema\2_0\PackageUpdateTrackingTable.cpp">
+      <Filter>Microsoft\Schema\2_0</Filter>
+    </ClCompile>
+    <ClCompile Include="Microsoft\SQLiteIndexSourceV1.cpp">
+      <Filter>Microsoft</Filter>
+    </ClCompile>
+    <ClCompile Include="Microsoft\SQLiteIndexSourceV2.cpp">
+      <Filter>Microsoft</Filter>
+    </ClCompile>
+    <ClCompile Include="Rest\Schema\1_9\Json\ManifestDeserializer_1_9.cpp">
+      <Filter>Rest\Schema\1_9\Json</Filter>
+    </ClCompile>
+    <ClCompile Include="Rest\Schema\1_9\RestInterface_1_9.cpp">
+      <Filter>Rest\Schema\1_9</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

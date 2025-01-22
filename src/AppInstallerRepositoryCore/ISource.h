@@ -65,9 +65,11 @@ namespace AppInstaller::Repository
         return std::shared_ptr<SourceType>(source, reinterpret_cast<SourceType*>(castResult));
     }
 
-    // Internal interface to represents source information; basically SourceDetails but with methods to enable differential behaviors.
+    // Internal interface to represent source information; basically SourceDetails but with methods to enable differential behaviors.
     struct ISourceReference
     {
+        virtual ~ISourceReference() = default;
+
         // Gets the source's identifier; a unique identifier independent of the name
         // that will not change between a remove/add or between additional adds.
         // Must be suitable for filesystem names unless the source is internal to winget,
@@ -85,6 +87,9 @@ namespace AppInstaller::Repository
 
         // Set caller.
         virtual void SetCaller(std::string) {}
+
+        // Set authentication arguments.
+        virtual void SetAuthenticationArguments(Authentication::AuthenticationArguments) {}
 
         // Determine if the source needs to be updated before being opened.
         virtual bool ShouldUpdateBeforeOpen(const std::optional<TimeSpan>&) { return false; }

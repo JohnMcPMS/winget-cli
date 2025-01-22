@@ -12,13 +12,13 @@ namespace AppInstaller
     namespace
     {
         // A simple struct to hold the data
-        struct WinGetHResultData
+        struct HResultData
         {
             HRESULT Value;
             std::string_view Symbol;
             std::string_view Description;
 
-            bool operator<(const WinGetHResultData& other) const
+            bool operator<(const HResultData& other) const
             {
                 return Value < other.Value;
             }
@@ -31,7 +31,7 @@ namespace AppInstaller
                 Errors::HResultInformation(value, symbol), m_unlocalizedDescription(unlocalizedDescription)
             {}
 
-            constexpr WinGetHResultInformation(const WinGetHResultData& data) :
+            constexpr WinGetHResultInformation(const HResultData& data) :
                 Errors::HResultInformation(data.Value, data.Symbol), m_unlocalizedDescription(data.Description)
             {}
 
@@ -54,7 +54,7 @@ namespace AppInstaller
                 Errors::HResultInformation(value, symbol), m_unlocalizedDescription(unlocalizedDescription)
             {}
 
-            constexpr WinGetHResultInformationUnlocalized(const WinGetHResultData& data) :
+            constexpr WinGetHResultInformationUnlocalized(const HResultData& data) :
                 Errors::HResultInformation(data.Value, data.Symbol), m_unlocalizedDescription(data.Description)
             {}
 
@@ -83,10 +83,11 @@ namespace AppInstaller
             }
         };
 
-#define WINGET_HRESULT_INFO(_name_,_description_) WinGetHResultData{ _name_, #_name_, _description_ }
+#define WINGET_HRESULT_INFO(_name_,_description_) HResultData{ _name_, #_name_, _description_ }
 
-        constexpr const WinGetHResultData s_wingetHResultData[] =
+        constexpr const HResultData s_wingetHResultData[] =
         {
+            // Changes to any of these errors require the corresponding resource string in winget.resw to be updated.
             WINGET_HRESULT_INFO(APPINSTALLER_CLI_ERROR_INTERNAL_ERROR, "Internal Error"),
             WINGET_HRESULT_INFO(APPINSTALLER_CLI_ERROR_INVALID_CL_ARGUMENTS, "Invalid command line arguments"),
             WINGET_HRESULT_INFO(APPINSTALLER_CLI_ERROR_COMMAND_FAILED, "Executing command failed"),
@@ -145,16 +146,16 @@ namespace AppInstaller
             WINGET_HRESULT_INFO(APPINSTALLER_CLI_ERROR_UNSUPPORTED_RESTSOURCE, "The configured rest source is not supported"),
             WINGET_HRESULT_INFO(APPINSTALLER_CLI_ERROR_RESTSOURCE_INVALID_DATA, "Invalid data returned by rest source"),
             WINGET_HRESULT_INFO(APPINSTALLER_CLI_ERROR_BLOCKED_BY_POLICY, "Operation is blocked by Group Policy"),
-            WINGET_HRESULT_INFO(APPINSTALLER_CLI_ERROR_RESTSOURCE_INTERNAL_ERROR, "Rest source internal error"),
+            WINGET_HRESULT_INFO(APPINSTALLER_CLI_ERROR_RESTAPI_INTERNAL_ERROR, "Rest API internal error"),
             WINGET_HRESULT_INFO(APPINSTALLER_CLI_ERROR_RESTSOURCE_INVALID_URL, "Invalid rest source url"),
-            WINGET_HRESULT_INFO(APPINSTALLER_CLI_ERROR_RESTSOURCE_UNSUPPORTED_MIME_TYPE, "Unsupported MIME type returned by rest source"),
+            WINGET_HRESULT_INFO(APPINSTALLER_CLI_ERROR_RESTAPI_UNSUPPORTED_MIME_TYPE, "Unsupported MIME type returned by rest API"),
             WINGET_HRESULT_INFO(APPINSTALLER_CLI_ERROR_RESTSOURCE_INVALID_VERSION, "Invalid rest source contract version"),
             WINGET_HRESULT_INFO(APPINSTALLER_CLI_ERROR_SOURCE_DATA_INTEGRITY_FAILURE, "The source data is corrupted or tampered"),
             WINGET_HRESULT_INFO(APPINSTALLER_CLI_ERROR_STREAM_READ_FAILURE, "Error reading from the stream"),
             WINGET_HRESULT_INFO(APPINSTALLER_CLI_ERROR_PACKAGE_AGREEMENTS_NOT_ACCEPTED, "Package agreements were not agreed to"),
             WINGET_HRESULT_INFO(APPINSTALLER_CLI_ERROR_PROMPT_INPUT_ERROR, "Error reading input in prompt"),
             WINGET_HRESULT_INFO(APPINSTALLER_CLI_ERROR_UNSUPPORTED_SOURCE_REQUEST, "The search request is not supported by one or more sources"),
-            WINGET_HRESULT_INFO(APPINSTALLER_CLI_ERROR_RESTSOURCE_ENDPOINT_NOT_FOUND, "The rest source endpoint is not found."),
+            WINGET_HRESULT_INFO(APPINSTALLER_CLI_ERROR_RESTAPI_ENDPOINT_NOT_FOUND, "The rest API endpoint is not found."),
             WINGET_HRESULT_INFO(APPINSTALLER_CLI_ERROR_SOURCE_OPEN_FAILED, "Failed to open the source."),
             WINGET_HRESULT_INFO(APPINSTALLER_CLI_ERROR_SOURCE_AGREEMENTS_NOT_ACCEPTED, "Source agreements were not agreed to"),
             WINGET_HRESULT_INFO(APPINSTALLER_CLI_ERROR_CUSTOMHEADER_EXCEEDS_MAXLENGTH, "Header size exceeds the allowable limit of 1024 characters. Please reduce the size and try again."),
@@ -200,7 +201,27 @@ namespace AppInstaller
             WINGET_HRESULT_INFO(APPINSTALLER_CLI_ERROR_CLIENT_VERSION_MISMATCH, "The current client version did not match the client version of the saved state."),
             WINGET_HRESULT_INFO(APPINSTALLER_CLI_ERROR_INVALID_RESUME_STATE, "The resume state data is invalid."),
             WINGET_HRESULT_INFO(APPINSTALLER_CLI_ERROR_CANNOT_OPEN_CHECKPOINT_INDEX, "Unable to open the checkpoint database."),
-
+            WINGET_HRESULT_INFO(APPINSTALLER_CLI_ERROR_RESUME_LIMIT_EXCEEDED, "Exceeded max resume limit."),
+            WINGET_HRESULT_INFO(APPINSTALLER_CLI_ERROR_INVALID_AUTHENTICATION_INFO, "Invalid authentication info."),
+            WINGET_HRESULT_INFO(APPINSTALLER_CLI_ERROR_AUTHENTICATION_TYPE_NOT_SUPPORTED, "Authentication method not supported."),
+            WINGET_HRESULT_INFO(APPINSTALLER_CLI_ERROR_AUTHENTICATION_FAILED, "Authentication failed."),
+            WINGET_HRESULT_INFO(APPINSTALLER_CLI_ERROR_AUTHENTICATION_INTERACTIVE_REQUIRED, "Authentication failed. Interactive authentication required."),
+            WINGET_HRESULT_INFO(APPINSTALLER_CLI_ERROR_AUTHENTICATION_CANCELLED_BY_USER, "Authentication failed. User cancelled."),
+            WINGET_HRESULT_INFO(APPINSTALLER_CLI_ERROR_AUTHENTICATION_INCORRECT_ACCOUNT, "Authentication failed. Authenticated account is not the desired account."),
+            WINGET_HRESULT_INFO(APPINSTALLER_CLI_ERROR_NO_REPAIR_INFO_FOUND, "Repair command not found."),
+            WINGET_HRESULT_INFO(APPINSTALLER_CLI_ERROR_REPAIR_NOT_APPLICABLE, "Repair operation is not applicable."),
+            WINGET_HRESULT_INFO(APPINSTALLER_CLI_ERROR_EXEC_REPAIR_FAILED, "Repair operation failed."),
+            WINGET_HRESULT_INFO(APPINSTALLER_CLI_ERROR_REPAIR_NOT_SUPPORTED, "The installer technology in use doesn't support repair."),
+            WINGET_HRESULT_INFO(APPINSTALLER_CLI_ERROR_ADMIN_CONTEXT_REPAIR_PROHIBITED, "Repair operations involving administrator privileges are not permitted on packages installed within the user scope."),
+            WINGET_HRESULT_INFO(APPINSTALLER_CLI_ERROR_SQLITE_CONNECTION_TERMINATED, "The SQLite connection was terminated to prevent corruption."),
+            WINGET_HRESULT_INFO(APPINSTALLER_CLI_ERROR_DISPLAYCATALOG_API_FAILED, "Failed to get Microsoft Store package catalog."),
+            WINGET_HRESULT_INFO(APPINSTALLER_CLI_ERROR_NO_APPLICABLE_DISPLAYCATALOG_PACKAGE, "No applicable Microsoft Store package found from Microsoft Store package catalog."),
+            WINGET_HRESULT_INFO(APPINSTALLER_CLI_ERROR_SFSCLIENT_API_FAILED, "Failed to get Microsoft Store package download information."),
+            WINGET_HRESULT_INFO(APPINSTALLER_CLI_ERROR_NO_APPLICABLE_SFSCLIENT_PACKAGE, "No applicable Microsoft Store package download information found."),
+            WINGET_HRESULT_INFO(APPINSTALLER_CLI_ERROR_LICENSING_API_FAILED, "Failed to retrieve Microsoft Store package license."),
+            WINGET_HRESULT_INFO(APPINSTALLER_CLI_ERROR_SFSCLIENT_PACKAGE_NOT_SUPPORTED, "The Microsoft Store package does not support download."),
+            WINGET_HRESULT_INFO(APPINSTALLER_CLI_ERROR_LICENSING_API_FAILED_FORBIDDEN, "Failed to retrieve Microsoft Store package license. The Microsoft Entra Id account does not have the required privilege."),
+            WINGET_HRESULT_INFO(APPINSTALLER_CLI_ERROR_INSTALLER_ZERO_BYTE_FILE, "Downloaded zero byte installer; ensure that your network connection is working properly."),
 
             // Install errors.
             WINGET_HRESULT_INFO(APPINSTALLER_CLI_ERROR_INSTALL_PACKAGE_IN_USE, "Application is currently running. Exit the application then try again."),
@@ -212,7 +233,7 @@ namespace AppInstaller
             WINGET_HRESULT_INFO(APPINSTALLER_CLI_ERROR_INSTALL_NO_NETWORK, "This application requires internet connectivity. Connect to a network then try again."),
             WINGET_HRESULT_INFO(APPINSTALLER_CLI_ERROR_INSTALL_CONTACT_SUPPORT, "This application encountered an error during installation. Contact support."),
             WINGET_HRESULT_INFO(APPINSTALLER_CLI_ERROR_INSTALL_REBOOT_REQUIRED_TO_FINISH, "Restart your PC to finish installation."),
-            WINGET_HRESULT_INFO(APPINSTALLER_CLI_ERROR_INSTALL_REBOOT_REQUIRED_TO_INSTALL, "Installation failed. Restart your PC then try again."),
+            WINGET_HRESULT_INFO(APPINSTALLER_CLI_ERROR_INSTALL_REBOOT_REQUIRED_FOR_INSTALL, "Installation failed. Restart your PC then try again."),
             WINGET_HRESULT_INFO(APPINSTALLER_CLI_ERROR_INSTALL_REBOOT_INITIATED, "Your PC will restart to finish installation."),
             WINGET_HRESULT_INFO(APPINSTALLER_CLI_ERROR_INSTALL_CANCELLED_BY_USER, "You cancelled the installation."),
             WINGET_HRESULT_INFO(APPINSTALLER_CLI_ERROR_INSTALL_ALREADY_INSTALLED, "Another version of this application is already installed."),
@@ -223,6 +244,7 @@ namespace AppInstaller
             WINGET_HRESULT_INFO(APPINSTALLER_CLI_ERROR_INSTALL_INVALID_PARAMETER, "Invalid parameter."),
             WINGET_HRESULT_INFO(APPINSTALLER_CLI_ERROR_INSTALL_SYSTEM_NOT_SUPPORTED, "Package not supported by the system."),
             WINGET_HRESULT_INFO(APPINSTALLER_CLI_ERROR_INSTALL_UPGRADE_NOT_SUPPORTED, "The installer does not support upgrading an existing package."),
+            WINGET_HRESULT_INFO(APPINSTALLER_CLI_ERROR_INSTALL_CUSTOM_ERROR, "Installation failed with a custom installer error."),
 
             // Status values for check package installed status results.
             // Partial success has the success bit(first bit) set to 0.
@@ -249,6 +271,9 @@ namespace AppInstaller
             WINGET_HRESULT_INFO(WINGET_CONFIG_ERROR_MISSING_FIELD, "The configuration is missing a field."),
             WINGET_HRESULT_INFO(WINGET_CONFIG_ERROR_TEST_FAILED, "Some of the configuration units failed while testing their state."),
             WINGET_HRESULT_INFO(WINGET_CONFIG_ERROR_TEST_NOT_RUN, "Configuration state was not tested."),
+            WINGET_HRESULT_INFO(WINGET_CONFIG_ERROR_GET_FAILED, "The configuration unit failed getting its properties."),
+            WINGET_HRESULT_INFO(WINGET_CONFIG_ERROR_HISTORY_ITEM_NOT_FOUND, "The specified configuration could not be found."),
+            WINGET_HRESULT_INFO(WINGET_CONFIG_ERROR_PARAMETER_INTEGRITY_BOUNDARY, "Parameter cannot be passed across integrity boundary."),
 
             // Configuration Processor Errors
             WINGET_HRESULT_INFO(WINGET_CONFIG_ERROR_UNIT_NOT_INSTALLED, "The configuration unit was not installed."),
@@ -269,11 +294,21 @@ namespace AppInstaller
             WINGET_HRESULT_INFO(WINGET_INSTALLED_STATUS_FILE_FOUND_WITHOUT_HASH_CHECK, "The file was found but the hash was not checked."),
         };
 
-        const WinGetHResultData* FindWinGetHResultData(HRESULT value)
+        // Map externally defined HRESULTs to error messages we want to use here
+        constexpr const HResultData s_externalHResultData[] =
         {
-            auto itr = std::lower_bound(std::cbegin(s_wingetHResultData), std::cend(s_wingetHResultData), WinGetHResultData{ value });
+            // Changes to any of these errors require the corresponding resource string in winget.resw to be updated.
+            HResultData{ static_cast<HRESULT>(0x803FB103), "StoreInstall_PackageNotAvailableForCurrentSystem", "The package is not compatible with the current Windows version or platform." },
+            HResultData{ static_cast<HRESULT>(0x803FB104), "StoreInstall_PackageNotAvailableForCurrentSystem", "The package is not compatible with the current Windows version or platform." },
+            HResultData{ static_cast<HRESULT>(0x803FB106), "StoreInstall_PackageNotAvailableForCurrentSystem", "The package is not compatible with the current Windows version or platform." },
+        };
 
-            if (itr != std::cend(s_wingetHResultData) && itr->Value == value)
+        template <size_t ArraySize>
+        const HResultData* FindHResultData(HRESULT value, const HResultData (&dataArray)[ArraySize])
+        {
+            auto itr = std::lower_bound(std::cbegin(dataArray), std::cend(dataArray), HResultData{ value });
+
+            if (itr != std::cend(dataArray) && itr->Value == value)
             {
                 return itr;
             }
@@ -281,9 +316,19 @@ namespace AppInstaller
             return nullptr;
         }
 
+        const HResultData* FindWinGetHResultData(HRESULT value)
+        {
+            return FindHResultData(value, s_wingetHResultData);
+        }
+
+        const HResultData* FindExternalHResultData(HRESULT value)
+        {
+            return FindHResultData(value, s_externalHResultData);
+        }
+
         Utility::LocIndString GetMessageForAppInstallerHR(HRESULT hr)
         {
-            const WinGetHResultData* data = FindWinGetHResultData(hr);
+            const HResultData* data = FindWinGetHResultData(hr);
             return data ?
                 WinGetHResultInformation(*data).GetDescription() :
                 UnknownHResultInformation(hr).GetDescription();
@@ -299,7 +344,16 @@ namespace AppInstaller
             }
             else
             {
-                strstr << std::system_category().message(hr);
+                const HResultData* data = FindExternalHResultData(hr);
+
+                if (data)
+                {
+                    strstr << WinGetHResultInformation(*data).GetDescription();
+                }
+                else
+                {
+                    strstr << std::system_category().message(hr);
+                }
             }
         }
     }
@@ -382,7 +436,7 @@ namespace AppInstaller
         {
             if (HRESULT_FACILITY(value) == APPINSTALLER_CLI_ERROR_FACILITY)
             {
-                const WinGetHResultData* data = FindWinGetHResultData(value);
+                const HResultData* data = FindWinGetHResultData(value);
 
                 if (data)
                 {
@@ -405,7 +459,7 @@ namespace AppInstaller
 
             auto addToResultIf = [&](auto predicate)
             {
-                for (const WinGetHResultData& data : s_wingetHResultData)
+                for (const HResultData& data : s_wingetHResultData)
                 {
                     if (predicate(data) &&
                         std::none_of(result.begin(), result.end(), [&](const std::unique_ptr<HResultInformation>& info) { return info->Value() == data.Value; }))
@@ -415,9 +469,9 @@ namespace AppInstaller
                 }
             };
 
-            addToResultIf([&](const WinGetHResultData& data) { return Utility::CaseInsensitiveEquals(data.Symbol, value); });
-            addToResultIf([&](const WinGetHResultData& data) { return Utility::CaseInsensitiveContainsSubstring(data.Symbol, value); });
-            addToResultIf([&](const WinGetHResultData& data) { return Utility::CaseInsensitiveContainsSubstring(data.Description, value); });
+            addToResultIf([&](const HResultData& data) { return Utility::CaseInsensitiveEquals(data.Symbol, value); });
+            addToResultIf([&](const HResultData& data) { return Utility::CaseInsensitiveContainsSubstring(data.Symbol, value); });
+            addToResultIf([&](const HResultData& data) { return Utility::CaseInsensitiveContainsSubstring(data.Description, value); });
 
             return result;
         }
@@ -427,7 +481,7 @@ namespace AppInstaller
             std::vector<std::unique_ptr<HResultInformation>> result;
             result.reserve(ARRAYSIZE(s_wingetHResultData));
 
-            for (const WinGetHResultData& data : s_wingetHResultData)
+            for (const HResultData& data : s_wingetHResultData)
             {
                 result.emplace_back(std::make_unique<WinGetHResultInformationUnlocalized>(data));
             }

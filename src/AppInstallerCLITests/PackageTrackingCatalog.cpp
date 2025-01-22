@@ -86,8 +86,9 @@ TEST_CASE("TrackingCatalog_Install", "[tracking_catalog]")
 
     SearchResult resultAfter = catalog.Search(request);
     REQUIRE(resultAfter.Matches.size() == 1);
+    REQUIRE(resultAfter.Matches[0].Package->GetAvailable().size() == 1);
 
-    auto trackingVersion = resultAfter.Matches[0].Package->GetLatestAvailableVersion(PinBehavior::IgnorePins);
+    auto trackingVersion = resultAfter.Matches[0].Package->GetAvailable()[0]->GetLatestVersion();
     REQUIRE(trackingVersion);
 
     auto metadata = trackingVersion->GetMetadata();
@@ -113,7 +114,8 @@ TEST_CASE("TrackingCatalog_Reinstall", "[tracking_catalog]")
 
     SearchResult resultBefore = catalog.Search(request);
     REQUIRE(resultBefore.Matches.size() == 1);
-    REQUIRE(resultBefore.Matches[0].Package->GetLatestAvailableVersion(PinBehavior::IgnorePins)->GetProperty(PackageVersionProperty::Name) ==
+    REQUIRE(resultBefore.Matches[0].Package->GetAvailable().size() == 1);
+    REQUIRE(resultBefore.Matches[0].Package->GetAvailable()[0]->GetLatestVersion()->GetProperty(PackageVersionProperty::Name) ==
         manifest.DefaultLocalization.Get<Localization::PackageName>());
 
     // Change name
@@ -124,7 +126,8 @@ TEST_CASE("TrackingCatalog_Reinstall", "[tracking_catalog]")
 
     SearchResult resultAfter = catalog.Search(request);
     REQUIRE(resultAfter.Matches.size() == 1);
-    REQUIRE(resultBefore.Matches[0].Package->GetLatestAvailableVersion(PinBehavior::IgnorePins)->GetProperty(PackageVersionProperty::Name) ==
+    REQUIRE(resultAfter.Matches[0].Package->GetAvailable().size() == 1);
+    REQUIRE(resultAfter.Matches[0].Package->GetAvailable()[0]->GetLatestVersion()->GetProperty(PackageVersionProperty::Name) ==
         newName);
 }
 
@@ -147,17 +150,19 @@ TEST_CASE("TrackingCatalog_Upgrade", "[tracking_catalog]")
 
     SearchResult resultBefore = catalog.Search(request);
     REQUIRE(resultBefore.Matches.size() == 1);
-    REQUIRE(resultBefore.Matches[0].Package->GetLatestAvailableVersion(PinBehavior::IgnorePins)->GetProperty(PackageVersionProperty::Version) ==
+    REQUIRE(resultBefore.Matches[0].Package->GetAvailable().size() == 1);
+    REQUIRE(resultBefore.Matches[0].Package->GetAvailable()[0]->GetLatestVersion()->GetProperty(PackageVersionProperty::Version) ==
         manifest.Version);
 
-    // Change name
+    // Change version
     manifest.Version = "99.1.2.3";
 
     catalog.RecordInstall(manifest, manifest.Installers[0], true);
 
     SearchResult resultAfter = catalog.Search(request);
     REQUIRE(resultAfter.Matches.size() == 1);
-    REQUIRE(resultBefore.Matches[0].Package->GetLatestAvailableVersion(PinBehavior::IgnorePins)->GetProperty(PackageVersionProperty::Version) ==
+    REQUIRE(resultAfter.Matches[0].Package->GetAvailable().size() == 1);
+    REQUIRE(resultAfter.Matches[0].Package->GetAvailable()[0]->GetLatestVersion()->GetProperty(PackageVersionProperty::Version) ==
         manifest.Version);
 }
 
@@ -185,4 +190,46 @@ TEST_CASE("TrackingCatalog_Uninstall", "[tracking_catalog]")
 
     SearchResult resultAfter = catalog.Search(request);
     REQUIRE(resultAfter.Matches.size() == 0);
+}
+
+TEST_CASE("TrackingCatalog_Overlapping_ARP_Range", "[tracking_catalog]")
+{
+    TempFile tempFile{ "repolibtest_tempdb"s, ".db"s };
+    INFO("Using temporary file named: " << tempFile.GetPath());
+
+    SourceDetails details;
+    Manifest manifest;
+    std::string relativePath;
+    auto source = SimpleTestSetup(tempFile, details, manifest, relativePath);
+
+    REQUIRE(manifest.Installers.size() >= 2);
+    AppsAndFeaturesEntry appEntry{};
+    appEntry.DisplayVersion = "1.23";
+    manifest.Installers[0].AppsAndFeaturesEntries.emplace_back(appEntry);
+    appEntry.DisplayVersion = "1.24";
+    manifest.Installers[1].AppsAndFeaturesEntries.emplace_back(appEntry);
+
+    PackageTrackingCatalog catalog = CreatePackageTrackingCatalogForSource(source);
+
+    SearchRequest request;
+    request.Filters.emplace_back(PackageMatchField::Id, MatchType::Exact, manifest.Id);
+
+    catalog.RecordInstall(manifest, manifest.Installers[0], false);
+
+    SearchResult resultBefore = catalog.Search(request);
+    REQUIRE(resultBefore.Matches.size() == 1);
+    REQUIRE(resultBefore.Matches[0].Package->GetAvailable().size() == 1);
+    REQUIRE(resultBefore.Matches[0].Package->GetAvailable()[0]->GetLatestVersion()->GetProperty(PackageVersionProperty::Version) ==
+        manifest.Version);
+
+    // Change version
+    manifest.Version = "99.1.2.3";
+
+    catalog.RecordInstall(manifest, manifest.Installers[0], true);
+
+    SearchResult resultAfter = catalog.Search(request);
+    REQUIRE(resultAfter.Matches.size() == 1);
+    REQUIRE(resultAfter.Matches[0].Package->GetAvailable().size() == 1);
+    REQUIRE(resultAfter.Matches[0].Package->GetAvailable()[0]->GetLatestVersion()->GetProperty(PackageVersionProperty::Version) ==
+        manifest.Version);
 }

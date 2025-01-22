@@ -22,6 +22,7 @@ namespace AppInstaller::Utility::HttpStream
 {
     std::future<std::shared_ptr<HttpClientWrapper>> HttpClientWrapper::CreateAsync(const Uri& uri)
     {
+        // TODO: Use proxy info. HttpClient does not support using a custom proxy, only using the system-wide one.
         std::shared_ptr<HttpClientWrapper> instance = std::make_shared<HttpClientWrapper>();
 
         // Use an HTTP filter to disable the default caching behavior and use the Most Recent caching behavior instead
@@ -86,6 +87,11 @@ namespace AppInstaller::Utility::HttpStream
             co_await SendHttpRequestAsync(0, 1);
         }
     }
+
+#ifdef WINGET_DISABLE_FOR_FUZZING
+#pragma warning( push )
+#pragma warning( disable : 4714) // HRESULT_FROM_WIN32 marked as forceinline not inlined
+#endif
 
     std::future<IBuffer> HttpClientWrapper::SendHttpRequestAsync(
         _In_ ULONG64 startPosition,
@@ -166,6 +172,10 @@ namespace AppInstaller::Utility::HttpStream
 
         co_return co_await response.Content().ReadAsBufferAsync();
     }
+
+#ifdef WINGET_DISABLE_FOR_FUZZING
+#pragma warning( pop ) 
+#endif
 
     std::future<IBuffer> HttpClientWrapper::DownloadRangeAsync(
         const ULONG64 startPosition,

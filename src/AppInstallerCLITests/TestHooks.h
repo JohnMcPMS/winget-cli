@@ -9,9 +9,13 @@
 
 #include <AppInstallerTelemetry.h>
 #include <AppInstallerRuntime.h>
+#include <AppInstallerDownloader.h>
 #include <winget/UserSettings.h>
 #include <winget/Filesystem.h>
 #include <winget/IconExtraction.h>
+#include <winget/Authentication.h>
+#include <winget/HttpClientHelper.h>
+#include <sfsclient/SFSClient.h>
 
 #ifdef AICLI_DISABLE_TEST_HOOKS
 static_assert(false, "Test hooks have been disabled");
@@ -25,7 +29,7 @@ namespace AppInstaller
     namespace Runtime
     {
         void TestHook_SetPathOverride(PathName target, const std::filesystem::path& path);
-        void TestHook_SetPathOverride(PathName target, const PathDetails& details);
+        void TestHook_SetPathOverride(PathName target, const Filesystem::PathDetails& details);
         void TestHook_ClearPathOverrides();
     }
 
@@ -68,11 +72,37 @@ namespace AppInstaller
     {
         void TestHook_SetEnableWindowsFeatureResult_Override(std::optional<DWORD>&& result);
         void TestHook_SetDoesWindowsFeatureExistResult_Override(std::optional<DWORD>&& result);
+        void TestHook_SetExtractArchiveWithTarResult_Override(std::optional<DWORD>&& result);
     }
 
     namespace Reboot
     {
         void TestHook_SetInitiateRebootResult_Override(bool* status);
+        void TestHook_SetRegisterForRestartResult_Override(bool* status);
+    }
+
+    namespace Authentication
+    {
+        void TestHook_SetAuthenticationResult_Override(Authentication::AuthenticationResult* authResult);
+    }
+
+    namespace MSStore::TestHooks
+    {
+        void SetDisplayCatalogHttpPipelineStage_Override(std::shared_ptr<web::http::http_pipeline_stage> value);
+
+        void SetSfsClientAppContents_Override(std::function<std::vector<SFS::AppContent>(std::string_view)>* value);
+
+        void SetLicensingHttpPipelineStage_Override(std::shared_ptr<web::http::http_pipeline_stage> value);
+    }
+
+    namespace Utility::TestHooks
+    {
+        void SetDownloadResult_Function_Override(std::function<DownloadResult(
+            const std::string& url,
+            const std::filesystem::path& dest,
+            DownloadType type,
+            IProgressCallback& progress,
+            std::optional<DownloadInfo> info)>* value);
     }
 }
 
@@ -165,6 +195,19 @@ namespace TestHook
         }
     };
 
+    struct SetExtractArchiveWithTarResult_Override
+    {
+        SetExtractArchiveWithTarResult_Override(DWORD result)
+        {
+            AppInstaller::CLI::Workflow::TestHook_SetExtractArchiveWithTarResult_Override(result);
+        }
+
+        ~SetExtractArchiveWithTarResult_Override()
+        {
+            AppInstaller::CLI::Workflow::TestHook_SetExtractArchiveWithTarResult_Override({});
+        }
+    };
+
     struct SetInitiateRebootResult_Override
     {
         SetInitiateRebootResult_Override(bool status) : m_status(status)
@@ -194,5 +237,105 @@ namespace TestHook
         }
 
     private:
+    };
+
+    struct SetRegisterForRestartResult_Override
+    {
+        SetRegisterForRestartResult_Override(bool status) : m_status(status)
+        {
+            AppInstaller::Reboot::TestHook_SetRegisterForRestartResult_Override(&m_status);
+        }
+
+        ~SetRegisterForRestartResult_Override()
+        {
+            AppInstaller::Reboot::TestHook_SetRegisterForRestartResult_Override(nullptr);
+        }
+
+    private:
+        bool m_status;
+    };
+
+    struct SetAuthenticationResult_Override
+    {
+        SetAuthenticationResult_Override(AppInstaller::Authentication::AuthenticationResult authResult) : m_authResult(authResult)
+        {
+            AppInstaller::Authentication::TestHook_SetAuthenticationResult_Override(&m_authResult);
+        }
+
+        ~SetAuthenticationResult_Override()
+        {
+            AppInstaller::Authentication::TestHook_SetAuthenticationResult_Override(nullptr);
+        }
+
+    private:
+        AppInstaller::Authentication::AuthenticationResult m_authResult;
+    };
+
+    struct SetDisplayCatalogHttpPipelineStage_Override
+    {
+        SetDisplayCatalogHttpPipelineStage_Override(std::shared_ptr<web::http::http_pipeline_stage> value)
+        {
+            AppInstaller::MSStore::TestHooks::SetDisplayCatalogHttpPipelineStage_Override(value);
+        }
+
+        ~SetDisplayCatalogHttpPipelineStage_Override()
+        {
+            AppInstaller::MSStore::TestHooks::SetDisplayCatalogHttpPipelineStage_Override(nullptr);
+        }
+    };
+
+    struct SetSfsClientAppContents_Override
+    {
+        SetSfsClientAppContents_Override(std::function<std::vector<SFS::AppContent>(std::string_view)> value) : m_appContentsFunction(std::move(value))
+        {
+            AppInstaller::MSStore::TestHooks::SetSfsClientAppContents_Override(&m_appContentsFunction);
+        }
+
+        ~SetSfsClientAppContents_Override()
+        {
+            AppInstaller::MSStore::TestHooks::SetSfsClientAppContents_Override(nullptr);
+        }
+
+    private:
+        std::function<std::vector<SFS::AppContent>(std::string_view)> m_appContentsFunction;
+    };
+
+    struct SetLicensingHttpPipelineStage_Override
+    {
+        SetLicensingHttpPipelineStage_Override(std::shared_ptr<web::http::http_pipeline_stage> value)
+        {
+            AppInstaller::MSStore::TestHooks::SetLicensingHttpPipelineStage_Override(value);
+        }
+
+        ~SetLicensingHttpPipelineStage_Override()
+        {
+            AppInstaller::MSStore::TestHooks::SetLicensingHttpPipelineStage_Override(nullptr);
+        }
+    };
+
+    struct SetDownloadResult_Function_Override
+    {
+        SetDownloadResult_Function_Override(std::function<AppInstaller::Utility::DownloadResult(
+            const std::string& url,
+            const std::filesystem::path& dest,
+            AppInstaller::Utility::DownloadType type,
+            AppInstaller::IProgressCallback& progress,
+            std::optional<AppInstaller::Utility::DownloadInfo> info)> value) : m_downloadFunction(std::move(value))
+        {
+            AppInstaller::Utility::TestHooks::SetDownloadResult_Function_Override(&m_downloadFunction);
+        }
+
+        ~SetDownloadResult_Function_Override()
+        {
+            AppInstaller::Utility::TestHooks::SetDownloadResult_Function_Override(nullptr);
+        }
+
+    private:
+        std::function<AppInstaller::Utility::DownloadResult(
+            const std::string& url,
+            const std::filesystem::path& dest,
+            AppInstaller::Utility::DownloadType type,
+            AppInstaller::IProgressCallback& progress,
+            std::optional<AppInstaller::Utility::DownloadInfo> info)> m_downloadFunction;
     };
 }

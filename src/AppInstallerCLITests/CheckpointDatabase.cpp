@@ -2,14 +2,13 @@
 // Licensed under the MIT License.
 #include "pch.h"
 #include "TestCommon.h"
-#include <Microsoft/CheckpointDatabase.h>
+#include <winget/CheckpointDatabase.h>
 #include <Public/winget/Checkpoint.h>
 
 using namespace std::string_literals;
 using namespace TestCommon;
 using namespace AppInstaller::Repository::Microsoft;
 using namespace AppInstaller::SQLite;
-using namespace AppInstaller::Repository::Microsoft::Schema;
 using namespace AppInstaller::Checkpoints;
 
 TEST_CASE("CheckpointDatabaseCreateLatestAndReopen", "[checkpointDatabase]")
@@ -34,7 +33,7 @@ TEST_CASE("CheckpointDatabaseCreateLatestAndReopen", "[checkpointDatabase]")
     }
 }
 
-TEST_CASE("CheckpointDatabase_WriteMetadata", "[checkpointDatabase]")
+TEST_CASE("CheckpointDatabase_WriteAndRemoveMetadata", "[checkpointDatabase]")
 {
     TempFile tempFile{ "repolibtest_tempdb"s, ".db"s };
     INFO("Using temporary file named: " << tempFile.GetPath());
@@ -58,6 +57,18 @@ TEST_CASE("CheckpointDatabase_WriteMetadata", "[checkpointDatabase]")
         auto checkpointId = checkpointIds[0];
         REQUIRE(testCommand == database->GetDataFieldSingleValue(checkpointId, AutomaticCheckpointData::Command, {}));
         REQUIRE(testClientVersion == database->GetDataFieldSingleValue(checkpointId, AutomaticCheckpointData::ClientVersion, {}));
+
+        database->RemoveDataType(checkpointId, AutomaticCheckpointData::Command);
+        database->RemoveDataType(checkpointId, AutomaticCheckpointData::ClientVersion);
+    }
+
+    {
+        std::shared_ptr<CheckpointDatabase> database = CheckpointDatabase::Open(tempFile);
+        const auto& checkpointIds = database->GetCheckpointIds();
+        REQUIRE_FALSE(checkpointIds.empty());
+
+        auto checkpointId = checkpointIds[0];
+        REQUIRE(database->GetDataTypes(checkpointId).empty());
     }
 }
 

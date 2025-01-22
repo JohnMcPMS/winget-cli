@@ -42,9 +42,9 @@ Do you have these dependencies installed [y/n]?
 ```
 If the user chooses "yes", the installation will proceed.
 
-Note: This is essentially the complete implementation for External Dependencies. It is not required at this stage to deal with nested dependencies. 
+Note: This is essentially the complete implementation for External Dependencies. It is not required at this stage to deal with nested dependencies.
 
-In addition, the consumes and provides concept is not in scope with this implementation. 
+In addition, the consumes and provides concept is not in scope with this implementation.
 
 ### Windows Features
 These include items like .NET Frameworks, Internet Information Services, and Windows Subsystem for Linux. In some cases, turning these features on may require a reboot.
@@ -58,7 +58,7 @@ These include other packages. The restriction on these dependencies is that they
 ### External Dependencies
 These include dependencies from outside of the source the original package is distributed. In some cases suitable items may exist in the same source, but for licensing or personal preference, no explicit package should be required. One example is Java. Many vendors offer JREs and JDKs so it may be more reasonable to have a user informed, and allow the user to confirm the presence of a dependency.
 
-As a first step the Windows Package Manager should show dependency information to the user, see issue [1012](github.com/microsoft/winget-cli/issues/1012) with [spec](../../dependencies/doc/specs/%231012%20-%20Show%20dependencies.md).
+As a first step the Windows Package Manager should show dependency information to the user, see issue [1012](https://github.com/microsoft/winget-cli/issues/1012) with [spec](./#1012%20-%20Show%20dependencies.md).
 
 ## UI/UX Design
 
@@ -72,7 +72,7 @@ Several different package installers exist and treat dependencies differently.
 
 MSIX installers have an internal mechanism to identify dependencies.
 
-MSI and .exe installers may include dependencies. 
+MSI and .exe installers may include dependencies.
 
 ### Accessibility
 

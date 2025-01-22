@@ -70,16 +70,16 @@ ms.localizationpriority: medium
 | 0x8A150038 | -1978335176 | APPINSTALLER_CLI_ERROR_UNSUPPORTED_RESTSOURCE | The configured rest source is not supported |
 | 0x8A150039 | -1978335175 | APPINSTALLER_CLI_ERROR_RESTSOURCE_INVALID_DATA | Invalid data returned by rest source |
 | 0x8A15003A | -1978335174 | APPINSTALLER_CLI_ERROR_BLOCKED_BY_POLICY | Operation is blocked by Group Policy |
-| 0x8A15003B | -1978335173 | APPINSTALLER_CLI_ERROR_RESTSOURCE_INTERNAL_ERROR | Rest source internal error |
+| 0x8A15003B | -1978335173 | APPINSTALLER_CLI_ERROR_RESTAPI_INTERNAL_ERROR | Rest API internal error |
 | 0x8A15003C | -1978335172 | APPINSTALLER_CLI_ERROR_RESTSOURCE_INVALID_URL | Invalid rest source url |
-| 0x8A15003D | -1978335171 | APPINSTALLER_CLI_ERROR_RESTSOURCE_UNSUPPORTED_MIME_TYPE | Unsupported MIME type returned by rest source |
+| 0x8A15003D | -1978335171 | APPINSTALLER_CLI_ERROR_RESTAPI_UNSUPPORTED_MIME_TYPE | Unsupported MIME type returned by rest API |
 | 0x8A15003E | -1978335170 | APPINSTALLER_CLI_ERROR_RESTSOURCE_INVALID_VERSION | Invalid rest source contract version |
 | 0x8A15003F | -1978335169 | APPINSTALLER_CLI_ERROR_SOURCE_DATA_INTEGRITY_FAILURE | The source data is corrupted or tampered |
 | 0x8A150040 | -1978335168 | APPINSTALLER_CLI_ERROR_STREAM_READ_FAILURE | Error reading from the stream |
 | 0x8A150041 | -1978335167 | APPINSTALLER_CLI_ERROR_PACKAGE_AGREEMENTS_NOT_ACCEPTED | Package agreements were not agreed to |
 | 0x8A150042 | -1978335166 | APPINSTALLER_CLI_ERROR_PROMPT_INPUT_ERROR | Error reading input in prompt |
 | 0x8A150043 | -1978335165 | APPINSTALLER_CLI_ERROR_UNSUPPORTED_SOURCE_REQUEST | The search request is not supported by one or more sources |
-| 0x8A150044 | -1978335164 | APPINSTALLER_CLI_ERROR_RESTSOURCE_ENDPOINT_NOT_FOUND | The rest source endpoint is not found. |
+| 0x8A150044 | -1978335164 | APPINSTALLER_CLI_ERROR_RESTAPI_ENDPOINT_NOT_FOUND | The rest API endpoint is not found. |
 | 0x8A150045 | -1978335163 | APPINSTALLER_CLI_ERROR_SOURCE_OPEN_FAILED | Failed to open the source. |
 | 0x8A150046 | -1978335162 | APPINSTALLER_CLI_ERROR_SOURCE_AGREEMENTS_NOT_ACCEPTED | Source agreements were not agreed to |
 | 0x8A150047 | -1978335161 | APPINSTALLER_CLI_ERROR_CUSTOMHEADER_EXCEEDS_MAXLENGTH | Header size exceeds the allowable limit of 1024 characters. Please reduce the size and try again. |
@@ -121,7 +121,31 @@ ms.localizationpriority: medium
 | 0x8A15006B | -1978335125 | APPINSTALLER_CLI_ERROR_DOWNLOAD_DEPENDENCIES | Failed to download package dependencies. |
 | 0x8A15006C | -1978335124 | APPINSTALLER_CLI_ERROR_DOWNLOAD_COMMAND_PROHIBITED | Failed to download package. Download for offline installation is prohibited. |
 | 0x8A15006D | -1978335123 | APPINSTALLER_CLI_ERROR_SERVICE_UNAVAILABLE | A required service is busy or unavailable. Try again later. |
-
+| 0x8A15006E | -1978335122 | APPINSTALLER_CLI_ERROR_RESUME_ID_NOT_FOUND | The guid provided does not correspond to a valid resume state. |
+| 0x8A15006F | -1978335121 | APPINSTALLER_CLI_ERROR_CLIENT_VERSION_MISMATCH | The current client version did not match the client version of the saved state. |
+| 0x8A150070 | -1978335120 | APPINSTALLER_CLI_ERROR_INVALID_RESUME_STATE | The resume state data is invalid. |
+| 0x8A150071 | -1978335119 | APPINSTALLER_CLI_ERROR_CANNOT_OPEN_CHECKPOINT_INDEX | Unable to open the checkpoint database. |
+| 0x8A150072 | -1978335118 | APPINSTALLER_CLI_ERROR_RESUME_LIMIT_EXCEEDED | Exceeded max resume limit. |
+| 0x8A150073 | -1978335117 | APPINSTALLER_CLI_ERROR_INVALID_AUTHENTICATION_INFO | Invalid authentication info. |
+| 0x8A150074 | -1978335116 | APPINSTALLER_CLI_ERROR_AUTHENTICATION_TYPE_NOT_SUPPORTED | Authentication method not supported. |
+| 0x8A150075 | -1978335115 | APPINSTALLER_CLI_ERROR_AUTHENTICATION_FAILED | Authentication failed. |
+| 0x8A150076 | -1978335114 | APPINSTALLER_CLI_ERROR_AUTHENTICATION_INTERACTIVE_REQUIRED | Authentication failed. Interactive authentication required. |
+| 0x8A150077 | -1978335113 | APPINSTALLER_CLI_ERROR_AUTHENTICATION_CANCELLED_BY_USER | Authentication failed. User cancelled. |
+| 0x8A150078 | -1978335112 | APPINSTALLER_CLI_ERROR_AUTHENTICATION_INCORRECT_ACCOUNT | Authentication failed. Authenticated account is not the desired account. |
+| 0x8A150079 | -1978335111 | APPINSTALLER_CLI_ERROR_NO_REPAIR_INFO_FOUND | Repair command not found. |
+| 0x8A15007A | -1978335110 | APPINSTALLER_CLI_ERROR_REPAIR_NOT_APPLICABLE | Repair operation is not applicable. |
+| 0x8A15007B | -1978335109 | APPINSTALLER_CLI_ERROR_EXEC_REPAIR_FAILED | Repair operation failed. |
+| 0x8A15007C | -1978335108 | APPINSTALLER_CLI_ERROR_REPAIR_NOT_SUPPORTED | The installer technology in use doesn't support repair. |
+| 0x8A15007D | -1978335107 | APPINSTALLER_CLI_ERROR_ADMIN_CONTEXT_REPAIR_PROHIBITED | Repair operations involving administrator privileges are not permitted on packages installed within the user scope. |
+| 0x8A15007E | -1978335106 | APPINSTALLER_CLI_ERROR_SQLITE_CONNECTION_TERMINATED | The SQLite connection was terminated to prevent corruption. |
+| 0x8A15007F | -1978335105 | APPINSTALLER_CLI_ERROR_DISPLAYCATALOG_API_FAILED | Failed to get Microsoft Store package catalog. |
+| 0x8A150080 | -1978335104 | APPINSTALLER_CLI_ERROR_NO_APPLICABLE_DISPLAYCATALOG_PACKAGE | No applicable Microsoft Store package found from Microsoft Store package catalog. |
+| 0x8A150081 | -1978335103 | APPINSTALLER_CLI_ERROR_SFSCLIENT_API_FAILED | Failed to get Microsoft Store package download information. |
+| 0x8A150082 | -1978335102 | APPINSTALLER_CLI_ERROR_NO_APPLICABLE_SFSCLIENT_PACKAGE | No applicable Microsoft Store package download information found. |
+| 0x8A150083 | -1978335101 | APPINSTALLER_CLI_ERROR_LICENSING_API_FAILED | Failed to retrieve Microsoft Store package license. |
+| 0x8A150084 | -1978335100 | APPINSTALLER_CLI_ERROR_SFSCLIENT_PACKAGE_NOT_SUPPORTED | The Microsoft Store package does not support download command. |
+| 0x8A150085 | -1978335099 | APPINSTALLER_CLI_ERROR_LICENSING_API_FAILED_FORBIDDEN | Failed to retrieve Microsoft Store package license. The Microsoft Entra Id account does not have required privilege. |
+| 0x8A150086 | -1978335098 | APPINSTALLER_CLI_ERROR_INSTALLER_ZERO_BYTE_FILE | Downloaded zero byte installer; ensure that your network connection is working properly. |
 
 ## Install errors.
 
@@ -136,8 +160,7 @@ ms.localizationpriority: medium
 | 0x8A150107 | -1978334969 | APPINSTALLER_CLI_ERROR_INSTALL_NO_NETWORK | This application requires internet connectivity. Connect to a network then try again. |
 | 0x8A150108 | -1978334968 | APPINSTALLER_CLI_ERROR_INSTALL_CONTACT_SUPPORT | This application encountered an error during installation. Contact support. |
 | 0x8A150109 | -1978334967 | APPINSTALLER_CLI_ERROR_INSTALL_REBOOT_REQUIRED_TO_FINISH | Restart your PC to finish installation. |
-| 0x8A15010A | -1978334966 | APPINSTALLER_CLI_ERROR_INSTALL_REBOOT_REQUIRED_TO_INSTALL | 
-Installation failed. Restart your PC then try again. |
+| 0x8A15010A | -1978334966 | APPINSTALLER_CLI_ERROR_INSTALL_REBOOT_REQUIRED_TO_INSTALL | Installation failed. Restart your PC then try again. |
 | 0x8A15010B | -1978334965 | APPINSTALLER_CLI_ERROR_INSTALL_REBOOT_INITIATED | Your PC will restart to finish installation. |
 | 0x8A15010C | -1978334964 | APPINSTALLER_CLI_ERROR_INSTALL_CANCELLED_BY_USER | You cancelled the installation. |
 | 0x8A15010D | -1978334963 | APPINSTALLER_CLI_ERROR_INSTALL_ALREADY_INSTALLED | Another version of this application is already installed. |
@@ -148,6 +171,7 @@ Installation failed. Restart your PC then try again. |
 | 0x8A150112 | -1978334958 | APPINSTALLER_CLI_ERROR_INSTALL_INVALID_PARAMETER | Invalid parameter. |
 | 0x8A150113 | -1978334957 | APPINSTALLER_CLI_ERROR_INSTALL_SYSTEM_NOT_SUPPORTED | Package not supported by the system. |
 | 0x8A150114 | -1978334956 | APPINSTALLER_CLI_ERROR_INSTALL_UPGRADE_NOT_SUPPORTED | The installer does not support upgrading an existing package. |
+| 0x8A150115 | -1978334955 | APPINSTALLER_CLI_ERROR_INSTALL_CUSTOM_ERROR | Installation failed with installer custom error. |
 
 ## Check for package installed status
 
@@ -179,6 +203,11 @@ Installation failed. Restart your PC then try again. |
 | 0x8A15C00C | -1978286068 | WINGET_CONFIG_ERROR_SET_DEPENDENCY_CYCLE | The dependency graph contains a cycle which cannot be resolved. |
 | 0x8A15C00D | -1978286067 | WINGET_CONFIG_ERROR_INVALID_FIELD_VALUE | The configuration has an invalid field value. |
 | 0x8A15C00E | -1978286066 | WINGET_CONFIG_ERROR_MISSING_FIELD | The configuration is missing a field. |
+| 0x8A15C00F | -1978286065 | WINGET_CONFIG_ERROR_TEST_FAILED | Some of the configuration units failed while testing their state. |
+| 0x8A15C010 | -1978286064 | WINGET_CONFIG_ERROR_TEST_NOT_RUN | Configuration state was not tested. |
+| 0x8A15C011 | -1978286063 | WINGET_CONFIG_ERROR_GET_FAILED | The configuration unit failed getting its properties. |
+| 0x8A15C012 | -1978286062 | WINGET_CONFIG_ERROR_HISTORY_ITEM_NOT_FOUND | The specified configuration could not be found. |
+| 0x8A15C013 | -1978286061 | WINGET_CONFIG_ERROR_PARAMETER_INTEGRITY_BOUNDARY | Parameter cannot be passed across integrity boundary. |
 
 ## Configuration Processor Errors
 
@@ -195,3 +224,4 @@ Installation failed. Restart your PC then try again. |
 | 0x8A15C109 | -1978285815 | WINGET_CONFIG_ERROR_UNIT_INVOKE_INVALID_RESULT | The configuration unit returned an unexpected result during execution. |
 | 0x8A15C110 | -1978285814 | WINGET_CONFIG_ERROR_UNIT_SETTING_CONFIG_ROOT | A unit contains a setting that requires the config root. |
 | 0x8A15C111 | -1978285813 | WINGET_CONFIG_ERROR_UNIT_IMPORT_MODULE_ADMIN | Loading the module for the configuration unit failed because it requires administrator privileges to run. |
+| 0x8A15C112 | -1978285812 | WINGET_CONFIG_ERROR_NOT_SUPPORTED_BY_PROCESSOR | Operation is not supported by the configuration processor. |

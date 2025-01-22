@@ -14,6 +14,7 @@ namespace Microsoft.WinGet.Client.Cmdlets.Cmdlets
     /// Enables an admin setting. Requires admin.
     /// </summary>
     [Cmdlet(VerbsLifecycle.Enable, Constants.WinGetNouns.Setting)]
+    [Alias("ewgs")]
     public sealed class EnableSettingCmdlet : PSCmdlet
     {
         /// <summary>
@@ -24,6 +25,12 @@ namespace Microsoft.WinGet.Client.Cmdlets.Cmdlets
             Mandatory = true,
             ValueFromPipeline = true,
             ValueFromPipelineByPropertyName = true)]
+        [ValidateSet(
+            "LocalManifestFiles",
+            "BypassCertificatePinningForMicrosoftStore",
+            "InstallerHashOverride",
+            "LocalArchiveMalwareScanOverride",
+            "ProxyCommandLineOptions")]
         public string Name { get; set; }
 
         /// <summary>

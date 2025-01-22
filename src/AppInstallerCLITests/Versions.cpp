@@ -43,6 +43,32 @@ TEST_CASE("VersionParsePlusDash", "[versions]")
     REQUIRE(parts[4].Other == "alpha");
 }
 
+TEST_CASE("VersionParseWithWhitespace", "[versions]")
+{
+    Version version("1. 2.3 . 4 ");
+    const auto& parts = version.GetParts();
+    REQUIRE(parts.size() == 4);
+    for (size_t i = 0; i < parts.size(); ++i)
+    {
+        INFO(i);
+        REQUIRE(parts[i].Integer == static_cast<uint64_t>(i + 1));
+        REQUIRE(parts[i].Other == "");
+    }
+}
+
+TEST_CASE("VersionParseWithPreamble", "[versions]")
+{
+    Version version("v1.2.3.4");
+    const auto& parts = version.GetParts();
+    REQUIRE(parts.size() == 4);
+    for (size_t i = 0; i < parts.size(); ++i)
+    {
+        INFO(i);
+        REQUIRE(parts[i].Integer == static_cast<uint64_t>(i + 1));
+        REQUIRE(parts[i].Other == "");
+    }
+}
+
 TEST_CASE("VersionParseCorner", "[versions]")
 {
     Version version1("");
@@ -70,6 +96,22 @@ TEST_CASE("VersionParseCorner", "[versions]")
     REQUIRE(parts.size() == 1);
     REQUIRE(parts[0].Integer == 0);
     REQUIRE(parts[0].Other == "version");
+
+    Version version6(". 1 ");
+    parts = version6.GetParts();
+    REQUIRE(parts.size() == 2);
+    REQUIRE(parts[0].Integer == 0);
+    REQUIRE(parts[0].Other == "");
+    REQUIRE(parts[1].Integer == 1);
+    REQUIRE(parts[1].Other == "");
+
+    Version version7("v1.2a");
+    parts = version7.GetParts();
+    REQUIRE(parts.size() == 2);
+    REQUIRE(parts[0].Integer == 1);
+    REQUIRE(parts[0].Other == "");
+    REQUIRE(parts[1].Integer == 2);
+    REQUIRE(parts[1].Other == "a");
 }
 
 void RequireLessThan(std::string_view a, std::string_view b)
@@ -112,7 +154,40 @@ TEST_CASE("VersionCompare", "[versions]")
     RequireLessThan("0.0.1-beta", "0.0.2-alpha");
     RequireLessThan("13.9.8", "14.1");
 
+    // Ensure that versions with non-digit characters in their parts are sorted correctly
+    RequireLessThan("1-rc", "1");
+    RequireLessThan("1.2-rc", "1.2");
+    RequireLessThan("1.0-rc", "1.0");
+    RequireLessThan("1.0.0-rc", "1");
+    RequireLessThan("22.0.0-rc.1", "22.0.0");
+    RequireLessThan("22.0.0-rc.1", "22.0.0.1");
+    RequireLessThan("22.0.0-rc.1", "22.0.0.1-rc");
+
+    // Ensure that Sub-RC versions are sorted correctly
+    RequireLessThan("22.0.0-rc.1", "22.0.0-rc.1.1");
+    RequireLessThan("22.0.0-rc.1.1", "22.0.0-rc.1.2");
+    RequireLessThan("22.0.0-rc.1.2", "22.0.0-rc.2");
+
     RequireEqual("1.0", "1.0.0");
+
+    // Ensure that integers are parsed correctly when there is a leading zero
+    RequireEqual("1.2.00.3", "1.2.0.3");
+    RequireEqual("1.2.003.4", "1.2.3.4");
+    RequireEqual("01.02.03.04", "1.2.3.4");
+    RequireEqual("1.2.03-beta", "1.2.3-beta");
+
+    // Ensure whitespace doesn't affect equality
+    RequireEqual("1.0", "1.0 ");
+    RequireEqual("1.0", "1. 0");
+    RequireEqual("1.0", "1.0.");
+
+    // Ensure versions with preambles are sorted correctly
+    RequireEqual("1.0", "Version 1.0");
+    RequireEqual("foo1", "bar1");
+    RequireLessThan("v0.0.1", "0.0.2");
+    RequireLessThan("v0.0.1", "v0.0.2");
+    RequireLessThan("1.a2", "1.b1");
+    RequireLessThan("alpha", "beta");
 }
 
 TEST_CASE("VersionAndChannelSort", "[versions]")
@@ -121,15 +196,16 @@ TEST_CASE("VersionAndChannelSort", "[versions]")
     {
         { Version("15.0.0"), Channel("") },
         { Version("14.0.0"), Channel("") },
-        { Version("13.2.0-bugfix"), Channel("") },
+        { Version("13.2.1-bugfix"), Channel("") },
         { Version("13.2.0"), Channel("") },
+        { Version("13.2.0-rc"), Channel("") },
         { Version("13.0.0"), Channel("") },
         { Version("16.0.0"), Channel("alpha") },
         { Version("15.8.0"), Channel("alpha") },
         { Version("15.1.0"), Channel("beta") },
     };
 
-    std::vector<size_t> reorderList = { 4, 2, 1, 7, 6, 3, 5, 0 };
+    std::vector<size_t> reorderList = { 4, 2, 1, 7, 6, 3, 8, 5, 0 };
     REQUIRE(sortedList.size() == reorderList.size());
 
     std::vector<VersionAndChannel> jumbledList;
@@ -366,4 +442,31 @@ TEST_CASE("SemanticVersion", "[versions]")
     REQUIRE(version.HasBuildMetadata());
     REQUIRE(version.BuildMetadata() == Version("4.5.6"));
     REQUIRE(version.PartAt(2).Other == "-beta+4.5.6");
+}
+
+TEST_CASE("OpenTypeFontVersion", "[versions]")
+{
+    // Valid font version.
+    OpenTypeFontVersion version = OpenTypeFontVersion("Version 1.234");
+    REQUIRE(version.ToString() == "1.234");
+    REQUIRE(version.GetParts().size() == 2);
+    REQUIRE(version.PartAt(0).Integer == 1);
+    REQUIRE(version.PartAt(1).Integer == 234);
+
+    // Font version with additional metadata.
+    version = OpenTypeFontVersion("Version 9.876.54 ;2024");
+    REQUIRE(version.ToString() == "9.876");
+    REQUIRE(version.GetParts().size() == 2);
+    REQUIRE(version.PartAt(0).Integer == 9);
+    REQUIRE(version.PartAt(1).Integer == 876);
+
+    // Invalid version. Font version must have at least 2 parts.
+    REQUIRE_NOTHROW(version = OpenTypeFontVersion("1234567"));
+    REQUIRE(version.IsUnknown());
+    REQUIRE(version.ToString() == "Unknown");
+
+    // Major and minor parts must have digits.
+    REQUIRE_NOTHROW(version = OpenTypeFontVersion(" abc.def "));
+    REQUIRE(version.IsUnknown());
+    REQUIRE(version.ToString() == "Unknown");
 }

@@ -9,6 +9,7 @@ namespace Microsoft.WinGet.Client.Engine.Commands.Common
     using System;
     using System.Collections.Generic;
     using System.Management.Automation;
+    using System.Threading.Tasks;
     using Microsoft.Management.Deployment;
     using Microsoft.WinGet.Client.Engine.Exceptions;
     using Microsoft.WinGet.Client.Engine.Extensions;
@@ -17,7 +18,7 @@ namespace Microsoft.WinGet.Client.Engine.Commands.Common
 
     /// <summary>
     /// This is the base class for commands which operate on a specific package and version i.e.,
-    /// the "install", "uninstall", and "upgrade" commands.
+    /// the "install", "uninstall", "download", and "upgrade" commands.
     /// </summary>
     public abstract class PackageCommand : FinderCommand
     {
@@ -44,11 +45,6 @@ namespace Microsoft.WinGet.Client.Engine.Commands.Common
         protected string? Version { get; set; }
 
         /// <summary>
-        /// Gets or sets the path to the logging file.
-        /// </summary>
-        protected string? Log { get; set; }
-
-        /// <summary>
         /// Executes a command targeting a specific package version.
         /// </summary>
         /// <typeparam name="TResult">Type of callback's result.</typeparam>
@@ -56,17 +52,18 @@ namespace Microsoft.WinGet.Client.Engine.Commands.Common
         /// <param name="match">The match option.</param>
         /// <param name="callback">The method to call after retrieving the package and version to operate upon.</param>
         /// <returns>Result of the callback.</returns>
-        protected TResult? GetPackageAndExecute<TResult>(
+        protected async Task<Tuple<TResult, CatalogPackage>?> GetPackageAndExecuteAsync<TResult>(
             CompositeSearchBehavior behavior,
             PackageFieldMatchOption match,
-            Func<CatalogPackage, PackageVersionId?, TResult> callback)
+            Func<CatalogPackage, PackageVersionId?, Task<TResult>> callback)
             where TResult : class
         {
             CatalogPackage package = this.GetCatalogPackage(behavior, match);
             PackageVersionId? version = this.GetPackageVersionId(package);
             if (this.ShouldProcess(package.ToString(version)))
             {
-                return callback(package, version);
+                var result = await callback(package, version);
+                return new Tuple<TResult, CatalogPackage>(result, package);
             }
 
             return null;

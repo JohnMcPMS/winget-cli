@@ -128,11 +128,6 @@ namespace AppInstaller::CLI::Workflow
 
     void EnableWindowsFeaturesDependencies(Execution::Context& context)
     {
-        if (!Settings::ExperimentalFeature::IsEnabled(Settings::ExperimentalFeature::Feature::WindowsFeature))
-        {
-            return;
-        }
-
         const auto& rootDependencies = context.Get<Execution::Data::Installer>()->Dependencies;
 
         if (rootDependencies.Empty() || !rootDependencies.HasAnyOf(DependencyType::WindowsFeature))
@@ -228,7 +223,9 @@ namespace AppInstaller::CLI::Workflow
                 else
                 {
                     context.Reporter.Error() << Resource::String::RebootRequiredToEnableWindowsFeatureOverrideRequired << std::endl;
-                    AICLI_TERMINATE_CONTEXT(APPINSTALLER_CLI_ERROR_INSTALL_REBOOT_REQUIRED_TO_INSTALL);
+                    context.SetFlags(Execution::ContextFlag::RegisterResume);
+                    context.SetFlags(Execution::ContextFlag::RebootRequired);
+                    AICLI_TERMINATE_CONTEXT(APPINSTALLER_CLI_ERROR_INSTALL_REBOOT_REQUIRED_FOR_INSTALL);
                 }
             }
             else
@@ -340,7 +337,7 @@ namespace AppInstaller::CLI::Workflow
 
                 if (WI_IsFlagSet(context.GetFlags(), Execution::ContextFlag::InstallerDownloadOnly))
                 {
-                    dependencyContext.Add<Execution::Data::DownloadDirectory>(context.Get<Execution::Data::DownloadDirectory>() / "Dependencies");
+                    dependencyContext.Add<Execution::Data::DownloadDirectory>(context.Get<Execution::Data::DownloadDirectory>() / L"Dependencies");
                 }
 
                 dependencyPackageContexts.emplace_back(std::move(dependencyContextPtr));

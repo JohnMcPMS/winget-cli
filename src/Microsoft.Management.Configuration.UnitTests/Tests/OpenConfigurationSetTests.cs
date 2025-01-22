@@ -1,4 +1,4 @@
-﻿// -----------------------------------------------------------------------------
+// -----------------------------------------------------------------------------
 // <copyright file="OpenConfigurationSetTests.cs" company="Microsoft Corporation">
 //     Copyright (c) Microsoft Corporation. Licensed under the MIT License.
 // </copyright>
@@ -8,13 +8,13 @@ namespace Microsoft.Management.Configuration.UnitTests.Tests
 {
     using System;
     using System.Collections.Generic;
-    using System.Linq;
-    using System.Runtime.InteropServices;
+    using Microsoft.Management.Configuration.Processor.Extensions;
     using Microsoft.Management.Configuration.UnitTests.Fixtures;
     using Microsoft.Management.Configuration.UnitTests.Helpers;
     using Microsoft.VisualBasic;
-    using Newtonsoft.Json.Linq;
     using Windows.Foundation.Collections;
+    using Windows.Storage.Streams;
+    using WinRT;
     using Xunit;
     using Xunit.Abstractions;
 
@@ -22,6 +22,7 @@ namespace Microsoft.Management.Configuration.UnitTests.Tests
     /// Unit tests for parsing configuration sets from streams.
     /// </summary>
     [Collection("UnitTestCollection")]
+    [InProc]
     [OutOfProc]
     public class OpenConfigurationSetTests : ConfigurationProcessorTestBase
     {
@@ -468,6 +469,166 @@ properties:
         }
 
         /// <summary>
+        /// Verifies that the configuration set (0.2) can be serialized and reopened correctly.
+        /// </summary>
+        [Fact]
+        public void TestSet_Serialize_0_2()
+        {
+            ConfigurationProcessor processor = this.CreateConfigurationProcessorWithDiagnostics();
+
+            OpenConfigurationSetResult openResult = processor.OpenConfigurationSet(this.CreateStream(@"
+properties:
+  configurationVersion: 0.2
+  assertions:
+    - resource: FakeModule/FakeResource
+      id: TestId
+      directives:
+        description: FakeDescription
+        allowPrerelease: true
+        securityContext: elevated
+      settings:
+        TestString: Hello
+        TestBool: false
+        TestInt: 1234  
+  resources:
+    - resource: FakeModule2/FakeResource2
+      id: TestId2
+      dependsOn:
+        - TestId
+        - dependency2
+        - dependency3
+      directives:
+        description: FakeDescription2
+        securityContext: elevated
+      settings:
+        TestString: Bye
+        TestBool: true
+        TestInt: 4321
+        Mapping:
+          Key: TestValue
+"));
+
+            // Serialize set.
+            ConfigurationSet configurationSet = openResult.Set;
+            InMemoryRandomAccessStream stream = new InMemoryRandomAccessStream();
+            configurationSet.Serialize(stream);
+
+            string yamlOutput = this.ReadStream(stream);
+
+            // Reopen configuration set from serialized string and verify values.
+            OpenConfigurationSetResult serializedSetResult = processor.OpenConfigurationSet(this.CreateStream(yamlOutput));
+            Assert.Null(serializedSetResult.ResultCode);
+            ConfigurationSet set = serializedSetResult.Set;
+            Assert.NotNull(set);
+
+            Assert.Equal("0.2", set.SchemaVersion);
+            Assert.Equal(2, set.Units.Count);
+
+            Assert.Equal("FakeResource", set.Units[0].Type);
+            Assert.Equal(ConfigurationUnitIntent.Assert, set.Units[0].Intent);
+            Assert.Equal("TestId", set.Units[0].Identifier);
+            this.VerifyValueSet(set.Units[0].Metadata, new ("description", "FakeDescription"), new ("allowPrerelease", true), new ("module", "FakeModule"));
+            this.VerifyValueSet(set.Units[0].Settings, new ("TestString", "Hello"), new ("TestBool", false), new ("TestInt", 1234));
+
+            Assert.Equal("FakeResource2", set.Units[1].Type);
+            Assert.Equal(ConfigurationUnitIntent.Apply, set.Units[1].Intent);
+            Assert.Equal("TestId2", set.Units[1].Identifier);
+            this.VerifyStringArray(set.Units[1].Dependencies, "TestId", "dependency2", "dependency3");
+            this.VerifyValueSet(set.Units[1].Metadata, new ("description", "FakeDescription2"), new ("module", "FakeModule2"));
+
+            ValueSet mapping = new ValueSet();
+            mapping.Add("Key", "TestValue");
+            this.VerifyValueSet(set.Units[1].Settings, new ("TestString", "Bye"), new ("TestBool", true), new ("TestInt", 4321), new ("Mapping", mapping));
+        }
+
+        /// <summary>
+        /// Verifies that the configuration set (0.3) can be serialized and reopened correctly.
+        /// </summary>
+        [Fact]
+        public void TestSet_Serialize_0_3()
+        {
+            ConfigurationProcessor processor = this.CreateConfigurationProcessorWithDiagnostics();
+
+            OpenConfigurationSetResult openResult = processor.OpenConfigurationSet(this.CreateStream(@"
+$schema: https://raw.githubusercontent.com/PowerShell/DSC/main/schemas/2023/08/config/document.json
+metadata:
+  description: FakeSetDescription
+variables:
+  var1: Test1
+  var2: 42
+parameters:
+  param1:
+    type: securestring
+  param2:
+    type: int
+    defaultValue: 89
+resources:
+  - type: FakeModule/FakeResource
+    name: TestId
+    metadata:
+      description: FakeDescription
+      allowPrerelease: true
+      myVal: mine
+    properties:
+      TestString: Hello
+      TestBool: false
+      TestInt: 1234  
+  - type: FakeModule2/FakeResource2
+    name: TestId2
+    dependsOn:
+      - TestId
+      - dependency2
+      - dependency3
+    metadata:
+      description: FakeDescription2
+      myVal: yours
+    properties:
+      TestString: Bye
+      TestBool: true
+      TestInt: 4321
+      Mapping:
+        Key: TestValue
+"));
+
+            // Serialize set.
+            ConfigurationSet configurationSet = openResult.Set;
+            InMemoryRandomAccessStream stream = new InMemoryRandomAccessStream();
+            configurationSet.Serialize(stream);
+
+            string yamlOutput = this.ReadStream(stream);
+
+            // Reopen configuration set from serialized string and verify values.
+            OpenConfigurationSetResult serializedSetResult = processor.OpenConfigurationSet(this.CreateStream(yamlOutput));
+            Assert.Null(serializedSetResult.ResultCode);
+            ConfigurationSet set = serializedSetResult.Set;
+            Assert.NotNull(set);
+
+            Assert.Equal("0.3", set.SchemaVersion);
+            Assert.Equal(2, set.Units.Count);
+
+            this.VerifyValueSet(set.Metadata, new KeyValuePair<string, object>("description", "FakeSetDescription"));
+            this.VerifyValueSet(set.Variables, new ("var1", "Test1"), new ("var2", 42));
+
+            Assert.Equal(2, set.Parameters.Count);
+            this.VerifyParameter(set.Parameters[0], "param1", Windows.Foundation.PropertyType.String, true);
+            this.VerifyParameter(set.Parameters[1], "param2", Windows.Foundation.PropertyType.Int64, false, 89);
+
+            Assert.Equal("FakeModule/FakeResource", set.Units[0].Type);
+            Assert.Equal("TestId", set.Units[0].Identifier);
+            this.VerifyValueSet(set.Units[0].Metadata, new ("description", "FakeDescription"), new ("allowPrerelease", true), new ("myVal", "mine"));
+            this.VerifyValueSet(set.Units[0].Settings, new ("TestString", "Hello"), new ("TestBool", false), new ("TestInt", 1234));
+
+            Assert.Equal("FakeModule2/FakeResource2", set.Units[1].Type);
+            Assert.Equal("TestId2", set.Units[1].Identifier);
+            this.VerifyStringArray(set.Units[1].Dependencies, "TestId", "dependency2", "dependency3");
+            this.VerifyValueSet(set.Units[1].Metadata, new ("description", "FakeDescription2"), new ("myVal", "yours"));
+
+            ValueSet mapping = new ValueSet();
+            mapping.Add("Key", "TestValue");
+            this.VerifyValueSet(set.Units[1].Settings, new ("TestString", "Bye"), new ("TestBool", true), new ("TestInt", 4321), new ("Mapping", mapping));
+        }
+
+        /// <summary>
         /// Test for using version 0.3 schema.
         /// </summary>
         [Fact]
@@ -607,6 +768,444 @@ resources:
             }
         }
 
+        /// <summary>
+        /// Verifies that the configuration set (0.2) with environments parses and serializes.
+        /// </summary>
+        [Fact]
+        public void Environment_0_2()
+        {
+            ConfigurationProcessor processor = this.CreateConfigurationProcessorWithDiagnostics();
+
+            OpenConfigurationSetResult openResult = processor.OpenConfigurationSet(this.CreateStream(@"
+properties:
+  configurationVersion: 0.2
+  resources:
+    - resource: FakeModule/FakeResource
+      id: elevated
+      directives:
+        description: FakeDescription
+        allowPrerelease: true
+        securityContext: elevated
+      settings:
+        TestString: Hello
+    - resource: FakeModule2/FakeResource2
+      id: restricted
+      directives:
+        description: FakeDescription2
+        securityContext: restricted
+      settings:
+        TestString: Bye
+    - resource: FakeModule2/FakeResource2
+      id: current
+      directives:
+        securityContext: current
+      settings:
+        TestString: Bye
+    - resource: FakeModule2/FakeResource2
+      id: default
+      settings:
+        TestString: Bye
+"));
+
+            Dictionary<string, SecurityContext> expectedEnvironments = new Dictionary<string, SecurityContext>();
+            expectedEnvironments.Add("elevated", SecurityContext.Elevated);
+            expectedEnvironments.Add("restricted", SecurityContext.Restricted);
+            expectedEnvironments.Add("current", SecurityContext.Current);
+            expectedEnvironments.Add("default", SecurityContext.Current);
+
+            this.ValidateSecurityContexts(openResult, expectedEnvironments);
+
+            // Shuffle security contexts, serialize, parse and validate again
+            expectedEnvironments["elevated"] = SecurityContext.Restricted;
+            expectedEnvironments["restricted"] = SecurityContext.Current;
+            expectedEnvironments["current"] = SecurityContext.Restricted;
+            expectedEnvironments["default"] = SecurityContext.Elevated;
+
+            var units = openResult.Set.Units;
+            foreach (var unit in units)
+            {
+                SecurityContext newContext = SecurityContext.Current;
+                Assert.True(expectedEnvironments.TryGetValue(unit.Identifier, out newContext));
+                unit.Environment.Context = newContext;
+            }
+
+            // Serialize set.
+            InMemoryRandomAccessStream stream = new InMemoryRandomAccessStream();
+            openResult.Set.Serialize(stream);
+
+            string yamlOutput = this.ReadStream(stream);
+
+            // Reopen configuration set from serialized string and verify values.
+            OpenConfigurationSetResult serializedSetResult = processor.OpenConfigurationSet(this.CreateStream(yamlOutput));
+
+            this.ValidateSecurityContexts(serializedSetResult, expectedEnvironments);
+        }
+
+        /// <summary>
+        /// Verifies that the configuration set (0.3) inherits set environment.
+        /// </summary>
+        [Fact]
+        public void SetMetadataEnvironmentInheritance_0_3()
+        {
+            ConfigurationProcessor processor = this.CreateConfigurationProcessorWithDiagnostics();
+
+            OpenConfigurationSetResult openResult = processor.OpenConfigurationSet(this.CreateStream(@"
+$schema: https://raw.githubusercontent.com/PowerShell/DSC/main/schemas/2023/08/config/document.json
+metadata:
+  winget:
+    securityContext: elevated
+    processor:
+      identifier: pwsh
+      properties:
+        a: b
+resources:
+  - name: first
+    type: Module/Resource
+    properties:
+      c: 3
+  - name: second
+    type: Module/Resource2
+    properties:
+      l: '10'
+"));
+
+            Dictionary<string, string> environmentProperties = new Dictionary<string, string>();
+            environmentProperties.Add("a", "b");
+
+            Dictionary<string, ConfigurationEnvironmentData> expectedEnvironments = new Dictionary<string, ConfigurationEnvironmentData>();
+            expectedEnvironments.Add("first", new ConfigurationEnvironmentData() { Context = SecurityContext.Elevated, ProcessorIdentifier = "pwsh", ProcessorProperties = environmentProperties });
+            expectedEnvironments.Add("second", new ConfigurationEnvironmentData() { Context = SecurityContext.Elevated, ProcessorIdentifier = "pwsh", ProcessorProperties = environmentProperties });
+
+            this.ValidateEnvironments(openResult, expectedEnvironments);
+
+            // Serialize set.
+            InMemoryRandomAccessStream stream = new InMemoryRandomAccessStream();
+            openResult.Set.Serialize(stream);
+
+            string yamlOutput = this.ReadStream(stream);
+
+            // Reopen configuration set from serialized string and verify values.
+            OpenConfigurationSetResult serializedSetResult = processor.OpenConfigurationSet(this.CreateStream(yamlOutput));
+
+            this.ValidateEnvironments(serializedSetResult, expectedEnvironments);
+        }
+
+        /// <summary>
+        /// Verifies that the configuration set (0.3) inherits set environment.
+        /// </summary>
+        [Fact]
+        public void SetMetadataEnvironmentInheritance_ProcessorOverridden_0_3()
+        {
+            ConfigurationProcessor processor = this.CreateConfigurationProcessorWithDiagnostics();
+
+            OpenConfigurationSetResult openResult = processor.OpenConfigurationSet(this.CreateStream(@"
+$schema: https://raw.githubusercontent.com/PowerShell/DSC/main/schemas/2023/08/config/document.json
+metadata:
+  winget:
+    securityContext: elevated
+    processor:
+      identifier: pwsh
+      properties:
+        a: b
+resources:
+  - name: first
+    type: Module/Resource
+    properties:
+      c: 3
+  - name: second
+    type: Module/Resource2
+    properties:
+      l: '10'
+    metadata:
+      winget:
+        processor: not-pwsh
+"));
+
+            Dictionary<string, string> environmentProperties = new Dictionary<string, string>();
+            environmentProperties.Add("a", "b");
+
+            Dictionary<string, ConfigurationEnvironmentData> expectedEnvironments = new Dictionary<string, ConfigurationEnvironmentData>();
+            expectedEnvironments.Add("first", new ConfigurationEnvironmentData() { Context = SecurityContext.Elevated, ProcessorIdentifier = "pwsh", ProcessorProperties = environmentProperties });
+            expectedEnvironments.Add("second", new ConfigurationEnvironmentData() { Context = SecurityContext.Elevated, ProcessorIdentifier = "not-pwsh" });
+
+            this.ValidateEnvironments(openResult, expectedEnvironments);
+
+            // Serialize set.
+            InMemoryRandomAccessStream stream = new InMemoryRandomAccessStream();
+            openResult.Set.Serialize(stream);
+
+            string yamlOutput = this.ReadStream(stream);
+
+            // Reopen configuration set from serialized string and verify values.
+            OpenConfigurationSetResult serializedSetResult = processor.OpenConfigurationSet(this.CreateStream(yamlOutput));
+
+            this.ValidateEnvironments(serializedSetResult, expectedEnvironments);
+        }
+
+        /// <summary>
+        /// Verifies that the configuration set (0.3) inherits set environment.
+        /// </summary>
+        [Fact]
+        public void SetMetadataEnvironmentInheritance_ContextOverridden_0_3()
+        {
+            ConfigurationProcessor processor = this.CreateConfigurationProcessorWithDiagnostics();
+
+            OpenConfigurationSetResult openResult = processor.OpenConfigurationSet(this.CreateStream(@"
+$schema: https://raw.githubusercontent.com/PowerShell/DSC/main/schemas/2023/08/config/document.json
+metadata:
+  winget:
+    securityContext: elevated
+    processor:
+      identifier: pwsh
+      properties:
+        a: b
+resources:
+  - name: first
+    type: Module/Resource
+    properties:
+      c: 3
+  - name: second
+    type: Module/Resource2
+    properties:
+      l: '10'
+    metadata:
+      winget:
+        securityContext: restricted
+"));
+
+            Dictionary<string, string> environmentProperties = new Dictionary<string, string>();
+            environmentProperties.Add("a", "b");
+
+            Dictionary<string, ConfigurationEnvironmentData> expectedEnvironments = new Dictionary<string, ConfigurationEnvironmentData>();
+            expectedEnvironments.Add("first", new ConfigurationEnvironmentData() { Context = SecurityContext.Elevated, ProcessorIdentifier = "pwsh", ProcessorProperties = environmentProperties });
+            expectedEnvironments.Add("second", new ConfigurationEnvironmentData() { Context = SecurityContext.Restricted, ProcessorIdentifier = "pwsh", ProcessorProperties = environmentProperties });
+
+            this.ValidateEnvironments(openResult, expectedEnvironments);
+
+            // Serialize set.
+            InMemoryRandomAccessStream stream = new InMemoryRandomAccessStream();
+            openResult.Set.Serialize(stream);
+
+            string yamlOutput = this.ReadStream(stream);
+
+            // Reopen configuration set from serialized string and verify values.
+            OpenConfigurationSetResult serializedSetResult = processor.OpenConfigurationSet(this.CreateStream(yamlOutput));
+
+            this.ValidateEnvironments(serializedSetResult, expectedEnvironments);
+        }
+
+        /// <summary>
+        /// Verifies that the configuration set (0.3) serializes common environment to the set metadata.
+        /// </summary>
+        [Fact]
+        public void CommonEnvironmentElevatedToSetMetadata_0_3()
+        {
+            ConfigurationProcessor processor = this.CreateConfigurationProcessorWithDiagnostics();
+
+            OpenConfigurationSetResult openResult = processor.OpenConfigurationSet(this.CreateStream(@"
+$schema: https://raw.githubusercontent.com/PowerShell/DSC/main/schemas/2023/08/config/document.json
+resources:
+  - name: first
+    type: Module/Resource
+    metadata:
+      winget:
+        securityContext: elevated
+        processor: pwsh
+    properties:
+      c: 3
+  - name: second
+    type: Module/Resource2
+    properties:
+      l: '10'
+    metadata:
+      winget:
+        securityContext: elevated
+        processor:
+          identifier: pwsh
+"));
+
+            Dictionary<string, ConfigurationEnvironmentData> expectedEnvironments = new Dictionary<string, ConfigurationEnvironmentData>();
+            expectedEnvironments.Add("first", new ConfigurationEnvironmentData() { Context = SecurityContext.Elevated, ProcessorIdentifier = "pwsh" });
+            expectedEnvironments.Add("second", new ConfigurationEnvironmentData() { Context = SecurityContext.Elevated, ProcessorIdentifier = "pwsh" });
+
+            this.ValidateEnvironments(openResult, expectedEnvironments);
+
+            // Serialize set.
+            InMemoryRandomAccessStream stream = new InMemoryRandomAccessStream();
+            openResult.Set.Serialize(stream);
+
+            string yamlOutput = this.ReadStream(stream);
+
+            // Reopen configuration set from serialized string and verify values.
+            OpenConfigurationSetResult serializedSetResult = processor.OpenConfigurationSet(this.CreateStream(yamlOutput));
+
+            this.ValidateEnvironments(serializedSetResult, expectedEnvironments);
+        }
+
+        /// <summary>
+        /// Verifies that the configuration set (0.3) serializes common environment to the set metadata.
+        /// </summary>
+        [Fact]
+        public void CommonProcessorElevatedToSetMetadata_0_3()
+        {
+            ConfigurationProcessor processor = this.CreateConfigurationProcessorWithDiagnostics();
+
+            OpenConfigurationSetResult openResult = processor.OpenConfigurationSet(this.CreateStream(@"
+$schema: https://raw.githubusercontent.com/PowerShell/DSC/main/schemas/2023/08/config/document.json
+resources:
+  - name: first
+    type: Module/Resource
+    metadata:
+      winget:
+        securityContext: elevated
+        processor: pwsh
+    properties:
+      c: 3
+  - name: second
+    type: Module/Resource2
+    properties:
+      l: '10'
+    metadata:
+      winget:
+        securityContext: restricted
+        processor:
+          identifier: pwsh
+"));
+
+            Dictionary<string, ConfigurationEnvironmentData> expectedEnvironments = new Dictionary<string, ConfigurationEnvironmentData>();
+            expectedEnvironments.Add("first", new ConfigurationEnvironmentData() { Context = SecurityContext.Elevated, ProcessorIdentifier = "pwsh" });
+            expectedEnvironments.Add("second", new ConfigurationEnvironmentData() { Context = SecurityContext.Restricted, ProcessorIdentifier = "pwsh" });
+
+            this.ValidateEnvironments(openResult, expectedEnvironments);
+
+            // Serialize set.
+            InMemoryRandomAccessStream stream = new InMemoryRandomAccessStream();
+            openResult.Set.Serialize(stream);
+
+            string yamlOutput = this.ReadStream(stream);
+
+            // Reopen configuration set from serialized string and verify values.
+            OpenConfigurationSetResult serializedSetResult = processor.OpenConfigurationSet(this.CreateStream(yamlOutput));
+
+            this.ValidateEnvironments(serializedSetResult, expectedEnvironments);
+        }
+
+        /// <summary>
+        /// Verifies that the configuration set (0.3) environments work with group units.
+        /// </summary>
+        [Fact]
+        public void EnvironmentsWithGroups_0_3()
+        {
+            ConfigurationProcessor processor = this.CreateConfigurationProcessorWithDiagnostics();
+
+            OpenConfigurationSetResult openResult = processor.OpenConfigurationSet(this.CreateStream(@"
+$schema: https://raw.githubusercontent.com/PowerShell/DSC/main/schemas/2023/08/config/document.json
+metadata:
+  winget:
+    securityContext: elevated
+    processor:
+      identifier: pwsh
+      properties:
+        a: b
+resources:
+  - name: non-group
+    type: Module/Resource2
+    properties:
+      l: '10'
+  - name: group
+    type: Module/Resource
+    metadata:
+      isGroup: true
+      winget:
+        securityContext: restricted
+    properties:
+      resources:
+        - name: inherit
+          type: Module/Resource
+          properties:
+            a: b
+        - name: override
+          type: Module/Resource
+          properties:
+            c: d
+          metadata:
+            winget:
+              processor: not-pwsh
+"));
+
+            Dictionary<string, string> environmentProperties = new Dictionary<string, string>();
+            environmentProperties.Add("a", "b");
+
+            Dictionary<string, ConfigurationEnvironmentData> expectedEnvironments = new Dictionary<string, ConfigurationEnvironmentData>();
+            expectedEnvironments.Add("non-group", new ConfigurationEnvironmentData() { Context = SecurityContext.Elevated, ProcessorIdentifier = "pwsh", ProcessorProperties = environmentProperties });
+            expectedEnvironments.Add("group", new ConfigurationEnvironmentData() { Context = SecurityContext.Restricted, ProcessorIdentifier = "pwsh", ProcessorProperties = environmentProperties });
+
+            Dictionary<string, ConfigurationEnvironmentData> groupExpectedEnvironments = new Dictionary<string, ConfigurationEnvironmentData>();
+            groupExpectedEnvironments.Add("inherit", new ConfigurationEnvironmentData() { Context = SecurityContext.Restricted, ProcessorIdentifier = "pwsh", ProcessorProperties = environmentProperties });
+            groupExpectedEnvironments.Add("override", new ConfigurationEnvironmentData() { Context = SecurityContext.Restricted, ProcessorIdentifier = "not-pwsh" });
+
+            this.ValidateEnvironments(openResult, expectedEnvironments, "group", groupExpectedEnvironments);
+
+            // Serialize set.
+            InMemoryRandomAccessStream stream = new InMemoryRandomAccessStream();
+            openResult.Set.Serialize(stream);
+
+            string yamlOutput = this.ReadStream(stream);
+
+            // Reopen configuration set from serialized string and verify values.
+            OpenConfigurationSetResult serializedSetResult = processor.OpenConfigurationSet(this.CreateStream(yamlOutput));
+
+            this.ValidateEnvironments(openResult, expectedEnvironments, "group", groupExpectedEnvironments);
+        }
+
+        private void ValidateEnvironments(OpenConfigurationSetResult openResult, Dictionary<string, ConfigurationEnvironmentData> expectedEnvironments, string? groupToCheck = null, Dictionary<string, ConfigurationEnvironmentData>? groupExpectedEnvironments = null)
+        {
+            Assert.Null(openResult.ResultCode);
+            Assert.NotNull(openResult.Set);
+            ConfigurationSet configurationSet = openResult.Set;
+
+            var units = configurationSet.Units;
+            this.ValidateEnvironments(units, expectedEnvironments, groupToCheck, groupExpectedEnvironments);
+        }
+
+        private void ValidateEnvironments(IList<ConfigurationUnit> units, Dictionary<string, ConfigurationEnvironmentData> expectedEnvironments, string? groupToCheck = null, Dictionary<string, ConfigurationEnvironmentData>? groupExpectedEnvironments = null)
+        {
+            Assert.Equal(expectedEnvironments.Count, units.Count);
+            foreach (var unit in units)
+            {
+                ConfigurationEnvironmentData? expectedEnvironment = null;
+                Assert.True(expectedEnvironments.TryGetValue(unit.Identifier, out expectedEnvironment));
+                Assert.NotNull(expectedEnvironment);
+                Assert.Equal(expectedEnvironment.Context, unit.Environment.Context);
+                Assert.Equal(expectedEnvironment.ProcessorIdentifier, unit.Environment.ProcessorIdentifier);
+                Assert.True(expectedEnvironment.PropertiesEqual(unit.Environment.ProcessorProperties));
+
+                if (unit.Identifier == groupToCheck)
+                {
+                    Assert.True(unit.IsGroup);
+                    Assert.NotNull(groupExpectedEnvironments);
+                    var groupUnits = unit.Units;
+                    this.ValidateEnvironments(groupUnits, groupExpectedEnvironments);
+                }
+            }
+        }
+
+        private void ValidateSecurityContexts(OpenConfigurationSetResult openResult, Dictionary<string, SecurityContext> expectedContexts)
+        {
+            Assert.Null(openResult.ResultCode);
+            Assert.NotNull(openResult.Set);
+            ConfigurationSet configurationSet = openResult.Set;
+
+            var units = configurationSet.Units;
+            Assert.Equal(expectedContexts.Count, units.Count);
+            foreach (var unit in units)
+            {
+                SecurityContext expectedContext = SecurityContext.Current;
+                Assert.True(expectedContexts.TryGetValue(unit.Identifier, out expectedContext));
+                Assert.Equal(expectedContext, unit.Environment.Context);
+            }
+        }
+
         private void TestParameterDefaultValue(string type, string defaultValue, object? expectedValue = null, Windows.Foundation.PropertyType? expectedType = null, bool secure = false)
         {
             ConfigurationProcessor processor = this.CreateConfigurationProcessorWithDiagnostics();
@@ -639,21 +1238,8 @@ parameters:
                 Assert.Equal(expectedType, parameters[0].Type);
                 Assert.Equal(secure, parameters[0].IsSecure);
 
-                switch (expectedValue ?? throw new ArgumentException("expectedValue"))
-                {
-                    case int i:
-                        Assert.Equal(i, (int)(long)parameters[0].DefaultValue);
-                        break;
-                    case string s:
-                        Assert.Equal(s, (string)parameters[0].DefaultValue);
-                        break;
-                    case bool b:
-                        Assert.Equal(b, (bool)parameters[0].DefaultValue);
-                        break;
-                    default:
-                        Assert.Fail($"Add expected type `{expectedValue.GetType().Name}` to switch statement.");
-                        break;
-                }
+                Assert.NotNull(expectedValue);
+                this.VerifyObject(expectedValue, parameters[0].DefaultValue);
             }
             else
             {
@@ -681,21 +1267,10 @@ parameters:
 
             foreach (var expectation in expected)
             {
-                Assert.True(values.ContainsKey(expectation.Key));
+                Assert.True(values.ContainsKey(expectation.Key), $"Not Found {expectation.Key}");
                 object value = values[expectation.Key];
 
-                switch (expectation.Value)
-                {
-                    case int i:
-                        Assert.Equal(i, (int)(long)value);
-                        break;
-                    case string s:
-                        Assert.Equal(s, (string)value);
-                        break;
-                    default:
-                        Assert.Fail($"Add expected type `{expectation.Value.GetType().Name}` to switch statement.");
-                        break;
-                }
+                this.VerifyObject(expectation.Value, value);
             }
         }
 
@@ -703,6 +1278,41 @@ parameters:
         {
             Assert.NotNull(strings);
             Assert.Equal(expected.Length, strings.Count);
+        }
+
+        private void VerifyParameter(ConfigurationParameter parameter, string name, Windows.Foundation.PropertyType type, bool secure, object? defaultValue = null)
+        {
+            Assert.Equal(name, parameter.Name);
+            Assert.Equal(type, parameter.Type);
+            Assert.Equal(secure, parameter.IsSecure);
+            this.VerifyObject(defaultValue, parameter.DefaultValue);
+        }
+
+        private void VerifyObject(object? expectedValue, object? actualValue)
+        {
+            if (expectedValue != null)
+            {
+                Assert.NotNull(actualValue);
+
+                switch (expectedValue)
+                {
+                    case int i:
+                        Assert.Equal(i, (int)(long)actualValue);
+                        break;
+                    case string s:
+                        Assert.Equal(s, (string)actualValue);
+                        break;
+                    case bool b:
+                        Assert.Equal(b, (bool)actualValue);
+                        break;
+                    case ValueSet v:
+                        Assert.True(v.ContentEquals(actualValue.As<ValueSet>()));
+                        break;
+                    default:
+                        Assert.Fail($"Add expected type `{expectedValue.GetType().Name}` to switch statement.");
+                        break;
+                }
+            }
         }
     }
 }

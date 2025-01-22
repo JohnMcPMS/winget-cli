@@ -4,9 +4,9 @@
 #include "PortableFlow.h"
 #include "PortableInstaller.h"
 #include "WorkflowBase.h"
-#include "winget/Filesystem.h"
-#include "winget/PortableFileEntry.h"
-#include <Microsoft/PortableIndex.h>
+#include <winget/Filesystem.h>
+#include <winget/PortableFileEntry.h>
+#include <winget/PortableIndex.h>
 
 using namespace AppInstaller::Manifest;
 using namespace AppInstaller::Repository;
@@ -135,11 +135,17 @@ namespace AppInstaller::CLI::Workflow
             }
         }
 
-        Utility::Architecture arch = context.Get<Execution::Data::Installer>()->Arch;
+        const auto& installer = context.Get<Execution::Data::Installer>().value();
+        Utility::Architecture arch = installer.Arch;
         const std::string& productCode = GetPortableProductCode(context);
 
         PortableInstaller portableInstaller = PortableInstaller(scope, arch, productCode);
         portableInstaller.IsUpdate = isUpdate;
+
+        if (IsArchiveType(installer.BaseInstallerType) && installer.ArchiveBinariesDependOnPath)
+        {
+            portableInstaller.BinariesDependOnPath = true;
+        }
 
         // Set target install directory
         std::string_view locationArg = context.Args.GetArg(Execution::Args::Type::InstallLocation);
@@ -239,7 +245,6 @@ namespace AppInstaller::CLI::Workflow
     void PortableInstallImpl(Execution::Context& context)
     {
         PortableInstaller& portableInstaller = context.Get<Execution::Data::PortableInstaller>();
-
         try
         {
             context.Reporter.Info() << Resource::String::InstallFlowStartingPackageInstall << std::endl;
