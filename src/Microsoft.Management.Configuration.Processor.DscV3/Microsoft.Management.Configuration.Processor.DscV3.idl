@@ -1,0 +1,14 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
+
+namespace Microsoft.Management.Configuration.Processor.DscV3
+{
+    [contractversion(1)]
+    apicontract Contract{};
+
+    [contract(Microsoft.Management.Configuration.Processor.DscV3.Contract, 1)]
+    runtimeclass DscV3ConfigurationSetProcessorFactory : [default] Microsoft.Management.Configuration.IConfigurationSetProcessorFactory
+    {
+        DscV3ConfigurationSetProcessorFactory();
+    }
+}
