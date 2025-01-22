@@ -3,11 +3,11 @@
 #pragma once
 #include <winrt/Microsoft.Management.Configuration.h>
 
-namespace winrt::Microsoft::Management::Configuration::Processor::Dsc::implementation
+namespace winrt::Microsoft::Management::Configuration::Processor::DscV3::implementation
 {
-    struct DscConfigurationUnitProcessorDetails : winrt::implements<DscConfigurationUnitProcessorDetails, winrt::Microsoft::Management::Configuration::IConfigurationUnitProcessorDetails2>
+    struct ConfigurationUnitProcessorDetails : winrt::implements<ConfigurationUnitProcessorDetails, winrt::Microsoft::Management::Configuration::IConfigurationUnitProcessorDetails2>
     {
-        DscConfigurationUnitProcessorDetails(const winrt::Microsoft::Management::Configuration::ConfigurationUnit& unit, ConfigurationUnitDetailFlags detailFlags);
+        ConfigurationUnitProcessorDetails(const winrt::Microsoft::Management::Configuration::ConfigurationUnit& unit, ConfigurationUnitDetailFlags detailFlags);
 
         winrt::hstring UnitType() const;
 

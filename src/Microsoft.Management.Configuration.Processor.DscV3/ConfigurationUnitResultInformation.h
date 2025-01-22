@@ -3,9 +3,9 @@
 #pragma once
 #include <winrt/Microsoft.Management.Configuration.h>
 
-namespace winrt::Microsoft::Management::Configuration::Processor::Dsc::implementation
+namespace winrt::Microsoft::Management::Configuration::Processor::DscV3::implementation
 {
-    struct DscConfigurationUnitResultInformation : winrt::implements<DscConfigurationUnitResultInformation, winrt::Microsoft::Management::Configuration::IConfigurationUnitResultInformation>
+    struct ConfigurationUnitResultInformation : winrt::implements<ConfigurationUnitResultInformation, winrt::Microsoft::Management::Configuration::IConfigurationUnitResultInformation>
     {
         winrt::hresult ResultCode() const;
         void ResultCode(winrt::hresult resultCode);

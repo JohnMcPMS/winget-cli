@@ -1,13 +1,13 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 #pragma once
-#include "DscConfigurationSetProcessorFactory.g.h"
+#include "DscV3ConfigurationSetProcessorFactory.g.h"
 
-namespace winrt::Microsoft::Management::Configuration::Processor::Dsc::implementation
+namespace winrt::Microsoft::Management::Configuration::Processor::DscV3::implementation
 {
-    struct DscConfigurationSetProcessorFactory : DscConfigurationSetProcessorFactoryT<DscConfigurationSetProcessorFactory>
+    struct DscV3ConfigurationSetProcessorFactory : DscV3ConfigurationSetProcessorFactoryT<DscV3ConfigurationSetProcessorFactory>
     {
-        DscConfigurationSetProcessorFactory() = default;
+        DscV3ConfigurationSetProcessorFactory() = default;
 
         winrt::Microsoft::Management::Configuration::IConfigurationSetProcessor CreateSetProcessor(winrt::Microsoft::Management::Configuration::ConfigurationSet const& configurationSet);
 
@@ -26,9 +26,9 @@ namespace winrt::Microsoft::Management::Configuration::Processor::Dsc::implement
 }
 
 #if !defined(INCLUDE_ONLY_INTERFACE_METHODS)
-namespace winrt::Microsoft::Management::Configuration::Processor::Dsc::factory_implementation
+namespace winrt::Microsoft::Management::Configuration::Processor::DscV3::factory_implementation
 {
-    struct DscConfigurationSetProcessorFactory : DscConfigurationSetProcessorFactoryT<DscConfigurationSetProcessorFactory, implementation::DscConfigurationSetProcessorFactory>
+    struct DscV3ConfigurationSetProcessorFactory : DscV3ConfigurationSetProcessorFactoryT<DscV3ConfigurationSetProcessorFactory, implementation::DscV3ConfigurationSetProcessorFactory>
     {
     };
 }

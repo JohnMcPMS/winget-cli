@@ -1,68 +1,68 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 #include "pch.h"
-#include "DscConfigurationSetProcessorFactory.h"
-#include "DscConfigurationUnitProcessor.h"
+#include "DscV3ConfigurationSetProcessorFactory.h"
+#include "ConfigurationUnitProcessor.h"
 #include "TestSettingsResult.h"
 #include "GetSettingsResult.h"
 #include "ApplySettingsResult.h"
 #include "GetAllSettingsResult.h"
 
-namespace winrt::Microsoft::Management::Configuration::Processor::Dsc::implementation
+namespace winrt::Microsoft::Management::Configuration::Processor::DscV3::implementation
 {
     using namespace winrt::Microsoft::Management::Configuration;
 
-    DscConfigurationUnitProcessor::DscConfigurationUnitProcessor(const ConfigurationUnit& unit, winrt::weak_ref<DscConfigurationSetProcessorFactory> const& weakFactory)
+    ConfigurationUnitProcessor::ConfigurationUnitProcessor(const ConfigurationUnit& unit, winrt::weak_ref<DscV3ConfigurationSetProcessorFactory> const& weakFactory)
         : m_unit(unit), m_weakFactory(weakFactory)
     {
     }
 
-    ITestSettingsResult DscConfigurationUnitProcessor::TestSettings()
+    ITestSettingsResult ConfigurationUnitProcessor::TestSettings()
     {
         return winrt::make<TestSettingsResult>(m_unit);
     }
 
-    IGetSettingsResult DscConfigurationUnitProcessor::GetSettings()
+    IGetSettingsResult ConfigurationUnitProcessor::GetSettings()
     {
         return winrt::make<GetSettingsResult>(m_unit);
     }
 
-    IApplySettingsResult DscConfigurationUnitProcessor::ApplySettings()
+    IApplySettingsResult ConfigurationUnitProcessor::ApplySettings()
     {
         return winrt::make<ApplySettingsResult>(m_unit);
     }
 
-    IGetAllSettingsResult DscConfigurationUnitProcessor::GetAllSettings()
+    IGetAllSettingsResult ConfigurationUnitProcessor::GetAllSettings()
     {
         return winrt::make<GetAllSettingsResult>(m_unit);
     }
 
-    DscConfigurationUnitProcessorGroup::DscConfigurationUnitProcessorGroup(const ConfigurationUnit& unit, winrt::weak_ref<DscConfigurationSetProcessorFactory> const& weakFactory)
+    ConfigurationUnitProcessorGroup::ConfigurationUnitProcessorGroup(const ConfigurationUnit& unit, winrt::weak_ref<DscV3ConfigurationSetProcessorFactory> const& weakFactory)
         : m_unit(unit), m_weakFactory(weakFactory)
     {
     }
 
-    ITestSettingsResult DscConfigurationUnitProcessorGroup::TestSettings()
+    ITestSettingsResult ConfigurationUnitProcessorGroup::TestSettings()
     {
         return winrt::make<TestSettingsResult>(m_unit);
     }
 
-    IGetSettingsResult DscConfigurationUnitProcessorGroup::GetSettings()
+    IGetSettingsResult ConfigurationUnitProcessorGroup::GetSettings()
     {
         return winrt::make<GetSettingsResult>(m_unit);
     }
 
-    IApplySettingsResult DscConfigurationUnitProcessorGroup::ApplySettings()
+    IApplySettingsResult ConfigurationUnitProcessorGroup::ApplySettings()
     {
         return winrt::make<ApplySettingsResult>(m_unit);
     }
 
-    IGetAllSettingsResult DscConfigurationUnitProcessorGroup::GetAllSettings()
+    IGetAllSettingsResult ConfigurationUnitProcessorGroup::GetAllSettings()
     {
         return winrt::make<GetAllSettingsResult>(m_unit);
     }
 
-    DscConfigurationUnitProcessorPowerShellGroup::DscConfigurationUnitProcessorPowerShellGroup(const ConfigurationUnit& unit, winrt::weak_ref<DscConfigurationSetProcessorFactory> const& weakFactory)
+    ConfigurationUnitProcessorPowerShellGroup::ConfigurationUnitProcessorPowerShellGroup(const ConfigurationUnit& unit, winrt::weak_ref<DscV3ConfigurationSetProcessorFactory> const& weakFactory)
         : m_unit(unit), m_weakFactory(weakFactory)
     {
         // TODO: Ensure install modules.
@@ -72,22 +72,22 @@ namespace winrt::Microsoft::Management::Configuration::Processor::Dsc::implement
         //   Then call the method.
     }
 
-    ITestSettingsResult DscConfigurationUnitProcessorPowerShellGroup::TestSettings()
+    ITestSettingsResult ConfigurationUnitProcessorPowerShellGroup::TestSettings()
     {
         return winrt::make<TestSettingsResult>(m_unit);
     }
 
-    IGetSettingsResult DscConfigurationUnitProcessorPowerShellGroup::GetSettings()
+    IGetSettingsResult ConfigurationUnitProcessorPowerShellGroup::GetSettings()
     {
         return winrt::make<GetSettingsResult>(m_unit);
     }
 
-    IApplySettingsResult DscConfigurationUnitProcessorPowerShellGroup::ApplySettings()
+    IApplySettingsResult ConfigurationUnitProcessorPowerShellGroup::ApplySettings()
     {
         return winrt::make<ApplySettingsResult>(m_unit);
     }
 
-    IGetAllSettingsResult DscConfigurationUnitProcessorPowerShellGroup::GetAllSettings()
+    IGetAllSettingsResult ConfigurationUnitProcessorPowerShellGroup::GetAllSettings()
     {
         return winrt::make<GetAllSettingsResult>(m_unit);
     }

@@ -2,26 +2,8 @@
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
     <ClCompile Include="pch.cpp" />
-    <ClCompile Include="DscConfigurationSetProcessorFactory.cpp">
-      <Filter>API Source</Filter>
-    </ClCompile>
     <ClCompile Include="$(GeneratedFilesDir)module.g.cpp" />
     <ClCompile Include="ApplySettingsResult.cpp">
-      <Filter>Internals</Filter>
-    </ClCompile>
-    <ClCompile Include="DscConfigurationSetProcessor.cpp">
-      <Filter>Internals</Filter>
-    </ClCompile>
-    <ClCompile Include="DscConfigurationUnitProcessor.cpp">
-      <Filter>Internals</Filter>
-    </ClCompile>
-    <ClCompile Include="DscConfigurationUnitProcessorDetails.cpp">
-      <Filter>Internals</Filter>
-    </ClCompile>
-    <ClCompile Include="DscConfigurationUnitResultInformation.cpp">
-      <Filter>Internals</Filter>
-    </ClCompile>
-    <ClCompile Include="DscConfigurationUnitSettingDetails.cpp">
       <Filter>Internals</Filter>
     </ClCompile>
     <ClCompile Include="GetAllSettingsResult.cpp">
@@ -36,28 +18,28 @@
     <ClCompile Include="DscProcessor.cpp">
       <Filter>Processor</Filter>
     </ClCompile>
+    <ClCompile Include="DscV3ConfigurationSetProcessorFactory.cpp">
+      <Filter>API Source</Filter>
+    </ClCompile>
+    <ClCompile Include="ConfigurationSetProcessor.cpp">
+      <Filter>Internals</Filter>
+    </ClCompile>
+    <ClCompile Include="ConfigurationUnitProcessor.cpp">
+      <Filter>Internals</Filter>
+    </ClCompile>
+    <ClCompile Include="ConfigurationUnitProcessorDetails.cpp">
+      <Filter>Internals</Filter>
+    </ClCompile>
+    <ClCompile Include="ConfigurationUnitResultInformation.cpp">
+      <Filter>Internals</Filter>
+    </ClCompile>
+    <ClCompile Include="ConfigurationUnitSettingDetails.cpp">
+      <Filter>Internals</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="pch.h" />
-    <ClInclude Include="DscConfigurationSetProcessorFactory.h">
-      <Filter>API Headers</Filter>
-    </ClInclude>
     <ClInclude Include="ApplySettingsResult.h">
-      <Filter>Internals</Filter>
-    </ClInclude>
-    <ClInclude Include="DscConfigurationSetProcessor.h">
-      <Filter>Internals</Filter>
-    </ClInclude>
-    <ClInclude Include="DscConfigurationUnitProcessor.h">
-      <Filter>Internals</Filter>
-    </ClInclude>
-    <ClInclude Include="DscConfigurationUnitProcessorDetails.h">
-      <Filter>Internals</Filter>
-    </ClInclude>
-    <ClInclude Include="DscConfigurationUnitResultInformation.h">
-      <Filter>Internals</Filter>
-    </ClInclude>
-    <ClInclude Include="DscConfigurationUnitSettingDetails.h">
       <Filter>Internals</Filter>
     </ClInclude>
     <ClInclude Include="GetAllSettingsResult.h">
@@ -72,12 +54,30 @@
     <ClInclude Include="DscProcessor.h">
       <Filter>Processor</Filter>
     </ClInclude>
+    <ClInclude Include="DscV3ConfigurationSetProcessorFactory.h">
+      <Filter>API Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="ConfigurationSetProcessor.h">
+      <Filter>Internals</Filter>
+    </ClInclude>
+    <ClInclude Include="ConfigurationUnitProcessor.h">
+      <Filter>Internals</Filter>
+    </ClInclude>
+    <ClInclude Include="ConfigurationUnitProcessorDetails.h">
+      <Filter>Internals</Filter>
+    </ClInclude>
+    <ClInclude Include="ConfigurationUnitResultInformation.h">
+      <Filter>Internals</Filter>
+    </ClInclude>
+    <ClInclude Include="ConfigurationUnitSettingDetails.h">
+      <Filter>Internals</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <Midl Include="Microsoft.Management.Configuration.Processor.Dsc.idl" />
+    <Midl Include="Microsoft.Management.Configuration.Processor.DscV3.idl" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="Microsoft_Management_Configuration_Processor_Dsc.def" />
+    <None Include="Microsoft_Management_Configuration_Processor_DscV3.def" />
     <None Include="packages.config" />
     <None Include="PropertySheet.props" />
   </ItemGroup>

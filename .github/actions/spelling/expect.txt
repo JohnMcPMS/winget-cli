@@ -502,6 +502,7 @@ sqlite
 Srinivasan
 SRL
 srs
+STARTF
 STDMETHODCALLTYPE
 storeapps
 storeorigin
@@ -559,6 +560,7 @@ URLZONE
 USEDEFAULT
 userfilesetting
 userprofile
+USESTDHANDLES
 uswgp
 uwp
 VALUENAMECASE

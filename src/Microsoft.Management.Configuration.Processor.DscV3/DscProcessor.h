@@ -2,7 +2,7 @@
 // Licensed under the MIT License.
 #pragma once
 
-namespace winrt::Microsoft::Management::Configuration::Processor::Dsc::implementation
+namespace winrt::Microsoft::Management::Configuration::Processor::DscV3::implementation
 {
     struct DscProcessorResult
     {

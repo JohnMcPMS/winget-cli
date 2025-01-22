@@ -2,13 +2,13 @@
 // Licensed under the MIT License.
 #pragma once
 #include <winrt/Microsoft.Management.Configuration.h>
-#include "DscConfigurationSetProcessorFactory.h"
+#include "DscV3ConfigurationSetProcessorFactory.h"
 
-namespace winrt::Microsoft::Management::Configuration::Processor::Dsc::implementation
+namespace winrt::Microsoft::Management::Configuration::Processor::DscV3::implementation
 {
-    struct DscConfigurationSetProcessor : winrt::implements<DscConfigurationSetProcessor, winrt::Microsoft::Management::Configuration::IConfigurationSetProcessor>
+    struct ConfigurationSetProcessor : winrt::implements<ConfigurationSetProcessor, winrt::Microsoft::Management::Configuration::IConfigurationSetProcessor>
     {
-        DscConfigurationSetProcessor(winrt::Microsoft::Management::Configuration::ConfigurationSet const& configurationSet, winrt::weak_ref<DscConfigurationSetProcessorFactory> const& weakFactory);
+        ConfigurationSetProcessor(winrt::Microsoft::Management::Configuration::ConfigurationSet const& configurationSet, winrt::weak_ref<DscV3ConfigurationSetProcessorFactory> const& weakFactory);
 
         winrt::Microsoft::Management::Configuration::IConfigurationUnitProcessorDetails GetUnitProcessorDetails(
             const winrt::Microsoft::Management::Configuration::ConfigurationUnit& unit,
@@ -19,6 +19,6 @@ namespace winrt::Microsoft::Management::Configuration::Processor::Dsc::implement
 
     private:
         winrt::Microsoft::Management::Configuration::ConfigurationSet m_configurationSet;
-        winrt::weak_ref<DscConfigurationSetProcessorFactory> m_weakFactory;
+        winrt::weak_ref<DscV3ConfigurationSetProcessorFactory> m_weakFactory;
     };
 }

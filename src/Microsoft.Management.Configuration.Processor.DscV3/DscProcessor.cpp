@@ -3,7 +3,7 @@
 #include "pch.h"
 #include "DscProcessor.h"
 
-namespace winrt::Microsoft::Management::Configuration::Processor::Dsc::implementation
+namespace winrt::Microsoft::Management::Configuration::Processor::DscV3::implementation
 {
     namespace
     {

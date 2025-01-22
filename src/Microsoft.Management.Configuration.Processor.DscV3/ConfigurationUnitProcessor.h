@@ -2,13 +2,13 @@
 // Licensed under the MIT License.
 #pragma once
 #include <winrt/Microsoft.Management.Configuration.h>
-#include "DscConfigurationSetProcessorFactory.h"
+#include "DscV3ConfigurationSetProcessorFactory.h"
 
-namespace winrt::Microsoft::Management::Configuration::Processor::Dsc::implementation
+namespace winrt::Microsoft::Management::Configuration::Processor::DscV3::implementation
 {
-    struct DscConfigurationUnitProcessor : winrt::implements<DscConfigurationUnitProcessor, winrt::Microsoft::Management::Configuration::IGetAllSettingsConfigurationUnitProcessor>
+    struct ConfigurationUnitProcessor : winrt::implements<ConfigurationUnitProcessor, winrt::Microsoft::Management::Configuration::IGetAllSettingsConfigurationUnitProcessor>
     {
-        DscConfigurationUnitProcessor(const winrt::Microsoft::Management::Configuration::ConfigurationUnit& unit, winrt::weak_ref<DscConfigurationSetProcessorFactory> const& weakFactory);
+        ConfigurationUnitProcessor(const winrt::Microsoft::Management::Configuration::ConfigurationUnit& unit, winrt::weak_ref<DscV3ConfigurationSetProcessorFactory> const& weakFactory);
 
         winrt::Microsoft::Management::Configuration::ConfigurationUnit Unit() { return m_unit; }
 
@@ -19,12 +19,12 @@ namespace winrt::Microsoft::Management::Configuration::Processor::Dsc::implement
 
     private:
         winrt::Microsoft::Management::Configuration::ConfigurationUnit m_unit;
-        winrt::weak_ref<DscConfigurationSetProcessorFactory> m_weakFactory;
+        winrt::weak_ref<DscV3ConfigurationSetProcessorFactory> m_weakFactory;
     };
 
-    struct DscConfigurationUnitProcessorGroup : winrt::implements<DscConfigurationUnitProcessorGroup, winrt::Microsoft::Management::Configuration::IGetAllSettingsConfigurationUnitProcessor>
+    struct ConfigurationUnitProcessorGroup : winrt::implements<ConfigurationUnitProcessorGroup, winrt::Microsoft::Management::Configuration::IGetAllSettingsConfigurationUnitProcessor>
     {
-        DscConfigurationUnitProcessorGroup(const winrt::Microsoft::Management::Configuration::ConfigurationUnit& unit, winrt::weak_ref<DscConfigurationSetProcessorFactory> const& weakFactory);
+        ConfigurationUnitProcessorGroup(const winrt::Microsoft::Management::Configuration::ConfigurationUnit& unit, winrt::weak_ref<DscV3ConfigurationSetProcessorFactory> const& weakFactory);
 
         winrt::Microsoft::Management::Configuration::ConfigurationUnit Unit() { return m_unit; }
 
@@ -35,12 +35,12 @@ namespace winrt::Microsoft::Management::Configuration::Processor::Dsc::implement
 
     private:
         winrt::Microsoft::Management::Configuration::ConfigurationUnit m_unit;
-        winrt::weak_ref<DscConfigurationSetProcessorFactory> m_weakFactory;
+        winrt::weak_ref<DscV3ConfigurationSetProcessorFactory> m_weakFactory;
     };
 
-    struct DscConfigurationUnitProcessorPowerShellGroup : winrt::implements<DscConfigurationUnitProcessorPowerShellGroup, winrt::Microsoft::Management::Configuration::IGetAllSettingsConfigurationUnitProcessor>
+    struct ConfigurationUnitProcessorPowerShellGroup : winrt::implements<ConfigurationUnitProcessorPowerShellGroup, winrt::Microsoft::Management::Configuration::IGetAllSettingsConfigurationUnitProcessor>
     {
-        DscConfigurationUnitProcessorPowerShellGroup(const winrt::Microsoft::Management::Configuration::ConfigurationUnit& unit, winrt::weak_ref<DscConfigurationSetProcessorFactory> const& weakFactory);
+        ConfigurationUnitProcessorPowerShellGroup(const winrt::Microsoft::Management::Configuration::ConfigurationUnit& unit, winrt::weak_ref<DscV3ConfigurationSetProcessorFactory> const& weakFactory);
 
         winrt::Microsoft::Management::Configuration::ConfigurationUnit Unit() { return m_unit; }
 
@@ -51,6 +51,6 @@ namespace winrt::Microsoft::Management::Configuration::Processor::Dsc::implement
 
     private:
         winrt::Microsoft::Management::Configuration::ConfigurationUnit m_unit;
-        winrt::weak_ref<DscConfigurationSetProcessorFactory> m_weakFactory;
+        winrt::weak_ref<DscV3ConfigurationSetProcessorFactory> m_weakFactory;
     };
 }
