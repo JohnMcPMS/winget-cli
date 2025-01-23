@@ -411,6 +411,7 @@
     <ClInclude Include="Public\winget\Certificates.h" />
     <ClInclude Include="Public\winget\Compression.h" />
     <ClInclude Include="Public\winget\ConfigurationSetProcessorHandlers.h" />
+    <ClInclude Include="Public\winget\DscV3Wrapper.h" />
     <ClInclude Include="Public\winget\Filesystem.h" />
     <ClInclude Include="Public\winget\GroupPolicy.h" />
     <ClInclude Include="Public\winget\IConfigurationStaticsInternals.h" />
@@ -441,6 +442,7 @@
     <ClCompile Include="Certificates.cpp" />
     <ClCompile Include="Compression.cpp" />
     <ClCompile Include="DateTime.cpp" />
+    <ClCompile Include="DscV3Wrapper.cpp" />
     <ClCompile Include="Errors.cpp" />
     <ClCompile Include="Filesystem.cpp" />
     <ClCompile Include="GroupPolicy.cpp" />
