@@ -80,7 +80,35 @@ namespace AppInstaller::DSC
         // Gets the HRESULT and error message if it indicates failure.
         static std::pair<HRESULT, std::string> GetErrorInfo(const ExecuteResult& result);
 
-        // TODO: Process successful results into defined structures
+        // Contains a structured version of the data from a `list` command.
+        struct ResourceListItem
+        {
+
+        };
+
+        // Processes the successful output from a `list` command.
+        static std::vector<ResourceListItem> ProcessResourceListResult(const std::string& output);
+        static std::vector<ResourceListItem> ProcessResourceListResult(const ExecuteResult& result);
+
+        // Contains a structured version of the data from a `schema` command.
+        struct ResourceSchema
+        {
+
+        };
+
+        // Processes the successful output from a `schema` command.
+        static ResourceSchema ProcessResourceSchemaResult(const std::string& output);
+        static ResourceSchema ProcessResourceSchemaResult(const ExecuteResult& result);
+
+        // Contains a structured version of the data from a `get` command.
+        struct ResourceGetResponse
+        {
+
+        };
+
+        // Processes the successful output from a `get` command.
+        static ResourceGetResponse ProcessResourceGetResult(const std::string& output);
+        static ResourceGetResponse ProcessResourceGetResult(const ExecuteResult& result);
 
     private:
         // Executes an arbitrary command.
