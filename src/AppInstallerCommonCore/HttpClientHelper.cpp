@@ -9,6 +9,29 @@
 
 namespace AppInstaller::Http
 {
+    namespace details
+    {
+        void InvocationContext::CaptureRequestContext(web::http::client::native_handle handle)
+        {
+            HINTERNET requestHandle = reinterpret_cast<HINTERNET>(handle);
+            std::weak_ptr<void>* contextValue = nullptr;
+            DWORD valueSize = sizeof(contextValue);
+
+            if (LOG_IF_WIN32_BOOL_FALSE(WinHttpQueryOption(requestHandle, WINHTTP_OPTION_CONTEXT_VALUE, &contextValue, &valueSize)))
+            {
+                if (contextValue && valueSize == sizeof(contextValue))
+                {
+                    std::shared_ptr<void> lockedContextValue = contextValue->lock();
+                    if (lockedContextValue)
+                    {
+                        RequestHandle = requestHandle;
+                        RequestContextLifetime = std::move(lockedContextValue);
+                    }
+                }
+            }
+        }
+    }
+
     namespace
     {
         // If the caller does not pass in a user agent header, put the default one on the request.
@@ -25,6 +48,7 @@ namespace AppInstaller::Http
         void NativeHandleServerCertificateValidation(web::http::client::native_handle handle, const Certificates::PinningConfiguration& pinningConfiguration)
         {
             HINTERNET requestHandle = reinterpret_cast<HINTERNET>(handle);
+            THROW_HR_IF(E_POINTER, requestHandle == NULL || requestHandle == INVALID_HANDLE_VALUE);
 
             // Get certificate and pass along to pinning config
             wil::unique_cert_context certContext;
@@ -44,6 +68,33 @@ namespace AppInstaller::Http
 
             return 0s;
         }
+
+        details::InvocationContext GetClient(
+            const utility::string_t& uri,
+            web::http::client::http_client_config clientConfig,
+            const std::shared_ptr<web::http::http_pipeline_stage>& defaultRequestHandlerStage,
+            bool captureRequestContext)
+        {
+            details::InvocationContext result;
+
+            if (captureRequestContext)
+            {
+                clientConfig.set_nativehandle_options([&result](web::http::client::native_handle handle)
+                    {
+                        result.CaptureRequestContext(handle);
+                    });
+            }
+
+            result.HttpClient = std::make_unique<web::http::client::http_client>(uri, clientConfig);
+
+            // Add default custom handlers if any.
+            if (defaultRequestHandlerStage)
+            {
+                result.HttpClient->add_handler(defaultRequestHandlerStage);
+            }
+
+            return result;
+        }
     }
 
     HttpClientHelper::HttpClientHelper(std::shared_ptr<web::http::http_pipeline_stage> stage)
@@ -61,14 +112,14 @@ namespace AppInstaller::Http
         }
     }
 
-    pplx::task<web::http::http_response> HttpClientHelper::Post(
+    details::InvocationContext HttpClientHelper::Post(
         const utility::string_t& uri,
         const web::json::value& body,
         const HttpClientHelper::HttpRequestHeaders& headers,
         const HttpClientHelper::HttpRequestHeaders& authHeaders) const
     {
         AICLI_LOG(Repo, Info, << "Sending http POST request to: " << utility::conversions::to_utf8string(uri));
-        web::http::client::http_client client = GetClient(uri);
+        details::InvocationContext result = GetClient(uri, m_clientConfig, m_defaultRequestHandlerStage, m_pinningConfiguration.has_value());
         web::http::http_request request{ web::http::methods::POST };
         request.headers().set_content_type(web::http::details::mime_types::application_json);
         request.set_body(body.serialize());
@@ -88,7 +139,8 @@ namespace AppInstaller::Http
             request.headers().add(pair.first, pair.second);
         }
 
-        return client.request(request);
+        result.ResponseTask = result.HttpClient->request(request);
+        return result;
     }
 
     std::optional<web::json::value> HttpClientHelper::HandlePost(
@@ -99,10 +151,16 @@ namespace AppInstaller::Http
         const HttpResponseHandler& customHandler) const try
     {
         web::http::http_response httpResponse;
-        Post(uri, body, headers, authHeaders).then([&httpResponse](const web::http::http_response& response)
+        details::InvocationContext context = Post(uri, body, headers, authHeaders);
+        context.ResponseTask.then([&httpResponse](const web::http::http_response& response)
             {
                 httpResponse = response;
             }).wait();
+
+        if (m_pinningConfiguration)
+        {
+            NativeHandleServerCertificateValidation(context.RequestHandle, m_pinningConfiguration.value());
+        }
 
         if (customHandler)
         {
@@ -120,13 +178,13 @@ namespace AppInstaller::Http
         RethrowAsWilException(exception);
     }
 
-    pplx::task<web::http::http_response> HttpClientHelper::Get(
+    details::InvocationContext HttpClientHelper::Get(
         const utility::string_t& uri,
         const HttpClientHelper::HttpRequestHeaders& headers,
         const HttpClientHelper::HttpRequestHeaders& authHeaders) const
     {
         AICLI_LOG(Repo, Info, << "Sending http GET request to: " << utility::conversions::to_utf8string(uri));
-        web::http::client::http_client client = GetClient(uri);
+        details::InvocationContext result = GetClient(uri, m_clientConfig, m_defaultRequestHandlerStage, m_pinningConfiguration.has_value());
         web::http::http_request request{ web::http::methods::GET };
         request.headers().set_content_type(web::http::details::mime_types::application_json);
 
@@ -145,7 +203,8 @@ namespace AppInstaller::Http
             request.headers().add(pair.first, pair.second);
         }
 
-        return client.request(request);
+        result.ResponseTask = result.HttpClient->request(request);
+        return result;
     }
 
     std::optional<web::json::value> HttpClientHelper::HandleGet(
@@ -155,10 +214,16 @@ namespace AppInstaller::Http
         const HttpResponseHandler& customHandler) const try
     {
         web::http::http_response httpResponse;
-        Get(uri, headers, authHeaders).then([&httpResponse](const web::http::http_response& response)
+        details::InvocationContext context = Get(uri, headers, authHeaders);
+        context.ResponseTask.then([&httpResponse](const web::http::http_response& response)
             {
                 httpResponse = response;
             }).wait();
+
+        if (m_pinningConfiguration)
+        {
+            NativeHandleServerCertificateValidation(context.RequestHandle, m_pinningConfiguration.value());
+        }
 
         if (customHandler)
         {
@@ -178,23 +243,7 @@ namespace AppInstaller::Http
 
     void HttpClientHelper::SetPinningConfiguration(const Certificates::PinningConfiguration& configuration)
     {
-        m_clientConfig.set_nativehandle_servercertificate_validation([pinConfig = configuration](web::http::client::native_handle handle)
-            {
-                NativeHandleServerCertificateValidation(handle, pinConfig);
-            });
-    }
-
-    web::http::client::http_client HttpClientHelper::GetClient(const utility::string_t& uri) const
-    {
-        web::http::client::http_client client{ uri, m_clientConfig };
-
-        // Add default custom handlers if any.
-        if (m_defaultRequestHandlerStage)
-        {
-            client.add_handler(m_defaultRequestHandlerStage);
-        }
-
-        return client;
+        m_pinningConfiguration = configuration;
     }
 
     std::optional<web::json::value> HttpClientHelper::ValidateAndExtractResponse(const web::http::http_response& response) const
