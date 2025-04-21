@@ -18,6 +18,7 @@
 #include <wincrypt.h>
 #include <deliveryoptimization.h>
 #include <deliveryoptimizationerrors.h>
+#include <winhttp.h>
 
 #include "TraceLogging.h"
 
