@@ -6,6 +6,7 @@
 
 namespace WinGetMCPServer
 {
+    using Microsoft.Extensions.Configuration;
     using Microsoft.Extensions.DependencyInjection;
     using Microsoft.Extensions.Hosting;
     using Microsoft.Extensions.Logging;
@@ -17,7 +18,13 @@ namespace WinGetMCPServer
 
         static void Main(string[] args)
         {
-            var builder = Host.CreateApplicationBuilder();
+            // Set the content root to our package location
+            HostApplicationBuilderSettings settings = new HostApplicationBuilderSettings { Configuration = new ConfigurationManager() };
+            string contentRootPath = Path.Combine(Windows.Storage.ApplicationData.Current.LocalFolder.Path, "MCP");
+            Directory.CreateDirectory(contentRootPath);
+            settings.Configuration[HostDefaults.ContentRootKey] = contentRootPath;
+
+            var builder = Host.CreateApplicationBuilder(settings);
             builder.Logging.AddConsole(consoleOptions => { consoleOptions.LogToStandardErrorThreshold = LogLevel.Trace; });
 
             builder.Services
