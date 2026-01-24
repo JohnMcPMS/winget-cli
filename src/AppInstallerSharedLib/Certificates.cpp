@@ -644,17 +644,7 @@ namespace AppInstaller::Certificates
 
         THROW_IF_WIN32_BOOL_FALSE(CertGetCertificateChain(nullptr, certContext, nullptr, certContext->hCertStore, &chainParameters, CERT_CHAIN_REVOCATION_CHECK_CHAIN, nullptr, &chainContext));
 
-        bool result = false;
-
-        for (const auto& chain : m_configuration)
-        {
-            if (chain.Validate(chainContext.get()))
-            {
-                AICLI_LOG(Core, Verbose, << "Certificate `" << GetSimpleDisplayName(certContext) << "` accepted by pinning configuration:\n" << chain.GetDescription());
-                result = true;
-                break;
-            }
-        }
+        bool result = ValidateChain(certContext, chainContext.get());
 
         if (result)
         {
@@ -667,6 +657,20 @@ namespace AppInstaller::Certificates
         }
 
         return result;
+    }
+
+    bool PinningConfiguration::ValidateChain(PCCERT_CONTEXT certContext, PCCERT_CHAIN_CONTEXT chainContext) const
+    {
+        for (const auto& chain : m_configuration)
+        {
+            if (chain.Validate(chainContext))
+            {
+                AICLI_LOG(Core, Verbose, << "Certificate `" << GetSimpleDisplayName(certContext) << "` accepted by pinning chain:\n" << chain.GetDescription());
+                return true;
+            }
+        }
+
+        return false;
     }
 
     // The JSON is expected to look like:

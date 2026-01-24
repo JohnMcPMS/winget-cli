@@ -212,6 +212,8 @@
   <ItemGroup>
     <ClInclude Include="DependenciesTestSource.h" />
     <ClInclude Include="pch.h" />
+    <ClInclude Include="resource.h" />
+    <ClInclude Include="TestCertificates.h" />
     <ClInclude Include="TestCommon.h" />
     <ClInclude Include="TestConfiguration.h" />
     <ClInclude Include="TestRestRequestHandler.h" />
@@ -440,6 +442,7 @@
     <CopyFileToFolders Include="TestData\ImportFile-Good-WithLicenseAgreement.json">
       <DeploymentContent>true</DeploymentContent>
     </CopyFileToFolders>
+    <None Include="New-TestCertificateChains.ps1" />
     <None Include="packages.config" />
     <None Include="PropertySheet.props" />
     <CopyFileToFolders Include="TestData\InstallerArgTest_Inno_NoSwitches.yaml">
@@ -1090,6 +1093,9 @@
     <ProjectReference Include="..\SfsClient\SfsClient.vcxproj">
       <Project>{1b9077b3-8923-4ecd-8fc9-b3190fcbe4d4}</Project>
     </ProjectReference>
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="TestCertificates.rc" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

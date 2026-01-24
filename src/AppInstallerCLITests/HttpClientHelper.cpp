@@ -8,7 +8,7 @@
 #include <AppInstallerStrings.h>
 #include <winget/Certificates.h>
 #include <winget/HttpClientHelper.h>
-#include <CertificateResources.h>
+#include "TestCertificates.h"
 #include <winget/JsonUtil.h>
 
 using namespace AppInstaller::Http;
@@ -66,11 +66,11 @@ TEST_CASE("HttpClientHelper_PinningConfiguration", "[RestSource]")
     // Create the Store chain config
     PinningChain chain;
     auto chainElement = chain.Root();
-    chainElement->LoadCertificate(IDX_CERTIFICATE_STORE_ROOT_2, CERTIFICATE_RESOURCE_TYPE).SetPinning(PinningVerificationType::PublicKey);
+    chainElement->LoadCertificate(IDX_CERTIFICATE_TEST_ROOT_2, CERTIFICATE_RESOURCE_TYPE).SetPinning(PinningVerificationType::PublicKey);
     chainElement = chainElement.Next();
-    chainElement->LoadCertificate(IDX_CERTIFICATE_STORE_INTERMEDIATE_2, CERTIFICATE_RESOURCE_TYPE).SetPinning(PinningVerificationType::Subject | PinningVerificationType::Issuer);
+    chainElement->LoadCertificate(IDX_CERTIFICATE_TEST_INTERMEDIATE_2, CERTIFICATE_RESOURCE_TYPE).SetPinning(PinningVerificationType::Subject | PinningVerificationType::Issuer);
     chainElement = chainElement.Next();
-    chainElement->LoadCertificate(IDX_CERTIFICATE_STORE_LEAF_2, CERTIFICATE_RESOURCE_TYPE).SetPinning(PinningVerificationType::Subject | PinningVerificationType::Issuer);
+    chainElement->LoadCertificate(IDX_CERTIFICATE_TEST_LEAF_2, CERTIFICATE_RESOURCE_TYPE).SetPinning(PinningVerificationType::Subject | PinningVerificationType::Issuer);
 
     PinningConfiguration config;
     config.AddChain(chain);

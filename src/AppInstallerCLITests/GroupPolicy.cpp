@@ -5,7 +5,7 @@
 #include "TestSettings.h"
 #include "winget/GroupPolicy.h"
 #include <AppInstallerStrings.h>
-#include <CertificateResources.h>
+#include "TestCertificates.h"
 
 using namespace TestCommon;
 using namespace AppInstaller::Settings;
@@ -302,11 +302,11 @@ TEST_CASE("GroupPolicy_Sources", "[groupPolicy]")
         auto additionalSourcesKey = RegCreateVolatileSubKey(policiesKey.get(), AdditionalSourcesPolicyKeyName);
 
         PinningDetails rootCert;
-        rootCert.LoadCertificate(IDX_CERTIFICATE_STORE_ROOT_2, CERTIFICATE_RESOURCE_TYPE);
+        rootCert.LoadCertificate(IDX_CERTIFICATE_TEST_ROOT_2, CERTIFICATE_RESOURCE_TYPE);
         PinningDetails intermediateCert;
-        intermediateCert.LoadCertificate(IDX_CERTIFICATE_STORE_INTERMEDIATE_2, CERTIFICATE_RESOURCE_TYPE);
+        intermediateCert.LoadCertificate(IDX_CERTIFICATE_TEST_INTERMEDIATE_2, CERTIFICATE_RESOURCE_TYPE);
         PinningDetails leafCert;
-        leafCert.LoadCertificate(IDX_CERTIFICATE_STORE_LEAF_2, CERTIFICATE_RESOURCE_TYPE);
+        leafCert.LoadCertificate(IDX_CERTIFICATE_TEST_LEAF_2, CERTIFICATE_RESOURCE_TYPE);
 
         auto getBytesString = [](const PinningDetails& details)
         {

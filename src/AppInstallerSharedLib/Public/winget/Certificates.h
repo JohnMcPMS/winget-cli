@@ -191,6 +191,15 @@ namespace AppInstaller::Certificates
         // Returns false to indicate the it does not.
         bool Validate(PCCERT_CONTEXT certContext) const;
 
+        // This entry point is largely used to allow tests to function without needing additional hooks.
+        // Use Validate for standard product code.
+        // 
+        // Validates the given certificate chain against the configuration.
+        // Returns true to indicate that the certificate meets the pinning configuration criteria.
+        // Returns false to indicate the it does not.
+        // Does not cache on success, use Validate for that.
+        bool ValidateChain(PCCERT_CONTEXT certContext, PCCERT_CHAIN_CONTEXT chainContext) const;
+
         // True if no pinning is configured.
         bool IsEmpty() const { return m_configuration.empty(); }
 
