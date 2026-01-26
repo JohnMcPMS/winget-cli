@@ -545,6 +545,7 @@ sqlite
 Srinivasan
 SRL
 srs
+ssw
 STDMETHODCALLTYPE
 storeapps
 storeorigin
@@ -563,6 +564,7 @@ TARG
 taskhostw
 tcreate
 tcs
+testleaf
 tellp
 temppath
 testexampleinstaller
