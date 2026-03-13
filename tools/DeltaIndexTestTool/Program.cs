@@ -26,6 +26,8 @@ namespace DeltaIndexTestTool
             int intervalDays = 7;
             int maxCheckpoints = 0;
             string branch = "master";
+            string resumeCommit = string.Empty;
+            string resumeWorkingIndexPath = string.Empty;
 
             for (int i = 0; i < args.Length; i++)
             {
@@ -46,6 +48,12 @@ namespace DeltaIndexTestTool
                     case "--branch" when i + 1 < args.Length:
                         branch = args[++i];
                         break;
+                    case "--resume-commit" when i + 1 < args.Length:
+                        resumeCommit = args[++i];
+                        break;
+                    case "--resume-working-index" when i + 1 < args.Length:
+                        resumeWorkingIndexPath = args[++i];
+                        break;
                     case "--help":
                     case "-h":
                         PrintUsage();
@@ -65,11 +73,28 @@ namespace DeltaIndexTestTool
                 return 1;
             }
 
+            // Validate resume arguments: both must be provided together
+            bool hasResume = !string.IsNullOrEmpty(resumeCommit) || !string.IsNullOrEmpty(resumeWorkingIndexPath);
+            if (hasResume)
+            {
+                if (string.IsNullOrEmpty(resumeCommit) || string.IsNullOrEmpty(resumeWorkingIndexPath))
+                {
+                    Console.Error.WriteLine("--resume-commit and --resume-working-index must be provided together.");
+                    return 1;
+                }
+                if (!File.Exists(resumeWorkingIndexPath))
+                {
+                    Console.Error.WriteLine($"Resume working index not found: {resumeWorkingIndexPath}");
+                    return 1;
+                }
+            }
+
             Directory.CreateDirectory(outputDir);
 
             try
             {
-                RunAnalysis(repoPath, outputDir, branch, intervalDays, maxCheckpoints);
+                RunAnalysis(repoPath, outputDir, branch, intervalDays, maxCheckpoints,
+                    resumeCommit, resumeWorkingIndexPath);
                 return 0;
             }
             catch (Exception ex)
@@ -87,24 +112,36 @@ namespace DeltaIndexTestTool
             Console.WriteLine("Usage: DeltaIndexTestTool --repo <path> --output <dir> [options]");
             Console.WriteLine();
             Console.WriteLine("Options:");
-            Console.WriteLine("  --repo <path>      Path to local winget-pkgs git clone");
-            Console.WriteLine("  --output <dir>     Directory to write results and index files");
-            Console.WriteLine("  --interval <days>  Interval between checkpoints in days (default: 7)");
-            Console.WriteLine("  --max <n>          Maximum number of checkpoints to process (default: all)");
-            Console.WriteLine("  --branch <name>    Branch to walk (default: master)");
+            Console.WriteLine("  --repo <path>                   Path to local winget-pkgs git clone");
+            Console.WriteLine("  --output <dir>                  Directory to write results and index files");
+            Console.WriteLine("  --interval <days>               Interval between checkpoints in days (default: 7)");
+            Console.WriteLine("  --max <n>                       Maximum number of checkpoints; selects the N most");
+            Console.WriteLine("                                  recent intervals working backward from HEAD");
+            Console.WriteLine("  --branch <name>                 Branch to walk (default: master)");
+            Console.WriteLine("  --resume-commit <sha>           Commit SHA to resume from (skip initial build)");
+            Console.WriteLine("  --resume-working-index <path>   Path to pre-packaging working index for resume commit");
+            Console.WriteLine();
+            Console.WriteLine("Resume: both --resume-* options must be provided together. The tool will");
+            Console.WriteLine("  package the working index to produce checkpoint 0's full index, then");
+            Console.WriteLine("  continue processing subsequent checkpoints from there.");
             Console.WriteLine();
             Console.WriteLine("Output:");
             Console.WriteLine("  results.csv        CSV of checkpoint sizes");
             Console.WriteLine("  report.html        HTML report with comparison chart");
         }
 
-        static void RunAnalysis(string repoPath, string outputDir, string branch, int intervalDays, int maxCheckpoints)
+        static void RunAnalysis(string repoPath, string outputDir, string branch, int intervalDays, int maxCheckpoints,
+            string resumeCommit, string resumeWorkingIndexPath)
         {
             Console.WriteLine($"Opening repository at: {repoPath}");
             Console.WriteLine($"Output directory: {outputDir}");
             Console.WriteLine($"Interval: every {intervalDays} day(s)");
 
-            var checkpoints = SelectCheckpoints(repoPath, branch, intervalDays, maxCheckpoints);
+            bool isResume = !string.IsNullOrEmpty(resumeCommit);
+
+            // When resuming, find the resume commit to use as anchor; checkpoints start after it.
+            // When --max is given without resume, work backward from HEAD to select the N most recent intervals.
+            var checkpoints = SelectCheckpoints(repoPath, branch, intervalDays, maxCheckpoints, isResume ? resumeCommit : null);
             Console.WriteLine($"Selected {checkpoints.Count} checkpoints");
 
             if (checkpoints.Count == 0)
@@ -113,15 +150,9 @@ namespace DeltaIndexTestTool
                 return;
             }
 
-            // Working index: maintained in pre-packaging (V1.7) state across builds
             string workingIndexPath = Path.Combine(outputDir, "working_index.db");
-
             var results = new List<CheckpointResult>();
-
-            // The WinGet factory for creating indices
             var factory = new WinGetFactory();
-
-            // Handle for the long-lived working index
             IWinGetSQLiteIndex? workingIndex = null;
 
             try
@@ -144,9 +175,32 @@ namespace DeltaIndexTestTool
                     string fullIndexPath = Path.Combine(checkpointDir, "full_index.db");
                     string deltaPath = Path.Combine(checkpointDir, "delta.db");
 
-                    // --- Build full index and optionally delta ---
+                    if (i == 0 && isResume)
+                    {
+                        // Resume: copy the provided working index into position, then package it
+                        // to produce this checkpoint's full index — same as a normal first checkpoint
+                        // except we already have the working state.
+                        Console.WriteLine($"  Resuming from provided working index (commit {resumeCommit[..Math.Min(8, resumeCommit.Length)]})");
 
-                    if (i == 0)
+                        File.Copy(resumeWorkingIndexPath, workingIndexPath, overwrite: true);
+
+                        File.Copy(workingIndexPath, fullIndexPath, overwrite: true);
+                        using (var packagingIndex = factory.SQLiteIndexOpen(fullIndexPath))
+                        {
+                            packagingIndex.PrepareForPackaging();
+                        }
+
+                        workingIndex = factory.SQLiteIndexOpen(workingIndexPath);
+                        workingIndex.SetProperty(SQLiteIndexProperty.PackageUpdateTrackingBaseTime, string.Empty);
+
+                        result.FullIndexBytes = new FileInfo(fullIndexPath).Length;
+                        result.DeltaBytes = 0;
+                        result.PreviousFullIndexPath = null;
+                        result.FullIndexPath = fullIndexPath;
+
+                        Console.WriteLine($"  Full index: {result.FullIndexBytes / 1024.0 / 1024.0:F2} MB");
+                    }
+                    else if (i == 0)
                     {
                         // First checkpoint: build from scratch
                         Console.WriteLine("  Building initial full index from scratch...");
@@ -154,15 +208,11 @@ namespace DeltaIndexTestTool
                         if (File.Exists(workingIndexPath)) File.Delete(workingIndexPath);
 
                         workingIndex = factory.SQLiteIndexCreate(workingIndexPath, 2u, 1u);
-
-                        // Set base time to 0 so all packages are tracked
                         workingIndex.SetProperty(SQLiteIndexProperty.PackageUpdateTrackingBaseTime, "0");
 
-                        // Add all YAML manifests at this commit
                         int added = AddAllManifests(workingIndex, repoPath, checkpoint.Commit, checkpointDir);
                         Console.WriteLine($"  Added {added} manifest files");
 
-                        // Copy working index to produce the full packaged index
                         workingIndex.Dispose();
                         workingIndex = null;
 
@@ -172,7 +222,6 @@ namespace DeltaIndexTestTool
                             packagingIndex.PrepareForPackaging();
                         }
 
-                        // Re-open working index and set base time to now (track only future changes)
                         workingIndex = factory.SQLiteIndexOpen(workingIndexPath);
                         workingIndex.SetProperty(SQLiteIndexProperty.PackageUpdateTrackingBaseTime, string.Empty);
 
@@ -193,20 +242,16 @@ namespace DeltaIndexTestTool
                         int changed = ApplyGitDiff(workingIndex!, repoPath, prevCheckpoint.Commit, checkpoint.Commit, checkpointDir);
                         Console.WriteLine($"  Applied {changed} manifest changes");
 
-                        // Copy working index for this checkpoint's packaging
                         workingIndex!.Dispose();
                         workingIndex = null;
 
-                        File.Copy(workingIndexPath, fullIndexPath, overwrite: true);
-
-                        // Build full index (no delta) from the copy
+                        // Build full index (no delta properties set)
                         string fullOnlyPath = fullIndexPath + ".full_only.db";
                         File.Copy(workingIndexPath, fullOnlyPath, overwrite: true);
                         using (var fullPackagingIndex = factory.SQLiteIndexOpen(fullOnlyPath))
                         {
                             fullPackagingIndex.PrepareForPackaging();
                         }
-                        // Rename the full-only to fullIndexPath
                         File.Move(fullOnlyPath, fullIndexPath, overwrite: true);
 
                         // Build delta index against previous full index
@@ -220,7 +265,6 @@ namespace DeltaIndexTestTool
                         }
                         File.Delete(deltaWorkPath);
 
-                        // Re-open working index and advance base time
                         workingIndex = factory.SQLiteIndexOpen(workingIndexPath);
                         workingIndex.SetProperty(SQLiteIndexProperty.PackageUpdateTrackingBaseTime, string.Empty);
 
@@ -241,15 +285,12 @@ namespace DeltaIndexTestTool
                 workingIndex?.Dispose();
             }
 
-            // Compute cumulative sizes for strategies
             ComputeCumulativeSizes(results);
 
-            // Write CSV
             string csvPath = Path.Combine(outputDir, "results.csv");
             WriteCsv(results, csvPath);
             Console.WriteLine($"\nResults written to: {csvPath}");
 
-            // Write HTML report
             string htmlPath = Path.Combine(outputDir, "report.html");
             WriteHtmlReport(results, htmlPath);
             Console.WriteLine($"Report written to: {htmlPath}");
@@ -257,8 +298,14 @@ namespace DeltaIndexTestTool
 
         /// <summary>
         /// Selects commits at evenly-spaced intervals across the branch history.
+        ///
+        /// When <paramref name="maxCheckpoints"/> is positive, selects the N most recent
+        /// intervals working backward from HEAD, then returns them in chronological order.
+        ///
+        /// When <paramref name="afterCommitSha"/> is provided, only commits strictly after
+        /// that commit are considered (used for resume mode).
         /// </summary>
-        static List<CommitCheckpoint> SelectCheckpoints(string repoPath, string branch, int intervalDays, int maxCheckpoints)
+        static List<CommitCheckpoint> SelectCheckpoints(string repoPath, string branch, int intervalDays, int maxCheckpoints, string? afterCommitSha)
         {
             using var repo = new Repository(repoPath);
 
@@ -268,35 +315,81 @@ namespace DeltaIndexTestTool
                 throw new InvalidOperationException($"Branch '{branch}' not found in repository");
             }
 
-            // Collect all commits sorted oldest-first
+            // Collect all commits sorted newest-first
             var allCommits = repo.Commits
                 .QueryBy(new CommitFilter
                 {
                     IncludeReachableFrom = branchRef.Tip,
-                    SortBy = CommitSortStrategies.Time | CommitSortStrategies.Reverse,
+                    SortBy = CommitSortStrategies.Time,
                 })
                 .ToList();
 
             if (allCommits.Count == 0) return [];
 
-            var selected = new List<CommitCheckpoint>();
-            DateTimeOffset? lastSelected = null;
-
-            foreach (var commit in allCommits)
+            // If resuming, find the anchor commit and exclude it and anything older
+            DateTimeOffset? afterTime = null;
+            if (!string.IsNullOrEmpty(afterCommitSha))
             {
-                var commitTime = commit.Author.When;
-
-                if (lastSelected == null || (commitTime - lastSelected.Value).TotalDays >= intervalDays)
+                var anchor = allCommits.FirstOrDefault(c => c.Sha.StartsWith(afterCommitSha, StringComparison.OrdinalIgnoreCase));
+                if (anchor == null)
                 {
-                    selected.Add(new CommitCheckpoint(commit, commitTime.DateTime));
-                    lastSelected = commitTime;
-
-                    if (maxCheckpoints > 0 && selected.Count >= maxCheckpoints)
-                        break;
+                    throw new InvalidOperationException($"Resume commit '{afterCommitSha}' not found on branch '{branch}'");
                 }
+                afterTime = anchor.Author.When;
             }
 
-            return selected;
+            if (maxCheckpoints > 0)
+            {
+                // Work backward from HEAD: pick intervals going back in time, then reverse
+                var selected = new List<CommitCheckpoint>();
+                DateTimeOffset? lastSelected = null;
+
+                foreach (var commit in allCommits) // newest-first
+                {
+                    var commitTime = commit.Author.When;
+
+                    // Skip commits at or before the resume anchor
+                    if (afterTime.HasValue && commitTime <= afterTime.Value)
+                        break;
+
+                    if (lastSelected == null || (lastSelected.Value - commitTime).TotalDays >= intervalDays)
+                    {
+                        selected.Add(new CommitCheckpoint(commit, commitTime.DateTime));
+                        lastSelected = commitTime;
+
+                        if (selected.Count >= maxCheckpoints)
+                            break;
+                    }
+                }
+
+                // Return in chronological order (oldest first)
+                selected.Reverse();
+                return selected;
+            }
+            else
+            {
+                // Walk oldest-first, selecting at each interval
+                var chronological = allCommits
+                    .Where(c => !afterTime.HasValue || c.Author.When > afterTime.Value)
+                    .Reverse()
+                    .ToList();
+
+                var selected = new List<CommitCheckpoint>();
+                DateTimeOffset? lastSelected = null;
+
+                foreach (var commit in chronological)
+                {
+                    var commitTime = commit.Author.When;
+
+                    if (lastSelected == null || (commitTime - lastSelected.Value).TotalDays >= intervalDays)
+                    {
+                        selected.Add(new CommitCheckpoint(commit, commitTime.DateTime));
+                        lastSelected = commitTime;
+                    }
+                }
+
+                return selected;
+            }
         }
 
         /// <summary>

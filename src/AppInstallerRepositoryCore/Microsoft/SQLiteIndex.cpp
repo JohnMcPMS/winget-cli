@@ -41,17 +41,18 @@ namespace AppInstaller::Repository::Microsoft
     SQLiteIndex SQLiteIndex::OpenWithBaseline(const std::string& deltaFilePath, const std::string& baselineFilePath)
     {
         AICLI_LOG(Repo, Info, << "Opening delta index [" << deltaFilePath << "] with baseline [" << baselineFilePath << "]");
-        SQLiteIndex result{ deltaFilePath, SQLiteStorageBase::OpenDisposition::ReadOnly };
+        SQLiteIndex result{ deltaFilePath, SQLiteStorageBase::OpenDisposition::Read, {} };
 
         std::filesystem::path baselinePath{ Utility::ConvertToUTF16(baselineFilePath) };
         THROW_HR_IF(E_INVALIDARG, baselinePath.empty() || baselinePath.is_relative());
 
         result.m_contextData.Add<Schema::Property::DeltaBaselineIndexPath>(baselinePath);
 
+        // TODO: Add a new interface function for this rather than casting
         // The interface must be V2_0 to support delta read mode
-        auto* v2Interface = dynamic_cast<Schema::V2_0::Interface*>(result.m_interface.get());
-        THROW_HR_IF(E_NOTIMPL, v2Interface == nullptr);
-        v2Interface->SetupDeltaReadMode(result.m_dbconn, baselinePath);
+        //auto* v2Interface = dynamic_cast<Schema::V2_0::Interface*>(result.m_interface.get());
+        //THROW_HR_IF(E_NOTIMPL, v2Interface == nullptr);
+        //v2Interface->SetupDeltaReadMode(result.m_dbconn, baselinePath);
 
         return result;
     }

@@ -3,10 +3,17 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net8.0</TargetFramework>
-    <OutDir>$(SolutionDir)$(Platform)\$(Configuration)\DeltaIndexTestTool\</OutDir>
     <Platforms>x64;x86</Platforms>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <!-- Output alongside WinGetUtilInterop so WinGetUtil.dll copy lands in the right place -->
+    <OutDir>$(MSBuildProjectDirectory)\bin\$(Platform)\$(Configuration)\</OutDir>
+    <!--
+      WinGetUtil.dll must be built from the main solution (src\AppInstallerCLI.sln) first.
+      By default this points to the x64 Release output. Override via:
+        msbuild /p:WinGetUtilBinDir=<path>
+    -->
+    <WinGetUtilBinDir Condition="'$(WinGetUtilBinDir)' == ''">$(MSBuildThisFileDirectory)..\..\src\$(Platform)\$(Configuration)\WinGetUtil\</WinGetUtilBinDir>
   </PropertyGroup>
 
   <ItemGroup>
@@ -14,16 +21,20 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\WinGetUtilInterop\WinGetUtilInterop.csproj" />
-    <ProjectReference Include="..\WinGetUtil\WinGetUtil.vcxproj">
-      <OutputItemType>Content</OutputItemType>
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <ReferenceOutputAssembly>True</ReferenceOutputAssembly>
-    </ProjectReference>
+    <ProjectReference Include="..\..\src\WinGetUtilInterop\WinGetUtilInterop.csproj" />
   </ItemGroup>
 
-  <Target Name="PostBuild" AfterTargets="PostBuildEvent">
-    <Copy SourceFiles="$(TargetDir)..\WinGetUtil\WinGetUtil.dll" DestinationFiles="$(TargetDir)WinGetUtil.dll" />
+  <!--
+    WinGetUtil.dll is a native C++ binary built by the main solution.
+    Build src\AppInstallerCLI.sln first, then build this project.
+    The DLL is copied from $(WinGetUtilBinDir) into the output directory.
+  -->
+  <Target Name="CopyWinGetUtilDll" AfterTargets="Build">
+    <Error Condition="!Exists('$(WinGetUtilBinDir)WinGetUtil.dll')"
+           Text="WinGetUtil.dll not found at '$(WinGetUtilBinDir)WinGetUtil.dll'. Build src\AppInstallerCLI.sln first, or set the WinGetUtilBinDir property." />
+    <Copy SourceFiles="$(WinGetUtilBinDir)WinGetUtil.dll"
+          DestinationFolder="$(OutDir)"
+          SkipUnchangedFiles="true" />
   </Target>
 
 </Project>

@@ -35,7 +35,7 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_0
         builder.Column(ColumnBuilder(s_PUTT_WriteTime, Type::Int64).NotNull());
         builder.Column(ColumnBuilder(s_PUTT_Manifest, Type::Blob));
         builder.Column(ColumnBuilder(s_PUTT_Hash, Type::Blob));
-        builder.Column(ColumnBuilder(s_PUTT_IsRemoved, Type::Int64).NotNull().WithDefaultValue(0));
+        builder.Column(ColumnBuilder(s_PUTT_IsRemoved, Type::Int64).Default(0).NotNull());
 
         builder.EndColumns();
 
