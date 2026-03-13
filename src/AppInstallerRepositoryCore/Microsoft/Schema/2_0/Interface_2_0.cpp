@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 #include "pch.h"
 #include <winget/SQLiteMetadataTable.h>
+#include <winget/SQLiteWrapper.h>
 #include "Microsoft/Schema/2_0/Interface.h"
 
 #include "Microsoft/Schema/2_0/PackagesTable.h"
@@ -16,6 +17,7 @@
 
 #include "Microsoft/Schema/2_0/SearchResultsTable.h"
 #include "Microsoft/Schema/2_0/PackageUpdateTrackingTable.h"
+#include "Microsoft/Schema/1_0/IdTable.h"
 
 #include <winget/PackageVersionDataManifest.h>
 
@@ -646,6 +648,11 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_0
         // Output all of the changed package version manifests since the base time to the target location
         for (const auto& packageData : PackageUpdateTrackingTable::GetUpdatesSince(connection, updateBaseTime))
         {
+            if (packageData.IsRemoved)
+            {
+                continue;
+            }
+
             std::filesystem::path packageDirectory = baseOutputDirectory /
                 Manifest::PackageVersionDataManifest::GetRelativeDirectoryPath(packageData.PackageIdentifier, Utility::SHA256::ConvertToString(packageData.Hash));
 
@@ -712,7 +719,10 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_0
             addIfPresent(PackagesTable::ARPMinVersionColumn::Name, m_internalInterface->GetPropertyByPrimaryId(connection, latestVersionKey.ManifestId, PackageVersionProperty::ArpMinVersion).value());
             addIfPresent(PackagesTable::ARPMaxVersionColumn::Name, m_internalInterface->GetPropertyByPrimaryId(connection, latestVersionKey.ManifestId, PackageVersionProperty::ArpMaxVersion).value());
 
-            SQLite::rowid_t packageId = PackagesTable::Insert(connection, packageData);
+            auto idRowId = V1_0::IdTable::SelectIdByValue(connection, packageIdentifier);
+            THROW_HR_IF(E_NOT_VALID_STATE, !idRowId);
+
+            SQLite::rowid_t packageId = PackagesTable::InsertWithRowId(connection, idRowId.value(), packageData);
 
             PackagesTable::UpdateValueIdById<PackagesTable::HashColumn>(connection, packageId, PackageUpdateTrackingTable::GetDataHash(connection, packageIdentifier));
 
@@ -742,6 +752,140 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_0
         TagsTable::PrepareForPackaging(connection);
         CommandsTable::PrepareForPackaging(connection);
 
+        // Generate the delta index before dropping the tracking table (which is needed for delta construction).
+        // Delta generation is triggered by setting DeltaBaselineIndexPath and DeltaOutputPath on the context.
+        if (context.Data.Contains(Property::DeltaBaselineIndexPath) &&
+            context.Data.Contains(Property::DeltaOutputPath))
+        {
+            // Delta packaging requires schema 2.1+ (is_removed column in update_tracking).
+            THROW_WIN32_IF(ERROR_NOT_SUPPORTED, GetVersion().MinorVersion < 1);
+
+            std::filesystem::path baselinePath = context.Data.Get<Property::DeltaBaselineIndexPath>();
+            std::filesystem::path deltaOutputPath = context.Data.Get<Property::DeltaOutputPath>();
+
+            AICLI_LOG(Repo, Info, << "Generating delta index at [" << deltaOutputPath << "] against baseline [" << baselinePath << "]");
+
+            int64_t deltaUpdateBaseTime = 0;
+            std::optional<std::string> deltaUpdateBaseTimeString = SQLite::MetadataTable::TryGetNamedValue<std::string>(connection, s_MetadataValueName_PackageUpdateTrackingBaseTime);
+            if (deltaUpdateBaseTimeString && !deltaUpdateBaseTimeString->empty())
+            {
+                deltaUpdateBaseTime = std::stoll(deltaUpdateBaseTimeString.value());
+            }
+
+            auto changedPackages = PackageUpdateTrackingTable::GetUpdatesSince(connection, deltaUpdateBaseTime);
+            if (changedPackages.empty())
+            {
+                AICLI_LOG(Repo, Info, << "No changed packages found; skipping delta generation");
+            }
+            else
+            {
+                SQLite::Connection baselineConn = SQLite::Connection::Create(
+                    baselinePath.u8string(), SQLite::Connection::OpenDisposition::ReadOnly);
+
+                SQLite::Connection deltaConn = SQLite::Connection::Create(
+                    deltaOutputPath.u8string(), SQLite::Connection::OpenDisposition::Create);
+
+                anon::CreateDeltaSchema(deltaConn);
+
+                SQLite::rowid_t maxBaselinePackageRowid = anon::GetMaxPackageRowid(baselineConn);
+                SQLite::rowid_t nextNewPackageRowid = maxBaselinePackageRowid;
+
+                SQLite::rowid_t maxBaselineTagsRowid = anon::GetMaxDataTableRowid(baselineConn, "tags2");
+                SQLite::rowid_t nextNewTagsRowid = maxBaselineTagsRowid;
+
+                SQLite::rowid_t maxBaselineCommandsRowid = anon::GetMaxDataTableRowid(baselineConn, "commands2");
+                SQLite::rowid_t nextNewCommandsRowid = maxBaselineCommandsRowid;
+
+                SQLite::Savepoint deltaSavepoint = SQLite::Savepoint::Create(deltaConn, "delta_build");
+
+                for (const auto& pkg : changedPackages)
+                {
+                    SQLite::rowid_t packageRowid = anon::GetBaselinePackageRowid(baselineConn, pkg.PackageIdentifier);
+
+                    if (pkg.IsRemoved)
+                    {
+                        if (packageRowid == 0)
+                        {
+                            // Package was added and removed within the same tracking window; skip.
+                            continue;
+                        }
+
+                        AICLI_LOG(Repo, Verbose, << "Delta: recording removal of [" << pkg.PackageIdentifier << "] (rowid=" << packageRowid << ")");
+
+                        std::string sql = "INSERT OR REPLACE INTO delta_packages (rowid, id, name, latest_version, is_removed) VALUES (?, ?, '', '', 1)";
+                        SQLite::Statement stmt = SQLite::Statement::Create(deltaConn, sql);
+                        stmt.Bind(1, packageRowid);
+                        stmt.Bind(2, pkg.PackageIdentifier);
+                        stmt.Execute();
+                    }
+                    else
+                    {
+                        bool isNewPackage = (packageRowid == 0);
+                        if (isNewPackage)
+                        {
+                            packageRowid = ++nextNewPackageRowid;
+                        }
+
+                        AICLI_LOG(Repo, Verbose, << "Delta: recording " << (isNewPackage ? "addition" : "update") << " of [" << pkg.PackageIdentifier << "] (rowid=" << packageRowid << ")");
+
+                        {
+                            std::string sql = "SELECT id, name, moniker, latest_version, arp_min_version, arp_max_version, hash "
+                                              "FROM packages WHERE id = ?";
+                            SQLite::Statement stmt = SQLite::Statement::Create(connection, sql);
+                            stmt.Bind(1, pkg.PackageIdentifier);
+                            THROW_HR_IF(E_NOT_SET, !stmt.Step());
+
+                            std::string id = stmt.GetColumn<std::string>(0);
+                            std::string name = stmt.GetColumn<std::string>(1);
+                            std::string moniker = stmt.GetColumnIsNull(2) ? "" : stmt.GetColumn<std::string>(2);
+                            std::string latestVersion = stmt.GetColumn<std::string>(3);
+                            std::string arpMin = stmt.GetColumnIsNull(4) ? "" : stmt.GetColumn<std::string>(4);
+                            std::string arpMax = stmt.GetColumnIsNull(5) ? "" : stmt.GetColumn<std::string>(5);
+                            SQLite::blob_t hash = stmt.GetColumnIsNull(6) ? SQLite::blob_t{} : stmt.GetColumn<SQLite::blob_t>(6);
+
+                            std::string insertSql =
+                                "INSERT OR REPLACE INTO delta_packages "
+                                "(rowid, id, name, moniker, latest_version, arp_min_version, arp_max_version, hash, is_removed) "
+                                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)";
+                            SQLite::Statement insertStmt = SQLite::Statement::Create(deltaConn, insertSql);
+                            insertStmt.Bind(1, packageRowid);
+                            insertStmt.Bind(2, id);
+                            insertStmt.Bind(3, name);
+                            if (moniker.empty()) insertStmt.Bind(4, nullptr); else insertStmt.Bind(4, moniker);
+                            insertStmt.Bind(5, latestVersion);
+                            if (arpMin.empty()) insertStmt.Bind(6, nullptr); else insertStmt.Bind(6, arpMin);
+                            if (arpMax.empty()) insertStmt.Bind(7, nullptr); else insertStmt.Bind(7, arpMax);
+                            if (hash.empty()) insertStmt.Bind(8, nullptr); else insertStmt.Bind(8, hash);
+                            insertStmt.Execute();
+                        }
+
+                        static constexpr std::pair<std::string_view, std::string_view> s_DeltaSysRefTables[] = {
+                            { "pfns2",            "pfn" },
+                            { "productcodes2",    "productcode" },
+                            { "norm_names2",      "norm_name" },
+                            { "norm_publishers2", "norm_publisher" },
+                            { "upgradecodes2",    "upgradecode" },
+                        };
+
+                        for (const auto& [table, value] : s_DeltaSysRefTables)
+                        {
+                            anon::ProcessDeltaSysRefTable(deltaConn, connection, baselineConn,
+                                table, value, packageRowid, pkg.PackageIdentifier);
+                        }
+
+                        anon::ProcessDeltaOneToManyTable(deltaConn, connection, baselineConn,
+                            "tags2", "tag", packageRowid, nextNewTagsRowid);
+                        anon::ProcessDeltaOneToManyTable(deltaConn, connection, baselineConn,
+                            "commands2", "command", packageRowid, nextNewCommandsRowid);
+                    }
+                }
+
+                deltaSavepoint.Commit();
+
+                AICLI_LOG(Repo, Info, << "Delta index generation complete");
+            }
+        }
+
         PackageUpdateTrackingTable::Drop(connection);
 
         // The tables based on SystemReferenceStringTable don't need a prepare currently
@@ -766,11 +910,314 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_0
         builder.Execute(connection);
     }
 
+    namespace anon
+    {
+        // Executes a raw SQL statement on a connection using the statement builder mechanism.
+        void ExecuteSQL(SQLite::Connection& connection, std::string_view sql)
+        {
+            SQLite::Statement stmt = SQLite::Statement::Create(connection, sql);
+            stmt.Execute();
+        }
+
+        // Creates all delta tables in the delta connection.
+        void CreateDeltaSchema(SQLite::Connection& deltaConn)
+        {
+            ExecuteSQL(deltaConn, R"(
+                CREATE TABLE IF NOT EXISTS delta_packages (
+                    rowid INTEGER PRIMARY KEY,
+                    id TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    moniker TEXT,
+                    latest_version TEXT NOT NULL,
+                    arp_min_version TEXT,
+                    arp_max_version TEXT,
+                    hash BLOB,
+                    is_removed INTEGER NOT NULL DEFAULT 0
+                )
+            )");
+
+            // SystemReference string tables (value + package_id, no separate id)
+            static constexpr std::pair<std::string_view, std::string_view> s_SysRefTables[] = {
+                { "pfns2",            "pfn" },
+                { "productcodes2",    "productcode" },
+                { "norm_names2",      "norm_name" },
+                { "norm_publishers2", "norm_publisher" },
+                { "upgradecodes2",    "upgradecode" },
+            };
+            for (const auto& [table, value] : s_SysRefTables)
+            {
+                std::string sql = "CREATE TABLE IF NOT EXISTS delta_" + std::string(table) +
+                    " (" + std::string(value) + " TEXT NOT NULL, package INTEGER NOT NULL, " +
+                    "is_removed INTEGER NOT NULL DEFAULT 0, " +
+                    "PRIMARY KEY (" + std::string(value) + ", package)) WITHOUT ROWID";
+                ExecuteSQL(deltaConn, sql);
+            }
+
+            // OneToMany data tables (rowid + value)
+            static constexpr std::pair<std::string_view, std::string_view> s_OneToManyTables[] = {
+                { "tags2",     "tag" },
+                { "commands2", "command" },
+            };
+            for (const auto& [table, value] : s_OneToManyTables)
+            {
+                std::string sql = "CREATE TABLE IF NOT EXISTS delta_" + std::string(table) +
+                    " (rowid INTEGER PRIMARY KEY, " + std::string(value) + " TEXT NOT NULL)";
+                ExecuteSQL(deltaConn, sql);
+            }
+
+            // OneToMany map tables (value_rowid + package_rowid)
+            for (const auto& [table, value] : s_OneToManyTables)
+            {
+                std::string sql = "CREATE TABLE IF NOT EXISTS delta_" + std::string(table) + "_map" +
+                    " (" + std::string(value) + " INTEGER NOT NULL, package INTEGER NOT NULL, " +
+                    "is_removed INTEGER NOT NULL DEFAULT 0, " +
+                    "PRIMARY KEY (" + std::string(value) + ", package)) WITHOUT ROWID";
+                ExecuteSQL(deltaConn, sql);
+            }
+        }
+
+        // Returns the rowid of a package in the baseline, or 0 if not found.
+        SQLite::rowid_t GetBaselinePackageRowid(SQLite::Connection& baselineConn, const std::string& packageId)
+        {
+            SQLite::Builder::StatementBuilder builder;
+            builder.Select(SQLite::RowIDName).From("packages").Where("id").Equals(packageId);
+            SQLite::Statement stmt = builder.Prepare(baselineConn);
+            if (stmt.Step())
+            {
+                return stmt.GetColumn<SQLite::rowid_t>(0);
+            }
+            return 0;
+        }
+
+        // Returns the max rowid in the packages table, or 0 if empty.
+        SQLite::rowid_t GetMaxPackageRowid(SQLite::Connection& baselineConn)
+        {
+            SQLite::Statement stmt = SQLite::Statement::Create(baselineConn, "SELECT MAX(rowid) FROM packages");
+            if (stmt.Step())
+            {
+                // MAX(rowid) returns NULL if table is empty
+                if (!stmt.GetColumnIsNull(0))
+                {
+                    return stmt.GetColumn<SQLite::rowid_t>(0);
+                }
+            }
+            return 0;
+        }
+
+        // Returns the max rowid in a data table (tags2 or commands2), or 0 if empty.
+        SQLite::rowid_t GetMaxDataTableRowid(SQLite::Connection& baselineConn, std::string_view tableName)
+        {
+            std::string sql = "SELECT MAX(rowid) FROM " + std::string(tableName);
+            SQLite::Statement stmt = SQLite::Statement::Create(baselineConn, sql);
+            if (stmt.Step() && !stmt.GetColumnIsNull(0))
+            {
+                return stmt.GetColumn<SQLite::rowid_t>(0);
+            }
+            return 0;
+        }
+
+        // Returns the rowid in baseline data table for the given value string, or 0 if not present.
+        SQLite::rowid_t GetBaselineDataTableRowid(SQLite::Connection& baselineConn, std::string_view tableName, std::string_view valueName, const std::string& value)
+        {
+            std::string sql = "SELECT rowid FROM " + std::string(tableName) + " WHERE " + std::string(valueName) + " = ?";
+            SQLite::Statement stmt = SQLite::Statement::Create(baselineConn, sql);
+            stmt.Bind(1, value);
+            if (stmt.Step())
+            {
+                return stmt.GetColumn<SQLite::rowid_t>(0);
+            }
+            return 0;
+        }
+
+        // Inserts or finds a value in delta data table; returns the rowid (possibly from baseline).
+        // baselineMaxRowid: the starting offset for new delta rowids.
+        SQLite::rowid_t EnsureDeltaDataTableValue(
+            SQLite::Connection& deltaConn,
+            SQLite::Connection& baselineConn,
+            std::string_view deltaTableName,
+            std::string_view valueName,
+            const std::string& value,
+            SQLite::rowid_t& nextNewRowid)
+        {
+            // Check if the value is already in the baseline
+            SQLite::rowid_t baselineRowid = GetBaselineDataTableRowid(baselineConn, std::string(deltaTableName).substr(6), valueName, value);
+            if (baselineRowid != 0)
+            {
+                return baselineRowid;
+            }
+
+            // Check if already in the delta table
+            std::string selectSql = "SELECT rowid FROM " + std::string(deltaTableName) + " WHERE " + std::string(valueName) + " = ?";
+            SQLite::Statement selectStmt = SQLite::Statement::Create(deltaConn, selectSql);
+            selectStmt.Bind(1, value);
+            if (selectStmt.Step())
+            {
+                return selectStmt.GetColumn<SQLite::rowid_t>(0);
+            }
+
+            // Insert as a new entry
+            SQLite::rowid_t newRowid = ++nextNewRowid;
+            std::string insertSql = "INSERT INTO " + std::string(deltaTableName) + " (rowid, " + std::string(valueName) + ") VALUES (?, ?)";
+            SQLite::Statement insertStmt = SQLite::Statement::Create(deltaConn, insertSql);
+            insertStmt.Bind(1, newRowid);
+            insertStmt.Bind(2, value);
+            insertStmt.Execute();
+            return newRowid;
+        }
+
+        // Processes a SystemReference table for a changed package.
+        // Compares current values vs baseline values and records adds/removes.
+        void ProcessDeltaSysRefTable(
+            SQLite::Connection& deltaConn,
+            SQLite::Connection& sourceConn,
+            SQLite::Connection& baselineConn,
+            std::string_view tableName,
+            std::string_view valueName,
+            SQLite::rowid_t packageRowid,
+            const std::string& packageId)
+        {
+            std::string deltaTable = "delta_" + std::string(tableName);
+            std::string primaryCol = "package";
+
+            // Get current values from the new V2 index
+            std::vector<std::string> currentValues;
+            {
+                std::string sql = "SELECT " + std::string(valueName) + " FROM " + std::string(tableName) + " WHERE " + primaryCol + " = ?";
+                SQLite::Statement stmt = SQLite::Statement::Create(sourceConn, sql);
+                stmt.Bind(1, packageRowid);
+                while (stmt.Step())
+                {
+                    currentValues.push_back(stmt.GetColumn<std::string>(0));
+                }
+            }
+
+            // Get baseline values
+            std::vector<std::string> baselineValues;
+            {
+                std::string sql = "SELECT " + std::string(valueName) + " FROM " + std::string(tableName) + " WHERE " + primaryCol + " = ?";
+                SQLite::Statement stmt = SQLite::Statement::Create(baselineConn, sql);
+                stmt.Bind(1, packageRowid);
+                while (stmt.Step())
+                {
+                    baselineValues.push_back(stmt.GetColumn<std::string>(0));
+                }
+            }
+
+            // Find added values (in current but not baseline)
+            for (const auto& val : currentValues)
+            {
+                if (std::find(baselineValues.begin(), baselineValues.end(), val) == baselineValues.end())
+                {
+                    std::string sql = "INSERT OR IGNORE INTO " + deltaTable +
+                        " (" + std::string(valueName) + ", " + primaryCol + ", is_removed) VALUES (?, ?, 0)";
+                    SQLite::Statement stmt = SQLite::Statement::Create(deltaConn, sql);
+                    stmt.Bind(1, val);
+                    stmt.Bind(2, packageRowid);
+                    stmt.Execute();
+                }
+            }
+
+            // Find removed values (in baseline but not current)
+            for (const auto& val : baselineValues)
+            {
+                if (std::find(currentValues.begin(), currentValues.end(), val) == currentValues.end())
+                {
+                    std::string sql = "INSERT OR IGNORE INTO " + deltaTable +
+                        " (" + std::string(valueName) + ", " + primaryCol + ", is_removed) VALUES (?, ?, 1)";
+                    SQLite::Statement stmt = SQLite::Statement::Create(deltaConn, sql);
+                    stmt.Bind(1, val);
+                    stmt.Bind(2, packageRowid);
+                    stmt.Execute();
+                }
+            }
+        }
+
+        // Processes a OneToMany table for a changed package.
+        void ProcessDeltaOneToManyTable(
+            SQLite::Connection& deltaConn,
+            SQLite::Connection& sourceConn,
+            SQLite::Connection& baselineConn,
+            std::string_view tableName,
+            std::string_view valueName,
+            SQLite::rowid_t packageRowid,
+            SQLite::rowid_t& nextNewDataRowid)
+        {
+            std::string deltaDataTable = "delta_" + std::string(tableName);
+            std::string deltaMapTable = "delta_" + std::string(tableName) + "_map";
+            std::string mapTable = std::string(tableName) + "_map";
+
+            // Get current values via join (tags2_map JOIN tags2)
+            std::vector<std::string> currentValues;
+            {
+                std::string sql = "SELECT t." + std::string(valueName) +
+                    " FROM " + mapTable + " m JOIN " + std::string(tableName) + " t ON m." + std::string(valueName) + " = t.rowid" +
+                    " WHERE m.package = ?";
+                SQLite::Statement stmt = SQLite::Statement::Create(sourceConn, sql);
+                stmt.Bind(1, packageRowid);
+                while (stmt.Step())
+                {
+                    currentValues.push_back(stmt.GetColumn<std::string>(0));
+                }
+            }
+
+            // Get baseline values via join
+            std::vector<std::string> baselineValues;
+            {
+                std::string sql = "SELECT t." + std::string(valueName) +
+                    " FROM " + mapTable + " m JOIN " + std::string(tableName) + " t ON m." + std::string(valueName) + " = t.rowid" +
+                    " WHERE m.package = ?";
+                SQLite::Statement stmt = SQLite::Statement::Create(baselineConn, sql);
+                stmt.Bind(1, packageRowid);
+                while (stmt.Step())
+                {
+                    baselineValues.push_back(stmt.GetColumn<std::string>(0));
+                }
+            }
+
+            // Record added mappings (current but not baseline)
+            for (const auto& val : currentValues)
+            {
+                if (std::find(baselineValues.begin(), baselineValues.end(), val) == baselineValues.end())
+                {
+                    SQLite::rowid_t dataRowid = EnsureDeltaDataTableValue(
+                        deltaConn, baselineConn, deltaDataTable, valueName, val, nextNewDataRowid);
+
+                    std::string sql = "INSERT OR IGNORE INTO " + deltaMapTable +
+                        " (" + std::string(valueName) + ", package, is_removed) VALUES (?, ?, 0)";
+                    SQLite::Statement stmt = SQLite::Statement::Create(deltaConn, sql);
+                    stmt.Bind(1, dataRowid);
+                    stmt.Bind(2, packageRowid);
+                    stmt.Execute();
+                }
+            }
+
+            // Record removed mappings (baseline but not current)
+            for (const auto& val : baselineValues)
+            {
+                if (std::find(currentValues.begin(), currentValues.end(), val) == currentValues.end())
+                {
+                    // Find the rowid — it's in the baseline data table
+                    SQLite::rowid_t dataRowid = GetBaselineDataTableRowid(baselineConn, std::string(tableName), valueName, val);
+                    if (dataRowid != 0)
+                    {
+                        std::string sql = "INSERT OR IGNORE INTO " + deltaMapTable +
+                            " (" + std::string(valueName) + ", package, is_removed) VALUES (?, ?, 1)";
+                        SQLite::Statement stmt = SQLite::Statement::Create(deltaConn, sql);
+                        stmt.Bind(1, dataRowid);
+                        stmt.Bind(2, packageRowid);
+                        stmt.Execute();
+                    }
+                }
+            }
+        }
+    }
+
     void Interface::EnsureInternalInterface(const SQLite::Connection& connection, bool requireInternalInterface) const
     {
         if (!m_internalInterfaceChecked)
         {
-            if (!PackagesTable::Exists(connection))
+            // In delta read mode the TEMP VIEWs are already set up; no internal interface needed.
+            if (!m_isDeltaReadMode && !PackagesTable::Exists(connection))
             {
                 m_internalInterface = CreateInternalInterface();
             }
@@ -784,5 +1231,82 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_0
     std::unique_ptr<Schema::ISQLiteIndex> Interface::CreateInternalInterface() const
     {
         return CreateISQLiteIndex({ 1, 7 });
+    }
+
+    void Interface::SetupDeltaReadMode(SQLite::Connection& connection, const std::filesystem::path& baselinePath)
+    {
+        AICLI_LOG(Repo, Info, << "Setting up delta read mode with baseline [" << baselinePath << "]");
+
+        // Attach the baseline database under the "baseline" schema name
+        {
+            std::string attachSql = "ATTACH DATABASE ? AS baseline";
+            SQLite::Statement stmt = SQLite::Statement::Create(connection, attachSql);
+            stmt.Bind(1, baselinePath.u8string());
+            stmt.Execute();
+        }
+
+        // TEMP VIEW: packages
+        // Delta entries (added/updated) override baseline; removed packages are excluded.
+        anon::ExecuteSQL(connection, R"(
+            CREATE TEMP VIEW packages AS
+            SELECT rowid, id, name, moniker, latest_version, arp_min_version, arp_max_version, hash
+            FROM delta_packages WHERE is_removed = 0
+            UNION ALL
+            SELECT p.rowid, p.id, p.name, p.moniker, p.latest_version, p.arp_min_version, p.arp_max_version, p.hash
+            FROM baseline.packages p
+            WHERE p.id NOT IN (SELECT id FROM delta_packages)
+        )");
+
+        // TEMP VIEWs: SystemReference tables (pfns2, productcodes2, norm_names2, norm_publishers2, upgradecodes2)
+        // For changed packages: delta has the full current set (is_removed=0 = current, is_removed=1 = removed).
+        // For unchanged packages: baseline rows pass through.
+        static constexpr std::pair<std::string_view, std::string_view> s_SysRefTables[] = {
+            { "pfns2",            "pfn" },
+            { "productcodes2",    "productcode" },
+            { "norm_names2",      "norm_name" },
+            { "norm_publishers2", "norm_publisher" },
+            { "upgradecodes2",    "upgradecode" },
+        };
+        for (const auto& [table, value] : s_SysRefTables)
+        {
+            std::string sql =
+                "CREATE TEMP VIEW " + std::string(table) + " AS "
+                "SELECT " + std::string(value) + ", package FROM delta_" + std::string(table) + " WHERE is_removed = 0 "
+                "UNION ALL "
+                "SELECT " + std::string(value) + ", package FROM baseline." + std::string(table) + " "
+                "WHERE package NOT IN (SELECT package FROM delta_" + std::string(table) + ")";
+            anon::ExecuteSQL(connection, sql);
+        }
+
+        // TEMP VIEW: tags2 / commands2 data tables (rowid + value).
+        // Delta only contains NEW strings (with rowids > baseline max); no conflicts possible.
+        static constexpr std::pair<std::string_view, std::string_view> s_OneToManyTables[] = {
+            { "tags2",     "tag" },
+            { "commands2", "command" },
+        };
+        for (const auto& [table, value] : s_OneToManyTables)
+        {
+            std::string sql =
+                "CREATE TEMP VIEW " + std::string(table) + " AS "
+                "SELECT rowid, " + std::string(value) + " FROM delta_" + std::string(table) + " "
+                "UNION ALL "
+                "SELECT rowid, " + std::string(value) + " FROM baseline." + std::string(table);
+            anon::ExecuteSQL(connection, sql);
+
+            // TEMP VIEW: tags2_map / commands2_map
+            // For changed packages: delta has the full current set of mappings.
+            // For unchanged packages: baseline mappings pass through.
+            std::string mapSql =
+                "CREATE TEMP VIEW " + std::string(table) + "_map AS "
+                "SELECT " + std::string(value) + ", package FROM delta_" + std::string(table) + "_map WHERE is_removed = 0 "
+                "UNION ALL "
+                "SELECT bm." + std::string(value) + ", bm.package "
+                "FROM baseline." + std::string(table) + "_map bm "
+                "WHERE bm.package NOT IN (SELECT package FROM delta_" + std::string(table) + "_map)";
+            anon::ExecuteSQL(connection, mapSql);
+        }
+
+        m_isDeltaReadMode = true;
+        m_internalInterfaceChecked = true; // Suppress normal EnsureInternalInterface logic
     }
 }

@@ -37,6 +37,14 @@ namespace Microsoft.WinGetUtil.Interfaces
         IWinGetSQLiteIndex SQLiteIndexOpen(string indexFile);
 
         /// <summary>
+        /// Opens a delta index combined with its baseline for reading.
+        /// </summary>
+        /// <param name="deltaIndexFile">Delta index file to open.</param>
+        /// <param name="baselineIndexFile">Baseline index file to attach.</param>
+        /// <returns>Instance of IWinGetSQLiteIndex.</returns>
+        IWinGetSQLiteIndex SQLiteIndexOpenWithBaseline(string deltaIndexFile, string baselineIndexFile);
+
+        /// <summary>
         /// Initializes logging.
         /// </summary>
         /// <param name="logFile">Log index file.</param>

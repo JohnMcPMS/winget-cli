@@ -41,12 +41,18 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_0
             int64_t WriteTime = 0;
             SQLite::blob_t Manifest;
             SQLite::blob_t Hash;
+            bool IsRemoved = false;
         };
 
         // Gets the data on updates that have been written since the given base time.
+        // Includes entries for removed packages (IsRemoved == true).
         static std::vector<PackageData> GetUpdatesSince(const SQLite::Connection& connection, int64_t updateBaseTime);
 
         // Gets the data hash for the given package identifier.
         static SQLite::blob_t GetDataHash(const SQLite::Connection& connection, const std::string& packageIdentifier);
+
+        // Adds the is_removed column to the table if it does not already exist.
+        // Used when migrating from schema 2.0 to 2.1.
+        static void EnsureIsRemovedColumn(SQLite::Connection& connection);
     };
 }

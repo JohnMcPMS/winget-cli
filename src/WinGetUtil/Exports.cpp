@@ -35,6 +35,8 @@ namespace
         {
         case WinGetSQLiteIndexProperty_PackageUpdateTrackingBaseTime: return SQLiteIndex::Property::PackageUpdateTrackingBaseTime;
         case WinGetSQLiteIndexProperty_IntermediateFileOutputPath: return SQLiteIndex::Property::IntermediateFileOutputPath;
+        case WinGetSQLiteIndexProperty_DeltaBaselineIndexPath: return SQLiteIndex::Property::DeltaBaselineIndexPath;
+        case WinGetSQLiteIndexProperty_DeltaOutputPath: return SQLiteIndex::Property::DeltaOutputPath;
         }
 
         THROW_HR(E_INVALIDARG);
@@ -115,6 +117,22 @@ extern "C"
         std::string filePathUtf8 = ConvertToUTF8(filePath);
 
         std::unique_ptr<SQLiteIndex> result = std::make_unique<SQLiteIndex>(SQLiteIndex::Open(filePathUtf8, SQLiteIndex::OpenDisposition::ReadWrite));
+
+        *index = static_cast<WINGET_SQLITE_INDEX_HANDLE>(result.release());
+
+        return S_OK;
+    }
+    CATCH_RETURN()
+
+    WINGET_UTIL_API WinGetSQLiteIndexOpenWithBaseline(WINGET_STRING deltaFilePath, WINGET_STRING baselineFilePath, WINGET_SQLITE_INDEX_HANDLE* index) try
+    {
+        THROW_HR_IF(E_INVALIDARG, !deltaFilePath);
+        THROW_HR_IF(E_INVALIDARG, !baselineFilePath);
+        THROW_HR_IF(E_INVALIDARG, !index);
+        THROW_HR_IF(E_INVALIDARG, !!*index);
+
+        std::unique_ptr<SQLiteIndex> result = std::make_unique<SQLiteIndex>(
+            SQLiteIndex::OpenWithBaseline(ConvertToUTF8(deltaFilePath), ConvertToUTF8(baselineFilePath)));
 
         *index = static_cast<WINGET_SQLITE_INDEX_HANDLE>(result.release());
 

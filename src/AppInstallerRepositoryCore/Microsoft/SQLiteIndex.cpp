@@ -5,6 +5,7 @@
 #include <winget/SQLiteStorageBase.h>
 #include "ArpVersionValidation.h"
 #include <winget/ManifestYamlParser.h>
+#include "Microsoft/Schema/2_0/Interface.h"
 
 namespace AppInstaller::Repository::Microsoft
 {
@@ -35,6 +36,24 @@ namespace AppInstaller::Repository::Microsoft
     SQLiteIndex SQLiteIndex::CopyFrom(const std::string& filePath, SQLiteIndex& source)
     {
         return { filePath, source };
+    }
+
+    SQLiteIndex SQLiteIndex::OpenWithBaseline(const std::string& deltaFilePath, const std::string& baselineFilePath)
+    {
+        AICLI_LOG(Repo, Info, << "Opening delta index [" << deltaFilePath << "] with baseline [" << baselineFilePath << "]");
+        SQLiteIndex result{ deltaFilePath, SQLiteStorageBase::OpenDisposition::ReadOnly };
+
+        std::filesystem::path baselinePath{ Utility::ConvertToUTF16(baselineFilePath) };
+        THROW_HR_IF(E_INVALIDARG, baselinePath.empty() || baselinePath.is_relative());
+
+        result.m_contextData.Add<Schema::Property::DeltaBaselineIndexPath>(baselinePath);
+
+        // The interface must be V2_0 to support delta read mode
+        auto* v2Interface = dynamic_cast<Schema::V2_0::Interface*>(result.m_interface.get());
+        THROW_HR_IF(E_NOTIMPL, v2Interface == nullptr);
+        v2Interface->SetupDeltaReadMode(result.m_dbconn, baselinePath);
+
+        return result;
     }
 
     SQLiteIndex::SQLiteIndex(const std::string& target, const SQLite::Version& version) : SQLiteStorageBase(target, version)
@@ -364,6 +383,20 @@ namespace AppInstaller::Repository::Microsoft
             std::filesystem::path pathValue{ Utility::ConvertToUTF16(value) };
             THROW_HR_IF(E_INVALIDARG, pathValue.empty() || pathValue.is_relative());
             m_contextData.Add<Schema::Property::IntermediateFileOutputPath>(std::move(pathValue));
+        }
+            break;
+        case Property::DeltaBaselineIndexPath:
+        {
+            std::filesystem::path pathValue{ Utility::ConvertToUTF16(value) };
+            THROW_HR_IF(E_INVALIDARG, pathValue.empty() || pathValue.is_relative());
+            m_contextData.Add<Schema::Property::DeltaBaselineIndexPath>(std::move(pathValue));
+        }
+            break;
+        case Property::DeltaOutputPath:
+        {
+            std::filesystem::path pathValue{ Utility::ConvertToUTF16(value) };
+            THROW_HR_IF(E_INVALIDARG, pathValue.empty() || pathValue.is_relative());
+            m_contextData.Add<Schema::Property::DeltaOutputPath>(std::move(pathValue));
         }
             break;
         }

@@ -25,6 +25,9 @@
 #include <Microsoft/Schema/2_0/Interface.h>
 #include <Microsoft/Schema/2_0/PackageUpdateTrackingTable.h>
 
+#include <chrono>
+#include <thread>
+
 using namespace std::string_literals;
 using namespace std::string_view_literals;
 using namespace TestCommon;
@@ -3963,3 +3966,253 @@ TEST_CASE("SQLiteIndex_VersionStringPreserved", "[sqliteindex]")
 
     REQUIRE(extractedVersion == version);
 }
+
+TEST_CASE("SQLiteIndex_Delta_AddedPackage", "[sqliteindex][V2_1][delta]")
+{
+    TempFile workingFile{ "delta_working"s, ".db"s };
+    TempFile baselineFile{ "delta_baseline"s, ".db"s };
+    TempFile deltaFile{ "delta_output"s, ".db"s };
+
+    // Build baseline: one package "Publisher1"
+    {
+        SQLiteIndex index = SQLiteIndex::CreateNew(workingFile, SQLiteVersion{ 2, 1 });
+        index.SetProperty(SQLiteIndex::Property::PackageUpdateTrackingBaseTime, "0");
+
+        ManifestAndPath m1;
+        CreateFakeManifestAndPath(m1, "Publisher1", "1.0");
+        index.AddManifest(m1.Manifest, m1.Path);
+
+        std::filesystem::copy_file(workingFile.GetPath(), baselineFile.GetPath(), std::filesystem::copy_options::overwrite_existing);
+        SQLiteIndex prepared = SQLiteIndex::Open(baselineFile.GetPath().u8string(), SQLiteStorageBase::OpenDisposition::ReadWrite);
+        prepared.PrepareForPackaging();
+    }
+
+    // Add a new package to the working index and generate a delta
+    {
+        SQLiteIndex index = SQLiteIndex::Open(workingFile, SQLiteStorageBase::OpenDisposition::ReadWrite);
+        index.SetProperty(SQLiteIndex::Property::PackageUpdateTrackingBaseTime, "");
+
+        // Sleep 1s to ensure Publisher2's write time is after the new base time
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+
+        ManifestAndPath m2;
+        CreateFakeManifestAndPath(m2, "Publisher2", "1.0");
+        index.AddManifest(m2.Manifest, m2.Path);
+
+        index.SetProperty(SQLiteIndex::Property::DeltaBaselineIndexPath, baselineFile.GetPath().u8string());
+        index.SetProperty(SQLiteIndex::Property::DeltaOutputPath, deltaFile.GetPath().u8string());
+        index.PrepareForPackaging();
+    }
+
+    // The delta file should exist and contain the new package
+    REQUIRE(std::filesystem::exists(deltaFile.GetPath()));
+
+    Connection deltaConn = Connection::Create(deltaFile.GetPath().u8string(), Connection::OpenDisposition::ReadOnly);
+
+    Statement countStmt = Statement::Create(deltaConn, "SELECT COUNT(*) FROM delta_packages WHERE is_removed = 0");
+    REQUIRE(countStmt.Step());
+    REQUIRE(countStmt.GetColumn<int64_t>(0) == 1);
+
+    Statement idStmt = Statement::Create(deltaConn, "SELECT id FROM delta_packages WHERE is_removed = 0");
+    REQUIRE(idStmt.Step());
+    REQUIRE(idStmt.GetColumn<std::string>(0) == "Publisher2.Id");
+}
+
+TEST_CASE("SQLiteIndex_Delta_RemovedPackage", "[sqliteindex][V2_1][delta]")
+{
+    TempFile workingFile{ "delta_working"s, ".db"s };
+    TempFile baselineFile{ "delta_baseline"s, ".db"s };
+    TempFile deltaFile{ "delta_output"s, ".db"s };
+
+    ManifestAndPath m1;
+    CreateFakeManifestAndPath(m1, "Publisher1", "1.0");
+    ManifestAndPath m2;
+    CreateFakeManifestAndPath(m2, "Publisher2", "1.0");
+
+    // Build baseline: two packages
+    {
+        SQLiteIndex index = SQLiteIndex::CreateNew(workingFile, SQLiteVersion{ 2, 1 });
+        index.SetProperty(SQLiteIndex::Property::PackageUpdateTrackingBaseTime, "0");
+        index.AddManifest(m1.Manifest, m1.Path);
+        index.AddManifest(m2.Manifest, m2.Path);
+
+        std::filesystem::copy_file(workingFile.GetPath(), baselineFile.GetPath(), std::filesystem::copy_options::overwrite_existing);
+        SQLiteIndex prepared = SQLiteIndex::Open(baselineFile.GetPath().u8string(), SQLiteStorageBase::OpenDisposition::ReadWrite);
+        prepared.PrepareForPackaging();
+    }
+
+    // Remove Publisher2 from the working index and generate a delta
+    {
+        SQLiteIndex index = SQLiteIndex::Open(workingFile, SQLiteStorageBase::OpenDisposition::ReadWrite);
+        index.SetProperty(SQLiteIndex::Property::PackageUpdateTrackingBaseTime, "");
+
+        // Sleep 1s to ensure Publisher2 removal write time is after the new base time
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+
+        index.RemoveManifest(m2.Manifest, m2.Path);
+
+        index.SetProperty(SQLiteIndex::Property::DeltaBaselineIndexPath, baselineFile.GetPath().u8string());
+        index.SetProperty(SQLiteIndex::Property::DeltaOutputPath, deltaFile.GetPath().u8string());
+        index.PrepareForPackaging();
+    }
+
+    REQUIRE(std::filesystem::exists(deltaFile.GetPath()));
+
+    Connection deltaConn = Connection::Create(deltaFile.GetPath().u8string(), Connection::OpenDisposition::ReadOnly);
+
+    Statement countStmt = Statement::Create(deltaConn, "SELECT COUNT(*) FROM delta_packages WHERE is_removed = 1");
+    REQUIRE(countStmt.Step());
+    REQUIRE(countStmt.GetColumn<int64_t>(0) == 1);
+
+    Statement idStmt = Statement::Create(deltaConn, "SELECT id FROM delta_packages WHERE is_removed = 1");
+    REQUIRE(idStmt.Step());
+    REQUIRE(idStmt.GetColumn<std::string>(0) == "Publisher2.Id");
+}
+
+TEST_CASE("SQLiteIndex_Delta_NoChanges_NoDeltaFile", "[sqliteindex][V2_1][delta]")
+{
+    TempFile workingFile{ "delta_working"s, ".db"s };
+    TempFile baselineFile{ "delta_baseline"s, ".db"s };
+    TempFile deltaFile{ "delta_output"s, ".db"s };
+
+    ManifestAndPath m1;
+    CreateFakeManifestAndPath(m1, "Publisher1", "1.0");
+
+    // Build baseline
+    {
+        SQLiteIndex index = SQLiteIndex::CreateNew(workingFile, SQLiteVersion{ 2, 1 });
+        index.SetProperty(SQLiteIndex::Property::PackageUpdateTrackingBaseTime, "0");
+        index.AddManifest(m1.Manifest, m1.Path);
+
+        std::filesystem::copy_file(workingFile.GetPath(), baselineFile.GetPath(), std::filesystem::copy_options::overwrite_existing);
+        SQLiteIndex prepared = SQLiteIndex::Open(baselineFile.GetPath().u8string(), SQLiteStorageBase::OpenDisposition::ReadWrite);
+        prepared.PrepareForPackaging();
+    }
+
+    // Set tracking base to "now" so no packages appear changed
+    {
+        SQLiteIndex index = SQLiteIndex::Open(workingFile, SQLiteStorageBase::OpenDisposition::ReadWrite);
+        index.SetProperty(SQLiteIndex::Property::PackageUpdateTrackingBaseTime, "");  // records current time
+
+        index.SetProperty(SQLiteIndex::Property::DeltaBaselineIndexPath, baselineFile.GetPath().u8string());
+        index.SetProperty(SQLiteIndex::Property::DeltaOutputPath, deltaFile.GetPath().u8string());
+        index.PrepareForPackaging();
+    }
+
+    // No changes tracked after setting base time, so delta file should NOT have been created
+    REQUIRE(!std::filesystem::exists(deltaFile.GetPath()));
+}
+
+TEST_CASE("SQLiteIndex_Delta_OpenWithBaseline_Search", "[sqliteindex][V2_1][delta]")
+{
+    TempFile workingFile{ "delta_working"s, ".db"s };
+    TempFile baselineFile{ "delta_baseline"s, ".db"s };
+    TempFile workingFile2{ "delta_working2"s, ".db"s };
+    TempFile deltaFile{ "delta_output"s, ".db"s };
+
+    ManifestAndPath m1;
+    CreateFakeManifestAndPath(m1, "Publisher1", "1.0");
+
+    // Build baseline with Publisher1
+    {
+        SQLiteIndex index = SQLiteIndex::CreateNew(workingFile, SQLiteVersion{ 2, 1 });
+        index.SetProperty(SQLiteIndex::Property::PackageUpdateTrackingBaseTime, "0");
+        index.AddManifest(m1.Manifest, m1.Path);
+
+        std::filesystem::copy_file(workingFile.GetPath(), baselineFile.GetPath(), std::filesystem::copy_options::overwrite_existing);
+        SQLiteIndex prepared = SQLiteIndex::Open(baselineFile.GetPath().u8string(), SQLiteStorageBase::OpenDisposition::ReadWrite);
+        prepared.PrepareForPackaging();
+    }
+
+    ManifestAndPath m2;
+    CreateFakeManifestAndPath(m2, "Publisher2", "1.0");
+
+    // Add Publisher2 to working copy and generate delta
+    {
+        SQLiteIndex index = SQLiteIndex::Open(workingFile, SQLiteStorageBase::OpenDisposition::ReadWrite);
+        index.SetProperty(SQLiteIndex::Property::PackageUpdateTrackingBaseTime, "");
+
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+
+        index.AddManifest(m2.Manifest, m2.Path);
+
+        index.SetProperty(SQLiteIndex::Property::DeltaBaselineIndexPath, baselineFile.GetPath().u8string());
+        index.SetProperty(SQLiteIndex::Property::DeltaOutputPath, deltaFile.GetPath().u8string());
+        index.PrepareForPackaging();
+    }
+
+    REQUIRE(std::filesystem::exists(deltaFile.GetPath()));
+
+    // Open the delta combined with the baseline
+    SQLiteIndex combined = SQLiteIndex::OpenWithBaseline(
+        deltaFile.GetPath().u8string(),
+        baselineFile.GetPath().u8string());
+
+    // Search should return both Publisher1 (from baseline) and Publisher2 (from delta)
+    auto results = combined.Search({});
+    REQUIRE(results.Matches.size() == 2);
+
+    std::set<std::string> foundIds;
+    for (const auto& match : results.Matches)
+    {
+        auto id = combined.GetPropertyByPrimaryId(match.first, PackageVersionProperty::Id);
+        REQUIRE(id.has_value());
+        foundIds.insert(id.value());
+    }
+
+    REQUIRE(foundIds.count("Publisher1.Id") == 1);
+    REQUIRE(foundIds.count("Publisher2.Id") == 1);
+}
+
+TEST_CASE("SQLiteIndex_Delta_OpenWithBaseline_RemovedPackageExcluded", "[sqliteindex][V2_1][delta]")
+{
+    TempFile workingFile{ "delta_working"s, ".db"s };
+    TempFile baselineFile{ "delta_baseline"s, ".db"s };
+    TempFile deltaFile{ "delta_output"s, ".db"s };
+
+    ManifestAndPath m1;
+    CreateFakeManifestAndPath(m1, "Publisher1", "1.0");
+    ManifestAndPath m2;
+    CreateFakeManifestAndPath(m2, "Publisher2", "1.0");
+
+    // Build baseline with two packages
+    {
+        SQLiteIndex index = SQLiteIndex::CreateNew(workingFile, SQLiteVersion{ 2, 1 });
+        index.SetProperty(SQLiteIndex::Property::PackageUpdateTrackingBaseTime, "0");
+        index.AddManifest(m1.Manifest, m1.Path);
+        index.AddManifest(m2.Manifest, m2.Path);
+
+        std::filesystem::copy_file(workingFile.GetPath(), baselineFile.GetPath(), std::filesystem::copy_options::overwrite_existing);
+        SQLiteIndex prepared = SQLiteIndex::Open(baselineFile.GetPath().u8string(), SQLiteStorageBase::OpenDisposition::ReadWrite);
+        prepared.PrepareForPackaging();
+    }
+
+    // Remove Publisher2 and generate delta
+    {
+        SQLiteIndex index = SQLiteIndex::Open(workingFile, SQLiteStorageBase::OpenDisposition::ReadWrite);
+        index.SetProperty(SQLiteIndex::Property::PackageUpdateTrackingBaseTime, "");
+
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+
+        index.RemoveManifest(m2.Manifest, m2.Path);
+
+        index.SetProperty(SQLiteIndex::Property::DeltaBaselineIndexPath, baselineFile.GetPath().u8string());
+        index.SetProperty(SQLiteIndex::Property::DeltaOutputPath, deltaFile.GetPath().u8string());
+        index.PrepareForPackaging();
+    }
+
+    REQUIRE(std::filesystem::exists(deltaFile.GetPath()));
+
+    // Open combined: should show only Publisher1 (Publisher2 removed)
+    SQLiteIndex combined = SQLiteIndex::OpenWithBaseline(
+        deltaFile.GetPath().u8string(),
+        baselineFile.GetPath().u8string());
+
+    auto results = combined.Search({});
+    REQUIRE(results.Matches.size() == 1);
+
+    auto id = combined.GetPropertyByPrimaryId(results.Matches[0].first, PackageVersionProperty::Id);
+    REQUIRE(id.has_value());
+    REQUIRE(id.value() == "Publisher1.Id");
+}
+

@@ -55,6 +55,11 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_0
         bool MigrateFrom(SQLite::Connection& connection, const ISQLiteIndex* current) override;
         void SetProperty(SQLite::Connection& connection, Property property, const std::string& value) override;
 
+        // Sets up this index to act as a composed (delta + baseline) read-only view.
+        // Attaches the baseline database and creates TEMP VIEWs that union delta + baseline data.
+        // Must be called before any read operations on a delta index.
+        void SetupDeltaReadMode(SQLite::Connection& connection, const std::filesystem::path& baselinePath);
+
     protected:
         // Creates the search results table.
         virtual std::unique_ptr<SearchResultsTable> CreateSearchResultsTable(const SQLite::Connection& connection) const;
@@ -88,6 +93,9 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_0
 
         // If EnsureInternalInterface has been called.
         mutable bool m_internalInterfaceChecked = false;
+
+        // Set to true after SetupDeltaReadMode; prevents EnsureInternalInterface from creating the V1.7 interface.
+        mutable bool m_isDeltaReadMode = false;
 
         // Interface to the data before PrepareForPackaging is called.
         mutable std::unique_ptr<Schema::ISQLiteIndex> m_internalInterface;

@@ -146,6 +146,9 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_0
         // Insert the given values into the table.
         static SQLite::rowid_t Insert(SQLite::Connection& connection, const std::vector<NameValuePair>& values);
 
+        // Insert the given values into the table at a specific rowid.
+        static SQLite::rowid_t InsertWithRowId(SQLite::Connection& connection, SQLite::rowid_t rowid, const std::vector<NameValuePair>& values);
+
         // Gets a value indicating whether the package with rowid exists.
         static bool ExistsById(const SQLite::Connection& connection, SQLite::rowid_t rowid);
 

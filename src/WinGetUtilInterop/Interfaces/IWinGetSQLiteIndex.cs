@@ -26,6 +26,18 @@ namespace Microsoft.WinGetUtil.Interfaces
         /// The path does not need to exist, and may not be created if no files need to be written.
         /// </summary>
         IntermediateFileOutputPath = 1,
+
+        /// <summary>
+        /// The full path to the baseline V2 index file to compare against when generating a delta.
+        /// Must be set together with DeltaOutputPath before calling PrepareForPackaging.
+        /// </summary>
+        DeltaBaselineIndexPath = 2,
+
+        /// <summary>
+        /// The full path where the delta index file will be written.
+        /// Must be set together with DeltaBaselineIndexPath before calling PrepareForPackaging.
+        /// </summary>
+        DeltaOutputPath = 3,
     }
 
     /// <summary>

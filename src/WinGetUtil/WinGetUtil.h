@@ -121,6 +121,12 @@ extern "C"
         WINGET_STRING filePath, 
         WINGET_SQLITE_INDEX_HANDLE* index);
 
+    // Opens an existing delta index combined with its baseline for reading.
+    WINGET_UTIL_API WinGetSQLiteIndexOpenWithBaseline(
+        WINGET_STRING deltaFilePath,
+        WINGET_STRING baselineFilePath,
+        WINGET_SQLITE_INDEX_HANDLE* index);
+
     // Closes the index.
     WINGET_UTIL_API WinGetSQLiteIndexClose(
         WINGET_SQLITE_INDEX_HANDLE index);
@@ -135,6 +141,8 @@ extern "C"
     {
         WinGetSQLiteIndexProperty_PackageUpdateTrackingBaseTime = 0,
         WinGetSQLiteIndexProperty_IntermediateFileOutputPath = 1,
+        WinGetSQLiteIndexProperty_DeltaBaselineIndexPath = 2,
+        WinGetSQLiteIndexProperty_DeltaOutputPath = 3,
     };
 
     // Sets the given property on the index.

@@ -55,6 +55,11 @@ namespace AppInstaller::Repository::Microsoft
         // Creates a copy of the given index.
         static SQLiteIndex CopyFrom(const std::string& filePath, SQLiteIndex& source);
 
+        // Opens a delta index combined with its baseline for reading.
+        // The delta is the main connection; the baseline is ATTACHed and TEMP VIEWs are created
+        // so that existing search code operates transparently across both.
+        static SQLiteIndex OpenWithBaseline(const std::string& deltaFilePath, const std::string& baselineFilePath);
+
 #ifndef AICLI_DISABLE_TEST_HOOKS
         // Changes the version of the interface being used to operate on the database.
         // Should only be used for testing.
@@ -167,6 +172,8 @@ namespace AppInstaller::Repository::Microsoft
         {
             PackageUpdateTrackingBaseTime,
             IntermediateFileOutputPath,
+            DeltaBaselineIndexPath,
+            DeltaOutputPath,
         };
 
         // Sets the given property.

@@ -58,6 +58,20 @@ namespace Microsoft.WinGetUtil.Api
         }
 
         /// <inheritdoc/>
+        public IWinGetSQLiteIndex SQLiteIndexOpenWithBaseline(string deltaIndexFile, string baselineIndexFile)
+        {
+            try
+            {
+                WinGetSQLiteIndexOpenWithBaseline(deltaIndexFile, baselineIndexFile, out IntPtr index);
+                return new WinGetSQLiteIndex(index);
+            }
+            catch (Exception e)
+            {
+                throw new WinGetSQLiteIndexException(e);
+            }
+        }
+
+        /// <inheritdoc/>
         public IWinGetLogging LoggingInit(string indexLogFile)
         {
             try
@@ -159,6 +173,16 @@ namespace Microsoft.WinGetUtil.Api
         /// <returns>HRESULT.</returns>
         [DllImport(Constants.DllName, CallingConvention = CallingConvention.StdCall, CharSet = CharSet.Unicode, PreserveSig = false)]
         private static extern IntPtr WinGetSQLiteIndexOpen(string filePath, out IntPtr index);
+
+        /// <summary>
+        /// Opens an existing delta index combined with its baseline for reading.
+        /// </summary>
+        /// <param name="deltaFilePath">File path of delta index.</param>
+        /// <param name="baselineFilePath">File path of baseline index.</param>
+        /// <param name="index">Out handle of the index.</param>
+        /// <returns>HRESULT.</returns>
+        [DllImport(Constants.DllName, CallingConvention = CallingConvention.StdCall, CharSet = CharSet.Unicode, PreserveSig = false)]
+        private static extern IntPtr WinGetSQLiteIndexOpenWithBaseline(string deltaFilePath, string baselineFilePath, out IntPtr index);
 
         /// <summary>
         /// Initializes the logging infrastructure.

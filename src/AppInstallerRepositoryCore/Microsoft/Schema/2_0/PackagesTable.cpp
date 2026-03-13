@@ -237,6 +237,32 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_0
         return connection.GetLastInsertRowID();
     }
 
+    SQLite::rowid_t PackagesTable::InsertWithRowId(SQLite::Connection& connection, SQLite::rowid_t rowid, const std::vector<NameValuePair>& values)
+    {
+        SQLite::Builder::StatementBuilder builder;
+        builder.InsertInto(s_PackagesTable_Table_Name).BeginColumns();
+
+        builder.Column(SQLite::RowIDName);
+        for (const NameValuePair& value : values)
+        {
+            builder.Column(value.Name);
+        }
+
+        builder.EndColumns().BeginValues();
+
+        builder.Value(rowid);
+        for (const NameValuePair& value : values)
+        {
+            builder.Value(value.Value);
+        }
+
+        builder.EndValues();
+
+        builder.Execute(connection);
+
+        return rowid;
+    }
+
     bool PackagesTable::ExistsById(const SQLite::Connection& connection, SQLite::rowid_t id)
     {
         SQLite::Builder::StatementBuilder builder;
