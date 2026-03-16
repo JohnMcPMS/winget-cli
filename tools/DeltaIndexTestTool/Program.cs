@@ -8,6 +8,7 @@ namespace DeltaIndexTestTool
     using Microsoft.WinGetUtil.Interfaces;
     using System;
     using System.Collections.Generic;
+    using System.Diagnostics;
     using System.IO;
     using System.Linq;
     using System.Text;
@@ -58,6 +59,9 @@ namespace DeltaIndexTestTool
                     case "-h":
                         PrintUsage();
                         return 0;
+                    default:
+                        PrintUsage();
+                        return 1;
                 }
             }
 
@@ -73,20 +77,16 @@ namespace DeltaIndexTestTool
                 return 1;
             }
 
-            // Validate resume arguments: both must be provided together
-            bool hasResume = !string.IsNullOrEmpty(resumeCommit) || !string.IsNullOrEmpty(resumeWorkingIndexPath);
-            if (hasResume)
+            // --resume-working-index requires --resume-commit; the reverse is fine (build from scratch at that commit)
+            if (!string.IsNullOrEmpty(resumeWorkingIndexPath) && string.IsNullOrEmpty(resumeCommit))
             {
-                if (string.IsNullOrEmpty(resumeCommit) || string.IsNullOrEmpty(resumeWorkingIndexPath))
-                {
-                    Console.Error.WriteLine("--resume-commit and --resume-working-index must be provided together.");
-                    return 1;
-                }
-                if (!File.Exists(resumeWorkingIndexPath))
-                {
-                    Console.Error.WriteLine($"Resume working index not found: {resumeWorkingIndexPath}");
-                    return 1;
-                }
+                Console.Error.WriteLine("--resume-working-index requires --resume-commit.");
+                return 1;
+            }
+            if (!string.IsNullOrEmpty(resumeWorkingIndexPath) && !File.Exists(resumeWorkingIndexPath))
+            {
+                Console.Error.WriteLine($"Resume working index not found: {resumeWorkingIndexPath}");
+                return 1;
             }
 
             Directory.CreateDirectory(outputDir);
@@ -118,12 +118,16 @@ namespace DeltaIndexTestTool
             Console.WriteLine("  --max <n>                       Maximum number of checkpoints; selects the N most");
             Console.WriteLine("                                  recent intervals working backward from HEAD");
             Console.WriteLine("  --branch <name>                 Branch to walk (default: master)");
-            Console.WriteLine("  --resume-commit <sha>           Commit SHA to resume from (skip initial build)");
+            Console.WriteLine("  --resume-commit <sha>           Commit SHA to resume from");
             Console.WriteLine("  --resume-working-index <path>   Path to pre-packaging working index for resume commit");
             Console.WriteLine();
-            Console.WriteLine("Resume: both --resume-* options must be provided together. The tool will");
-            Console.WriteLine("  package the working index to produce checkpoint 0's full index, then");
-            Console.WriteLine("  continue processing subsequent checkpoints from there.");
+            Console.WriteLine("Resume modes:");
+            Console.WriteLine("  --resume-commit only            Starts a fresh index at that commit, then continues");
+            Console.WriteLine("                                  forward from there (skips re-walking older history).");
+            Console.WriteLine("  --resume-commit + --resume-working-index");
+            Console.WriteLine("                                  Uses the provided pre-built working index as checkpoint 0,");
+            Console.WriteLine("                                  packages it, then continues with subsequent checkpoints.");
+            Console.WriteLine("  --resume-working-index requires --resume-commit.");
             Console.WriteLine();
             Console.WriteLine("Output:");
             Console.WriteLine("  results.csv        CSV of checkpoint sizes");
@@ -137,11 +141,20 @@ namespace DeltaIndexTestTool
             Console.WriteLine($"Output directory: {outputDir}");
             Console.WriteLine($"Interval: every {intervalDays} day(s)");
 
-            bool isResume = !string.IsNullOrEmpty(resumeCommit);
+            bool hasResumeCommit = !string.IsNullOrEmpty(resumeCommit);
+            bool hasResumeIndex = !string.IsNullOrEmpty(resumeWorkingIndexPath);
 
-            // When resuming, find the resume commit to use as anchor; checkpoints start after it.
-            // When --max is given without resume, work backward from HEAD to select the N most recent intervals.
-            var checkpoints = SelectCheckpoints(repoPath, branch, intervalDays, maxCheckpoints, isResume ? resumeCommit : null);
+            // SelectCheckpoints uses the resume commit as an anchor: it only returns commits
+            // strictly after it.  We always prepend the resume commit as checkpoints[0] so
+            // that the first ApplyGitDiff starts from the resume commit itself, ensuring no
+            // commits between the baseline and the first selected interval are skipped.
+            var checkpoints = SelectCheckpoints(repoPath, branch, intervalDays, maxCheckpoints, hasResumeCommit ? resumeCommit : null);
+
+            if (hasResumeCommit)
+            {
+                var resumeDate = LookupCommitDate(repoPath, resumeCommit);
+                checkpoints.Insert(0, new CommitCheckpoint(resumeCommit, resumeDate));
+            }
             Console.WriteLine($"Selected {checkpoints.Count} checkpoints");
 
             if (checkpoints.Count == 0)
@@ -160,13 +173,13 @@ namespace DeltaIndexTestTool
                 for (int i = 0; i < checkpoints.Count; i++)
                 {
                     var checkpoint = checkpoints[i];
-                    Console.WriteLine($"\n[{i + 1}/{checkpoints.Count}] Processing checkpoint: {checkpoint.Commit.Sha[..8]} ({checkpoint.Date:yyyy-MM-dd})");
+                    Console.WriteLine($"\n[{i + 1}/{checkpoints.Count}] Processing checkpoint: {checkpoint.Sha[..8]} ({checkpoint.Date:yyyy-MM-dd})");
 
                     var result = new CheckpointResult
                     {
                         Index = i,
                         Date = checkpoint.Date,
-                        CommitSha = checkpoint.Commit.Sha[..8],
+                        CommitSha = checkpoint.Sha[..8],
                     };
 
                     string checkpointDir = Path.Combine(outputDir, $"checkpoint_{i:D4}");
@@ -175,23 +188,24 @@ namespace DeltaIndexTestTool
                     string fullIndexPath = Path.Combine(checkpointDir, "full_index.db");
                     string deltaPath = Path.Combine(checkpointDir, "delta.db");
 
-                    if (i == 0 && isResume)
+                    if (i == 0 && hasResumeIndex)
                     {
-                        // Resume: copy the provided working index into position, then package it
-                        // to produce this checkpoint's full index — same as a normal first checkpoint
-                        // except we already have the working state.
+                        // Resume with a pre-built working index: copy it into position and package.
                         Console.WriteLine($"  Resuming from provided working index (commit {resumeCommit[..Math.Min(8, resumeCommit.Length)]})");
 
                         File.Copy(resumeWorkingIndexPath, workingIndexPath, overwrite: true);
 
+                        string savedWorkingPath = Path.Combine(checkpointDir, "working_index.db");
+                        File.Copy(workingIndexPath, savedWorkingPath, overwrite: true);
+
                         File.Copy(workingIndexPath, fullIndexPath, overwrite: true);
                         using (var packagingIndex = factory.SQLiteIndexOpen(fullIndexPath))
                         {
+                            packagingIndex.SetProperty(SQLiteIndexProperty.PackageUpdateTrackingBaseTime, string.Empty);
                             packagingIndex.PrepareForPackaging();
                         }
 
                         workingIndex = factory.SQLiteIndexOpen(workingIndexPath);
-                        workingIndex.SetProperty(SQLiteIndexProperty.PackageUpdateTrackingBaseTime, string.Empty);
 
                         result.FullIndexBytes = new FileInfo(fullIndexPath).Length;
                         result.DeltaBytes = 0;
@@ -202,7 +216,7 @@ namespace DeltaIndexTestTool
                     }
                     else if (i == 0)
                     {
-                        // First checkpoint: build from scratch
+                        // First checkpoint with no pre-built index: build from scratch at the resume commit.
                         Console.WriteLine("  Building initial full index from scratch...");
 
                         if (File.Exists(workingIndexPath)) File.Delete(workingIndexPath);
@@ -210,20 +224,23 @@ namespace DeltaIndexTestTool
                         workingIndex = factory.SQLiteIndexCreate(workingIndexPath, 2u, 1u);
                         workingIndex.SetProperty(SQLiteIndexProperty.PackageUpdateTrackingBaseTime, "0");
 
-                        int added = AddAllManifests(workingIndex, repoPath, checkpoint.Commit, checkpointDir);
+                        int added = AddAllManifests(workingIndex, repoPath, checkpoint.Sha);
                         Console.WriteLine($"  Added {added} manifest files");
 
                         workingIndex.Dispose();
                         workingIndex = null;
 
+                        string savedWorkingPath = Path.Combine(checkpointDir, "working_index.db");
+                        File.Copy(workingIndexPath, savedWorkingPath, overwrite: true);
+
                         File.Copy(workingIndexPath, fullIndexPath, overwrite: true);
                         using (var packagingIndex = factory.SQLiteIndexOpen(fullIndexPath))
                         {
+                            packagingIndex.SetProperty(SQLiteIndexProperty.PackageUpdateTrackingBaseTime, string.Empty);
                             packagingIndex.PrepareForPackaging();
                         }
 
                         workingIndex = factory.SQLiteIndexOpen(workingIndexPath);
-                        workingIndex.SetProperty(SQLiteIndexProperty.PackageUpdateTrackingBaseTime, string.Empty);
 
                         result.FullIndexBytes = new FileInfo(fullIndexPath).Length;
                         result.DeltaBytes = 0;
@@ -239,17 +256,21 @@ namespace DeltaIndexTestTool
                         string prevFullIndexPath = results[i - 1].FullIndexPath!;
 
                         Console.WriteLine("  Applying git diff from previous checkpoint...");
-                        int changed = ApplyGitDiff(workingIndex!, repoPath, prevCheckpoint.Commit, checkpoint.Commit, checkpointDir);
+                        int changed = ApplyGitDiff(workingIndex!, repoPath, prevCheckpoint.Sha, checkpoint.Sha, checkpointDir);
                         Console.WriteLine($"  Applied {changed} manifest changes");
 
                         workingIndex!.Dispose();
                         workingIndex = null;
+
+                        string savedWorkingPath = Path.Combine(checkpointDir, "working_index.db");
+                        File.Copy(workingIndexPath, savedWorkingPath, overwrite: true);
 
                         // Build full index (no delta properties set)
                         string fullOnlyPath = fullIndexPath + ".full_only.db";
                         File.Copy(workingIndexPath, fullOnlyPath, overwrite: true);
                         using (var fullPackagingIndex = factory.SQLiteIndexOpen(fullOnlyPath))
                         {
+                            fullPackagingIndex.SetProperty(SQLiteIndexProperty.PackageUpdateTrackingBaseTime, string.Empty);
                             fullPackagingIndex.PrepareForPackaging();
                         }
                         File.Move(fullOnlyPath, fullIndexPath, overwrite: true);
@@ -261,12 +282,12 @@ namespace DeltaIndexTestTool
                         {
                             deltaPackagingIndex.SetProperty(SQLiteIndexProperty.DeltaBaselineIndexPath, Path.GetFullPath(prevFullIndexPath));
                             deltaPackagingIndex.SetProperty(SQLiteIndexProperty.DeltaOutputPath, Path.GetFullPath(deltaPath));
+                            deltaPackagingIndex.SetProperty(SQLiteIndexProperty.PackageUpdateTrackingBaseTime, string.Empty);
                             deltaPackagingIndex.PrepareForPackaging();
                         }
                         File.Delete(deltaWorkPath);
 
                         workingIndex = factory.SQLiteIndexOpen(workingIndexPath);
-                        workingIndex.SetProperty(SQLiteIndexProperty.PackageUpdateTrackingBaseTime, string.Empty);
 
                         result.FullIndexBytes = new FileInfo(fullIndexPath).Length;
                         result.DeltaBytes = File.Exists(deltaPath) ? new FileInfo(deltaPath).Length : 0;
@@ -296,6 +317,14 @@ namespace DeltaIndexTestTool
             Console.WriteLine($"Report written to: {htmlPath}");
         }
 
+        static DateTime LookupCommitDate(string repoPath, string sha)
+        {
+            using var repo = new Repository(repoPath);
+            var commit = repo.Lookup<Commit>(sha)
+                ?? throw new InvalidOperationException($"Commit '{sha}' not found in repository");
+            return commit.Author.When.DateTime;
+        }
+
         /// <summary>
         /// Selects commits at evenly-spaced intervals across the branch history.
         ///
@@ -315,22 +344,12 @@ namespace DeltaIndexTestTool
                 throw new InvalidOperationException($"Branch '{branch}' not found in repository");
             }
 
-            // Collect all commits sorted newest-first
-            var allCommits = repo.Commits
-                .QueryBy(new CommitFilter
-                {
-                    IncludeReachableFrom = branchRef.Tip,
-                    SortBy = CommitSortStrategies.Time,
-                })
-                .ToList();
-
-            if (allCommits.Count == 0) return [];
-
-            // If resuming, find the anchor commit and exclude it and anything older
+            // Resolve the anchor commit's timestamp without loading all commits.
+            // repo.Lookup<Commit> handles full and abbreviated SHAs efficiently.
             DateTimeOffset? afterTime = null;
             if (!string.IsNullOrEmpty(afterCommitSha))
             {
-                var anchor = allCommits.FirstOrDefault(c => c.Sha.StartsWith(afterCommitSha, StringComparison.OrdinalIgnoreCase));
+                var anchor = repo.Lookup<Commit>(afterCommitSha);
                 if (anchor == null)
                 {
                     throw new InvalidOperationException($"Resume commit '{afterCommitSha}' not found on branch '{branch}'");
@@ -338,179 +357,302 @@ namespace DeltaIndexTestTool
                 afterTime = anchor.Author.When;
             }
 
-            if (maxCheckpoints > 0)
+            var filter = new CommitFilter
             {
-                // Work backward from HEAD: pick intervals going back in time, then reverse
-                var selected = new List<CommitCheckpoint>();
-                DateTimeOffset? lastSelected = null;
+                IncludeReachableFrom = branchRef.Tip,
+                SortBy = CommitSortStrategies.Time,
+            };
 
-                foreach (var commit in allCommits) // newest-first
+            // Stream commits newest-first; store only SHA strings to avoid holding native
+            // libgit2 handles beyond the Repository lifetime.  Both the --max and no-max
+            // paths work backward from HEAD and then reverse, which avoids a full
+            // materialization of the 300K+ commit walk.
+            var selected = new List<CommitCheckpoint>();
+            DateTimeOffset? lastSelected = null;
+
+            foreach (var commit in repo.Commits.QueryBy(filter)) // newest-first, lazy
+            {
+                var commitTime = commit.Author.When;
+
+                // Stop as soon as we pass the resume anchor
+                if (afterTime.HasValue && commitTime <= afterTime.Value)
+                    break;
+
+                if (lastSelected == null || (lastSelected.Value - commitTime).TotalDays >= intervalDays)
                 {
-                    var commitTime = commit.Author.When;
+                    selected.Add(new CommitCheckpoint(commit.Sha, commitTime.DateTime));
+                    lastSelected = commitTime;
 
-                    // Skip commits at or before the resume anchor
-                    if (afterTime.HasValue && commitTime <= afterTime.Value)
+                    if (maxCheckpoints > 0 && selected.Count >= maxCheckpoints)
                         break;
-
-                    if (lastSelected == null || (lastSelected.Value - commitTime).TotalDays >= intervalDays)
-                    {
-                        selected.Add(new CommitCheckpoint(commit, commitTime.DateTime));
-                        lastSelected = commitTime;
-
-                        if (selected.Count >= maxCheckpoints)
-                            break;
-                    }
                 }
-
-                // Return in chronological order (oldest first)
-                selected.Reverse();
-                return selected;
             }
-            else
+
+            // Return in chronological order (oldest first)
+            selected.Reverse();
+            return selected;
+        }
+
+        /// <summary>
+        /// Checks out the target commit in the repository, then walks the filesystem to collect
+        /// manifest directories and add them to the index.  The repository is left at the target
+        /// commit on return (no state is restored).
+        /// Retries failures until no further progress can be made (resolves dependency ordering).
+        /// Returns the count of manifests successfully added.
+        /// </summary>
+        static int AddAllManifests(IWinGetSQLiteIndex index, string repoPath, string commitSha)
+        {
+            Console.WriteLine($"    Checking out commit {commitSha[..8]}...");
+            RunGit(repoPath, $"checkout --detach {commitSha}");
+
+            string manifestsRoot = Path.Combine(repoPath, "manifests");
+            if (!Directory.Exists(manifestsRoot)) return 0;
+
+            // Collect manifest version directories: any directory that contains .yaml files directly.
+            Console.WriteLine("    Collecting manifest directories from filesystem...");
+            var manifests = Directory
+                .EnumerateFiles(manifestsRoot, "*.yaml", SearchOption.AllDirectories)
+                .GroupBy(f => Path.GetDirectoryName(f)!, StringComparer.OrdinalIgnoreCase)
+                .Select(g => (
+                    LocalDir: g.Key,
+                    RelPath: Path.GetRelativePath(repoPath, g.Key).Replace(Path.DirectorySeparatorChar, '/')))
+                .ToList();
+            Console.WriteLine($"    Found {manifests.Count} manifest directories");
+
+            // Initial add pass — collect failures, printing periodic progress.
+            var failed = new List<(string LocalDir, string RelPath)>();
+            int total = manifests.Count;
+            int done = 0;
+            foreach (var (localDir, relPath) in manifests)
             {
-                // Walk oldest-first, selecting at each interval
-                var chronological = allCommits
-                    .Where(c => !afterTime.HasValue || c.Author.When > afterTime.Value)
-                    .Reverse()
-                    .ToList();
+                try { index.AddManifest(localDir, relPath); }
+                catch { failed.Add((localDir, relPath)); }
 
-                var selected = new List<CommitCheckpoint>();
-                DateTimeOffset? lastSelected = null;
+                done++;
+                if (done % 500 == 0 || done == total)
+                    Console.Write($"\r    Adding: {done}/{total} ({100.0 * done / total:F1}%)   ");
+            }
+            Console.WriteLine(); // end the \r line
 
-                foreach (var commit in chronological)
+            // Retry loop: keep going as long as at least one failure is resolved each round.
+            int pass = 1;
+            while (failed.Count > 0)
+            {
+                var retrying = failed;
+                failed = [];
+                Console.WriteLine($"    Retry pass {pass}: {retrying.Count} manifest(s) pending...");
+                foreach (var (localDir, relPath) in retrying)
                 {
-                    var commitTime = commit.Author.When;
-
-                    if (lastSelected == null || (commitTime - lastSelected.Value).TotalDays >= intervalDays)
-                    {
-                        selected.Add(new CommitCheckpoint(commit, commitTime.DateTime));
-                        lastSelected = commitTime;
-                    }
+                    try { index.AddManifest(localDir, relPath); }
+                    catch { failed.Add((localDir, relPath)); }
                 }
 
-                return selected;
+                // No progress this round — stop.
+                if (failed.Count == retrying.Count) break;
+                pass++;
+            }
+
+            foreach (var (_, relPath) in failed)
+            {
+                Console.Error.WriteLine($"  Could not add manifest (no progress): {relPath}");
+            }
+
+            return manifests.Count - failed.Count;
+        }
+
+        static void RunGit(string repoPath, string arguments)
+        {
+            var psi = new ProcessStartInfo("git")
+            {
+                Arguments = $"-C \"{repoPath}\" {arguments}",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+            };
+            using var p = Process.Start(psi)!;
+            p.WaitForExit();
+            if (p.ExitCode != 0)
+            {
+                string err = p.StandardError.ReadToEnd().Trim();
+                throw new InvalidOperationException($"git {arguments} failed (exit {p.ExitCode}): {err}");
+            }
+        }
+
+        static IEnumerable<string> RunGitLines(string repoPath, string arguments)
+        {
+            var psi = new ProcessStartInfo("git")
+            {
+                Arguments = $"-C \"{repoPath}\" {arguments}",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+            };
+            using var p = Process.Start(psi)!;
+            string? line;
+            while ((line = p.StandardOutput.ReadLine()) != null)
+            {
+                if (!string.IsNullOrEmpty(line))
+                    yield return line;
+            }
+            p.WaitForExit();
+            if (p.ExitCode != 0)
+            {
+                string err = p.StandardError.ReadToEnd().Trim();
+                throw new InvalidOperationException($"git {arguments} failed (exit {p.ExitCode}): {err}");
             }
         }
 
         /// <summary>
-        /// Extracts all YAML manifest files from a git commit to a temp directory and adds them to the index.
-        /// Returns the count of manifests added.
+        /// Walks every commit between <paramref name="fromSha"/> (exclusive) and
+        /// <paramref name="toSha"/> (inclusive) in topological order (oldest first) using
+        /// <c>git rev-list --topo-order --reverse</c>, then applies each commit's manifest
+        /// change to the index.  Each commit is expected to touch at most one manifest directory.
+        /// Returns the number of index operations that succeeded.
         /// </summary>
-        static int AddAllManifests(IWinGetSQLiteIndex index, string repoPath, Commit commit, string workDir)
-        {
-            string tempDir = Path.Combine(workDir, "manifests_full");
-            if (Directory.Exists(tempDir)) Directory.Delete(tempDir, true);
-            Directory.CreateDirectory(tempDir);
-
-            using var repo = new Repository(repoPath);
-            var manifestsDir = commit.Tree["manifests"];
-            if (manifestsDir == null) return 0;
-
-            int count = ExtractAndAddTree(index, repo, (Tree)manifestsDir.Target, tempDir, "manifests");
-            return count;
-        }
-
-        static int ExtractAndAddTree(IWinGetSQLiteIndex index, Repository repo, Tree tree, string baseDir, string relativePath)
-        {
-            int count = 0;
-            foreach (var entry in tree)
-            {
-                string entryRelPath = relativePath + "/" + entry.Name;
-                if (entry.TargetType == TreeEntryTargetType.Tree)
-                {
-                    count += ExtractAndAddTree(index, repo, (Tree)entry.Target, baseDir, entryRelPath);
-                }
-                else if (entry.TargetType == TreeEntryTargetType.Blob && entry.Name.EndsWith(".yaml", StringComparison.OrdinalIgnoreCase))
-                {
-                    var blob = (Blob)entry.Target;
-                    string localPath = Path.Combine(baseDir, entryRelPath.Replace('/', Path.DirectorySeparatorChar));
-                    Directory.CreateDirectory(Path.GetDirectoryName(localPath)!);
-                    File.WriteAllBytes(localPath, blob.GetContentStream().ReadAllBytes());
-
-                    try
-                    {
-                        index.AddManifest(localPath, entryRelPath);
-                        count++;
-                    }
-                    catch
-                    {
-                        // Dependency ordering issues — skip for now (same behavior as IndexCreationTool)
-                    }
-                }
-            }
-            return count;
-        }
-
-        /// <summary>
-        /// Applies the git diff between two commits to the working index.
-        /// Returns the total number of changed manifest entries.
-        /// </summary>
-        static int ApplyGitDiff(IWinGetSQLiteIndex index, string repoPath, Commit fromCommit, Commit toCommit, string workDir)
+        static int ApplyGitDiff(IWinGetSQLiteIndex index, string repoPath, string fromSha, string toSha, string workDir)
         {
             string tempDir = Path.Combine(workDir, "manifests_diff");
             if (Directory.Exists(tempDir)) Directory.Delete(tempDir, true);
             Directory.CreateDirectory(tempDir);
 
-            using var repo = new Repository(repoPath);
+            // Use git rev-list to obtain the definitive topological ordering (oldest-first).
+            // This matches exactly what `git log --topo-order --reverse` produces and avoids
+            // any ambiguity in LibGit2Sharp's CommitSortStrategies.Topological | Reverse.
+            var commitShas = RunGitLines(repoPath, $"rev-list --topo-order --reverse {fromSha}..{toSha}")
+                .ToList();
 
-            var diff = repo.Diff.Compare<TreeChanges>(fromCommit.Tree, toCommit.Tree);
+            if (commitShas.Count == 0) return 0;
+
             int count = 0;
 
-            foreach (var change in diff)
+            string logPath = Path.Combine(workDir, "manifest_operations.txt");
+            using var log = new StreamWriter(logPath, append: false, Encoding.UTF8);
+            log.WriteLine("Commit\tTimestamp\tOperation\tPath\tError");
+
+            using var repo = new Repository(repoPath);
+
+            foreach (var sha in commitShas)
             {
-                // Only process YAML files under manifests/
-                if (!change.Path.StartsWith("manifests/", StringComparison.OrdinalIgnoreCase) ||
-                    !change.Path.EndsWith(".yaml", StringComparison.OrdinalIgnoreCase))
+                var commit = repo.Lookup<Commit>(sha);
+                var parent = commit.Parents.FirstOrDefault();
+                var diff = repo.Diff.Compare<TreeChanges>(parent?.Tree, commit.Tree);
+
+                // Collect per-directory changes within this commit.
+                // A "move" commit deletes one version dir and adds another — both must be processed.
+                // Key: directory path.  Value: (anyAdded, anyDeleted, anyModified).
+                var dirChanges = new Dictionary<string, (bool AnyAdded, bool AnyDeleted, bool AnyModified)>(StringComparer.OrdinalIgnoreCase);
+
+                foreach (var change in diff)
                 {
-                    continue;
+                    string entryPath = change.Status == ChangeKind.Deleted ? change.OldPath : change.Path;
+
+                    if (!entryPath.StartsWith("manifests/", StringComparison.OrdinalIgnoreCase) ||
+                        !entryPath.EndsWith(".yaml", StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    int lastSlash = entryPath.LastIndexOf('/');
+                    string dir = lastSlash > 0 ? entryPath[..lastSlash] : string.Empty;
+
+                    dirChanges.TryGetValue(dir, out var flags);
+                    dirChanges[dir] = change.Status switch
+                    {
+                        ChangeKind.Added   => (true,           flags.AnyDeleted,  flags.AnyModified),
+                        ChangeKind.Deleted => (flags.AnyAdded, true,              flags.AnyModified),
+                        _                  => (flags.AnyAdded, flags.AnyDeleted,  true),
+                    };
                 }
 
-                try
+                if (dirChanges.Count == 0) continue; // No manifest changes in this commit
+
+                // Pure deletes first, then updates (remove+add), then pure adds.
+                // This ensures move commits (delete old dir, add new dir) remove before adding.
+                static int OpOrder((bool AnyAdded, bool AnyDeleted, bool AnyModified) f) =>
+                    (!f.AnyAdded && !f.AnyModified) ? 0 :   // pure delete
+                    (!f.AnyDeleted && !f.AnyModified) ? 2 :  // pure add
+                    1;                                        // update (remove+add)
+
+                foreach (var (dirPath, (anyAdded, anyDeleted, anyModified)) in dirChanges.OrderBy(kv => OpOrder(kv.Value)))
                 {
-                    switch (change.Status)
+                    bool isPureDelete = !anyAdded && !anyModified;
+                    bool isPureAdd    = !anyDeleted && !anyModified;
+                    // Everything else is an update: remove the old state then add the new state.
+
+                    if (isPureDelete)
                     {
-                        case ChangeKind.Added:
-                        {
-                            string localPath = ExtractBlobToTemp(repo, toCommit, change.Path, tempDir);
-                            index.AddManifest(localPath, change.Path);
-                            count++;
-                            break;
-                        }
-                        case ChangeKind.Modified:
-                        case ChangeKind.Renamed:
-                        {
-                            string localPath = ExtractBlobToTemp(repo, toCommit, change.Path, tempDir);
-                            index.UpdateManifest(localPath, change.Path);
-                            count++;
-                            break;
-                        }
-                        case ChangeKind.Deleted:
-                        {
-                            // For removal we need the old content to get the package ID
-                            string localPath = ExtractBlobToTemp(repo, fromCommit, change.OldPath, tempDir);
-                            index.RemoveManifest(localPath, change.OldPath);
-                            count++;
-                            break;
-                        }
+                        string localDir = ExtractManifestDirFromTree(repo, parent!, dirPath, tempDir);
+                        TryIndexOp(index, log, commit, "remove", dirPath, localDir,
+                            (idx, dir, path) => idx.RemoveManifest(dir, path), ref count);
                     }
-                }
-                catch
-                {
-                    // Skip manifest processing errors (e.g., dependency issues)
+                    else if (isPureAdd)
+                    {
+                        string localDir = ExtractManifestDirFromTree(repo, commit, dirPath, tempDir);
+                        TryIndexOp(index, log, commit, "add", dirPath, localDir,
+                            (idx, dir, path) => idx.AddManifest(dir, path), ref count);
+                    }
+                    else
+                    {
+                        // Update: remove using pre-commit state, then add using post-commit state.
+                        string removeDir = ExtractManifestDirFromTree(repo, parent!, dirPath, tempDir);
+                        TryIndexOp(index, log, commit, "remove", dirPath, removeDir,
+                            (idx, dir, path) => idx.RemoveManifest(dir, path), ref count);
+
+                        string addDir = ExtractManifestDirFromTree(repo, commit, dirPath, tempDir);
+                        TryIndexOp(index, log, commit, "add", dirPath, addDir,
+                            (idx, dir, path) => idx.AddManifest(dir, path), ref count);
+                    }
                 }
             }
 
             return count;
         }
 
-        static string ExtractBlobToTemp(Repository repo, Commit commit, string path, string tempDir)
+        static void TryIndexOp(IWinGetSQLiteIndex index, StreamWriter log, Commit commit,
+            string operationName, string dirPath, string localDir,
+            Action<IWinGetSQLiteIndex, string, string> op, ref int count)
         {
-            var entry = commit[path];
-            var blob = (Blob)entry.Target;
-            string localPath = Path.Combine(tempDir, path.Replace('/', Path.DirectorySeparatorChar));
-            Directory.CreateDirectory(Path.GetDirectoryName(localPath)!);
-            File.WriteAllBytes(localPath, blob.GetContentStream().ReadAllBytes());
-            return localPath;
+            try
+            {
+                op(index, localDir, dirPath);
+                log.WriteLine($"{commit.Sha}\t{commit.Author.When:yyyy-MM-dd HH:mm:ss zzz}\t{operationName}\t{dirPath}\t");
+                count++;
+            }
+            catch (Exception ex)
+            {
+                log.WriteLine($"{commit.Sha}\t{commit.Author.When:yyyy-MM-dd HH:mm:ss zzz}\t{operationName}\t{dirPath}\t{ex.HResult}");
+                Console.Error.WriteLine($"  Failed to {operationName} manifest '{dirPath}': {ex.HResult}");
+            }
+        }
+
+        /// <summary>
+        /// Extracts all YAML files from the given <paramref name="dirPath"/> in the commit's tree
+        /// into a subdirectory of <paramref name="tempDir"/> that includes the first 8 characters
+        /// of the commit SHA, ensuring no cross-commit directory conflicts.
+        /// Returns the local directory path used.
+        /// </summary>
+        static string ExtractManifestDirFromTree(Repository repo, Commit commit, string dirPath, string tempDir)
+        {
+            string localDir = Path.Combine(
+                tempDir,
+                dirPath.Replace('/', Path.DirectorySeparatorChar),
+                commit.Sha[..8]);
+
+            var entry = commit[dirPath];
+            if (entry?.TargetType != TreeEntryTargetType.Tree) return localDir;
+
+            Directory.CreateDirectory(localDir);
+            foreach (var child in (Tree)entry.Target)
+            {
+                if (child.TargetType == TreeEntryTargetType.Blob &&
+                    child.Name.EndsWith(".yaml", StringComparison.OrdinalIgnoreCase))
+                {
+                    var blob = (Blob)child.Target;
+                    File.WriteAllBytes(Path.Combine(localDir, child.Name), blob.GetContentStream().ReadAllBytes());
+                }
+            }
+
+            return localDir;
         }
 
         static void ComputeCumulativeSizes(List<CheckpointResult> results)
@@ -607,7 +749,7 @@ new Chart(document.getElementById('chart'), {
         }
     }
 
-    record CommitCheckpoint(Commit Commit, DateTime Date);
+    record CommitCheckpoint(string Sha, DateTime Date);
 
     class CheckpointResult
     {

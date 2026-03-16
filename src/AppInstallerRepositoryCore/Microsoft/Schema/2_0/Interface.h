@@ -14,6 +14,7 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_0
 {
     // Version 2.0
     static constexpr std::string_view s_MetadataValueName_PackageUpdateTrackingBaseTime = "updateTrackingBase"sv;
+    static constexpr std::string_view s_MetadataValueName_DeltaBaselineTime = "deltaBaselineTime"sv;
 
     // Interface to this schema version exposed through ISQLiteIndex.
     struct Interface : public ISQLiteIndex

@@ -346,10 +346,8 @@ namespace AppInstaller::SQLite::Builder
 
     StatementBuilder& StatementBuilder::Equals(std::nullptr_t)
     {
-        // This is almost certainly not what you want.
-        // In SQL, value = NULL is always false.
-        // Use StatementBuilder::IsNull instead.
-        THROW_HR(E_NOTIMPL);
+        m_stream << " = NULL";
+        return *this;
     }
 
     StatementBuilder& StatementBuilder::Equals()

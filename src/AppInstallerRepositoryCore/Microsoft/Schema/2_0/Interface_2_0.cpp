@@ -925,6 +925,11 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_0
     {
         SQLite::Connection& connection = context.Connection;
 
+        // TODO: We may need to set the baseline time to the max update tracking time +1 to only catch new incoming changes
+        //       This assumes some delay between delta generation and the next package update.
+        // TODO: We also need to ensure that our times are UTC / not impacted by timezone shifts, etc.
+        SQLite::MetadataTable::SetNamedValue(connection, s_MetadataValueName_DeltaBaselineTime, std::to_string(Utility::GetCurrentUnixEpoch()));
+
         // Get the base time from metadata
         int64_t updateBaseTime = 0;
         std::optional<std::string> updateBaseTimeString = SQLite::MetadataTable::TryGetNamedValue<std::string>(connection, s_MetadataValueName_PackageUpdateTrackingBaseTime);
@@ -947,6 +952,9 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_0
         }
 
         THROW_WIN32_IF(ERROR_INVALID_STATE, baseOutputDirectory.empty() || baseOutputDirectory.is_relative());
+
+        // TEMP
+        PackageUpdateTrackingTable::EnsureExists(connection);
 
         // Output all of the changed package version manifests since the base time to the target location
         for (const auto& packageData : PackageUpdateTrackingTable::GetUpdatesSince(connection, updateBaseTime))
@@ -1055,8 +1063,10 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_0
 
             AICLI_LOG(Repo, Info, << "Generating delta index at [" << deltaOutputPath << "] against baseline [" << baselinePath << "]");
 
+            SQLite::Connection baselineConn = SQLite::Connection::Create(baselinePath.u8string(), SQLite::Connection::OpenDisposition::ReadOnly);
+
             int64_t deltaUpdateBaseTime = 0;
-            std::optional<std::string> deltaUpdateBaseTimeString = SQLite::MetadataTable::TryGetNamedValue<std::string>(connection, s_MetadataValueName_PackageUpdateTrackingBaseTime);
+            std::optional<std::string> deltaUpdateBaseTimeString = SQLite::MetadataTable::TryGetNamedValue<std::string>(baselineConn, s_MetadataValueName_DeltaBaselineTime);
             if (deltaUpdateBaseTimeString && !deltaUpdateBaseTimeString->empty())
             {
                 deltaUpdateBaseTime = std::stoll(deltaUpdateBaseTimeString.value());
@@ -1069,9 +1079,6 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_0
             }
             else
             {
-                SQLite::Connection baselineConn = SQLite::Connection::Create(
-                    baselinePath.u8string(), SQLite::Connection::OpenDisposition::ReadOnly);
-
                 SQLite::Connection deltaConn = SQLite::Connection::Create(
                     deltaOutputPath.u8string(), SQLite::Connection::OpenDisposition::Create);
 
