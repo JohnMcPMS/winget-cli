@@ -544,24 +544,41 @@ namespace DeltaIndexTestTool
 
                 foreach (var change in diff)
                 {
-                    string entryPath = change.Status == ChangeKind.Deleted ? change.OldPath : change.Path;
+                    // For renames, the old and new paths can be in different directories (e.g., a
+                    // version bump moves manifests from /1.0.0/ to /2.0.0/).  We must record the
+                    // deletion against the OLD directory and the addition against the NEW directory
+                    // independently; collapsing both sides to a single path would cause the update
+                    // path to look up the wrong tree when extracting the pre-commit state.
 
-                    if (!entryPath.StartsWith("manifests/", StringComparison.OrdinalIgnoreCase) ||
-                        !entryPath.EndsWith(".yaml", StringComparison.OrdinalIgnoreCase))
+                    // Old side: record deletion in the source directory.
+                    if (change.Status == ChangeKind.Deleted || change.Status == ChangeKind.Renamed)
                     {
-                        continue;
+                        string oldPath = change.OldPath;
+                        if (oldPath.StartsWith("manifests/", StringComparison.OrdinalIgnoreCase) &&
+                            oldPath.EndsWith(".yaml", StringComparison.OrdinalIgnoreCase))
+                        {
+                            int lastSlash = oldPath.LastIndexOf('/');
+                            string dir = lastSlash > 0 ? oldPath[..lastSlash] : string.Empty;
+                            dirChanges.TryGetValue(dir, out var flags);
+                            dirChanges[dir] = (flags.AnyAdded, true, flags.AnyModified);
+                        }
                     }
 
-                    int lastSlash = entryPath.LastIndexOf('/');
-                    string dir = lastSlash > 0 ? entryPath[..lastSlash] : string.Empty;
-
-                    dirChanges.TryGetValue(dir, out var flags);
-                    dirChanges[dir] = change.Status switch
+                    // New side: record addition/modification in the destination directory.
+                    if (change.Status != ChangeKind.Deleted)
                     {
-                        ChangeKind.Added   => (true,           flags.AnyDeleted,  flags.AnyModified),
-                        ChangeKind.Deleted => (flags.AnyAdded, true,              flags.AnyModified),
-                        _                  => (flags.AnyAdded, flags.AnyDeleted,  true),
-                    };
+                        string newPath = change.Path;
+                        if (newPath.StartsWith("manifests/", StringComparison.OrdinalIgnoreCase) &&
+                            newPath.EndsWith(".yaml", StringComparison.OrdinalIgnoreCase))
+                        {
+                            int lastSlash = newPath.LastIndexOf('/');
+                            string dir = lastSlash > 0 ? newPath[..lastSlash] : string.Empty;
+                            dirChanges.TryGetValue(dir, out var flags);
+                            dirChanges[dir] = (change.Status == ChangeKind.Added || change.Status == ChangeKind.Renamed)
+                                ? (true,           flags.AnyDeleted, flags.AnyModified)
+                                : (flags.AnyAdded, flags.AnyDeleted, true);
+                        }
+                    }
                 }
 
                 if (dirChanges.Count == 0) continue; // No manifest changes in this commit
