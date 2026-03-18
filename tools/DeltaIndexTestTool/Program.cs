@@ -186,7 +186,8 @@ namespace DeltaIndexTestTool
                     Directory.CreateDirectory(checkpointDir);
 
                     string fullIndexPath = Path.Combine(checkpointDir, "full_index.db");
-                    string deltaPath = Path.Combine(checkpointDir, "delta.db");
+                    string deltaPrevPath = Path.Combine(checkpointDir, "delta_prev.db");
+                    string deltaOrigPath = Path.Combine(checkpointDir, "delta_orig.db");
 
                     if (i == 0 && hasResumeIndex)
                     {
@@ -208,7 +209,6 @@ namespace DeltaIndexTestTool
                         workingIndex = factory.SQLiteIndexOpen(workingIndexPath);
 
                         result.FullIndexBytes = new FileInfo(fullIndexPath).Length;
-                        result.DeltaBytes = 0;
                         result.PreviousFullIndexPath = null;
                         result.FullIndexPath = fullIndexPath;
 
@@ -243,7 +243,6 @@ namespace DeltaIndexTestTool
                         workingIndex = factory.SQLiteIndexOpen(workingIndexPath);
 
                         result.FullIndexBytes = new FileInfo(fullIndexPath).Length;
-                        result.DeltaBytes = 0;
                         result.PreviousFullIndexPath = null;
                         result.FullIndexPath = fullIndexPath;
 
@@ -254,6 +253,7 @@ namespace DeltaIndexTestTool
                         // Subsequent checkpoint: apply git diff to working index
                         var prevCheckpoint = checkpoints[i - 1];
                         string prevFullIndexPath = results[i - 1].FullIndexPath!;
+                        string origFullIndexPath = results[0].FullIndexPath!;
 
                         Console.WriteLine("  Applying git diff from previous checkpoint...");
                         int changed = ApplyGitDiff(workingIndex!, repoPath, prevCheckpoint.Sha, checkpoint.Sha, checkpointDir);
@@ -276,26 +276,40 @@ namespace DeltaIndexTestTool
                         File.Move(fullOnlyPath, fullIndexPath, overwrite: true);
 
                         // Build delta index against previous full index
-                        string deltaWorkPath = fullIndexPath + ".delta_work.db";
-                        File.Copy(workingIndexPath, deltaWorkPath, overwrite: true);
-                        using (var deltaPackagingIndex = factory.SQLiteIndexOpen(deltaWorkPath))
+                        string deltaPrevWorkPath = fullIndexPath + ".delta_prev_cp.db";
+                        File.Copy(workingIndexPath, deltaPrevWorkPath, overwrite: true);
+                        using (var deltaPackagingIndex = factory.SQLiteIndexOpen(deltaPrevWorkPath))
                         {
                             deltaPackagingIndex.SetProperty(SQLiteIndexProperty.DeltaBaselineIndexPath, Path.GetFullPath(prevFullIndexPath));
-                            deltaPackagingIndex.SetProperty(SQLiteIndexProperty.DeltaOutputPath, Path.GetFullPath(deltaPath));
+                            deltaPackagingIndex.SetProperty(SQLiteIndexProperty.DeltaOutputPath, Path.GetFullPath(deltaPrevPath));
                             deltaPackagingIndex.SetProperty(SQLiteIndexProperty.PackageUpdateTrackingBaseTime, string.Empty);
                             deltaPackagingIndex.PrepareForPackaging();
                         }
-                        File.Delete(deltaWorkPath);
+                        File.Delete(deltaPrevWorkPath);
+
+                        // Build delta index against previous full index
+                        string deltaOrigWorkPath = fullIndexPath + ".delta_orig_cp.db";
+                        File.Copy(workingIndexPath, deltaOrigWorkPath, overwrite: true);
+                        using (var deltaPackagingIndex = factory.SQLiteIndexOpen(deltaOrigWorkPath))
+                        {
+                            deltaPackagingIndex.SetProperty(SQLiteIndexProperty.DeltaBaselineIndexPath, Path.GetFullPath(origFullIndexPath));
+                            deltaPackagingIndex.SetProperty(SQLiteIndexProperty.DeltaOutputPath, Path.GetFullPath(deltaOrigPath));
+                            deltaPackagingIndex.SetProperty(SQLiteIndexProperty.PackageUpdateTrackingBaseTime, string.Empty);
+                            deltaPackagingIndex.PrepareForPackaging();
+                        }
+                        File.Delete(deltaOrigWorkPath);
 
                         workingIndex = factory.SQLiteIndexOpen(workingIndexPath);
 
                         result.FullIndexBytes = new FileInfo(fullIndexPath).Length;
-                        result.DeltaBytes = File.Exists(deltaPath) ? new FileInfo(deltaPath).Length : 0;
+                        result.DeltaPrevBytes = File.Exists(deltaPrevPath) ? new FileInfo(deltaPrevPath).Length : 0;
+                        result.DeltaOrigBytes = File.Exists(deltaOrigPath) ? new FileInfo(deltaOrigPath).Length : 0;
                         result.PreviousFullIndexPath = prevFullIndexPath;
                         result.FullIndexPath = fullIndexPath;
 
                         Console.WriteLine($"  Full index: {result.FullIndexBytes / 1024.0 / 1024.0:F2} MB");
-                        Console.WriteLine($"  Delta:      {result.DeltaBytes / 1024.0 / 1024.0:F2} MB");
+                        Console.WriteLine($"  Delta prev: {result.DeltaPrevBytes / 1024.0 / 1024.0:F2} MB");
+                        Console.WriteLine($"  Delta orig: {result.DeltaOrigBytes / 1024.0 / 1024.0:F2} MB");
                     }
 
                     results.Add(result);
@@ -306,15 +320,9 @@ namespace DeltaIndexTestTool
                 workingIndex?.Dispose();
             }
 
-            ComputeCumulativeSizes(results);
-
             string csvPath = Path.Combine(outputDir, "results.csv");
             WriteCsv(results, csvPath);
             Console.WriteLine($"\nResults written to: {csvPath}");
-
-            string htmlPath = Path.Combine(outputDir, "report.html");
-            WriteHtmlReport(results, htmlPath);
-            Console.WriteLine($"Report written to: {htmlPath}");
         }
 
         static DateTime LookupCommitDate(string repoPath, string sha)
@@ -655,97 +663,19 @@ namespace DeltaIndexTestTool
             return localDir;
         }
 
-        static void ComputeCumulativeSizes(List<CheckpointResult> results)
-        {
-            long cumulativeFull = 0;
-            long cumulativeDelta = 0;
-
-            for (int i = 0; i < results.Count; i++)
-            {
-                cumulativeFull += results[i].FullIndexBytes;
-                results[i].CumulativeFullDownloadBytes = cumulativeFull;
-
-                if (i == 0)
-                {
-                    cumulativeDelta += results[i].FullIndexBytes; // First checkpoint: must download full
-                }
-                else
-                {
-                    cumulativeDelta += results[i].DeltaBytes; // Subsequent: download delta only
-                }
-                results[i].CumulativeDeltaDownloadBytes = cumulativeDelta;
-            }
-        }
-
         static void WriteCsv(List<CheckpointResult> results, string path)
         {
             using var writer = new StreamWriter(path, false, Encoding.UTF8);
-            writer.WriteLine("Index,Date,CommitSha,FullIndexMB,DeltaMB,CumulativeFullMB,CumulativeDeltaMB,SavingsPercent");
+            writer.WriteLine("Index,Date,CommitSha,FullIndexMB,DeltaPrevMB,DeltaOrigMB");
 
             foreach (var r in results)
             {
                 double fullMb = r.FullIndexBytes / 1024.0 / 1024.0;
-                double deltaMb = r.DeltaBytes / 1024.0 / 1024.0;
-                double cumFullMb = r.CumulativeFullDownloadBytes / 1024.0 / 1024.0;
-                double cumDeltaMb = r.CumulativeDeltaDownloadBytes / 1024.0 / 1024.0;
-                double savings = r.CumulativeFullDownloadBytes > 0
-                    ? 100.0 * (1.0 - (double)r.CumulativeDeltaDownloadBytes / r.CumulativeFullDownloadBytes)
-                    : 0;
+                double deltaPrevMb = r.DeltaPrevBytes / 1024.0 / 1024.0;
+                double deltaOrigMb = r.DeltaOrigBytes / 1024.0 / 1024.0;
 
-                writer.WriteLine($"{r.Index},{r.Date:yyyy-MM-dd},{r.CommitSha},{fullMb:F2},{deltaMb:F2},{cumFullMb:F2},{cumDeltaMb:F2},{savings:F1}");
+                writer.WriteLine($"{r.Index},{r.Date:yyyy-MM-dd},{r.CommitSha},{fullMb:F2},{deltaPrevMb:F2},{deltaOrigMb:F2}");
             }
-        }
-
-        static void WriteHtmlReport(List<CheckpointResult> results, string path)
-        {
-            var sb = new StringBuilder();
-            sb.AppendLine("<!DOCTYPE html><html><head><meta charset='utf-8'>");
-            sb.AppendLine("<title>Delta Index Size Analysis</title>");
-            sb.AppendLine("<script src='https://cdn.jsdelivr.net/npm/chart.js'></script>");
-            sb.AppendLine("<style>body{font-family:sans-serif;margin:20px;} table{border-collapse:collapse;width:100%;} th,td{border:1px solid #ddd;padding:8px;text-align:right;} th{background:#4472C4;color:white;} tr:nth-child(even){background:#f2f2f2;} canvas{max-width:900px;margin:20px 0;}</style>");
-            sb.AppendLine("</head><body>");
-            sb.AppendLine("<h1>Delta Index Size Analysis</h1>");
-            sb.AppendLine("<h2>Cumulative Download: Full Strategy vs Delta Strategy</h2>");
-            sb.AppendLine("<canvas id='chart'></canvas>");
-            sb.AppendLine("<script>");
-            sb.AppendLine("const labels = [" + string.Join(",", results.Select(r => $"'{r.Date:yyyy-MM-dd}'")) + "];");
-            sb.AppendLine("const fullData = [" + string.Join(",", results.Select(r => (r.CumulativeFullDownloadBytes / 1024.0 / 1024.0).ToString("F2"))) + "];");
-            sb.AppendLine("const deltaData = [" + string.Join(",", results.Select(r => (r.CumulativeDeltaDownloadBytes / 1024.0 / 1024.0).ToString("F2"))) + "];");
-            sb.AppendLine(@"
-new Chart(document.getElementById('chart'), {
-  type: 'line',
-  data: {
-    labels: labels,
-    datasets: [
-      { label: 'Always Full (MB)', data: fullData, borderColor: '#C0392B', tension: 0.1 },
-      { label: 'Baseline+Delta (MB)', data: deltaData, borderColor: '#27AE60', tension: 0.1 }
-    ]
-  },
-  options: { responsive: true, scales: { y: { title: { display: true, text: 'Cumulative Download (MB)' } } } }
-});");
-            sb.AppendLine("</script>");
-
-            // Summary table
-            sb.AppendLine("<h2>Per-Checkpoint Details</h2>");
-            sb.AppendLine("<table><tr><th>Index</th><th>Date</th><th>Commit</th><th>Full Index (MB)</th><th>Delta (MB)</th><th>Cum. Full (MB)</th><th>Cum. Delta (MB)</th><th>Savings (%)</th></tr>");
-
-            foreach (var r in results)
-            {
-                double savings = r.CumulativeFullDownloadBytes > 0
-                    ? 100.0 * (1.0 - (double)r.CumulativeDeltaDownloadBytes / r.CumulativeFullDownloadBytes)
-                    : 0;
-
-                sb.AppendLine($"<tr><td>{r.Index}</td><td>{r.Date:yyyy-MM-dd}</td><td>{r.CommitSha}</td>" +
-                    $"<td>{r.FullIndexBytes / 1024.0 / 1024.0:F2}</td>" +
-                    $"<td>{r.DeltaBytes / 1024.0 / 1024.0:F2}</td>" +
-                    $"<td>{r.CumulativeFullDownloadBytes / 1024.0 / 1024.0:F2}</td>" +
-                    $"<td>{r.CumulativeDeltaDownloadBytes / 1024.0 / 1024.0:F2}</td>" +
-                    $"<td>{savings:F1}%</td></tr>");
-            }
-
-            sb.AppendLine("</table>");
-            sb.AppendLine("</body></html>");
-            File.WriteAllText(path, sb.ToString(), Encoding.UTF8);
         }
     }
 
@@ -757,9 +687,8 @@ new Chart(document.getElementById('chart'), {
         public DateTime Date { get; set; }
         public string CommitSha { get; set; } = string.Empty;
         public long FullIndexBytes { get; set; }
-        public long DeltaBytes { get; set; }
-        public long CumulativeFullDownloadBytes { get; set; }
-        public long CumulativeDeltaDownloadBytes { get; set; }
+        public long DeltaPrevBytes { get; set; }
+        public long DeltaOrigBytes { get; set; }
         public string? FullIndexPath { get; set; }
         public string? PreviousFullIndexPath { get; set; }
     }
