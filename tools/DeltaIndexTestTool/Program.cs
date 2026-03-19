@@ -12,6 +12,8 @@ namespace DeltaIndexTestTool
     using System.IO;
     using System.Linq;
     using System.Text;
+    using System.Text.Json;
+    using System.Text.Json.Serialization;
 
     /// <summary>
     /// Walks the git history of a winget-pkgs clone at weekly intervals, building a full V2 index
@@ -29,6 +31,7 @@ namespace DeltaIndexTestTool
             string branch = "master";
             string resumeCommit = string.Empty;
             string resumeWorkingIndexPath = string.Empty;
+            bool autoResume = false;
 
             for (int i = 0; i < args.Length; i++)
             {
@@ -54,6 +57,9 @@ namespace DeltaIndexTestTool
                         break;
                     case "--resume-working-index" when i + 1 < args.Length:
                         resumeWorkingIndexPath = args[++i];
+                        break;
+                    case "--resume":
+                        autoResume = true;
                         break;
                     case "--help":
                     case "-h":
@@ -88,13 +94,23 @@ namespace DeltaIndexTestTool
                 Console.Error.WriteLine($"Resume working index not found: {resumeWorkingIndexPath}");
                 return 1;
             }
+            if (autoResume && (!string.IsNullOrEmpty(resumeCommit) || !string.IsNullOrEmpty(resumeWorkingIndexPath)))
+            {
+                Console.Error.WriteLine("--resume cannot be combined with --resume-commit or --resume-working-index.");
+                return 1;
+            }
+            if (autoResume && !File.Exists(Path.Combine(outputDir, "state.json")))
+            {
+                Console.Error.WriteLine($"No state.json found in output directory. Run without --resume first.");
+                return 1;
+            }
 
             Directory.CreateDirectory(outputDir);
 
             try
             {
                 RunAnalysis(repoPath, outputDir, branch, intervalDays, maxCheckpoints,
-                    resumeCommit, resumeWorkingIndexPath);
+                    resumeCommit, resumeWorkingIndexPath, autoResume);
                 return 0;
             }
             catch (Exception ex)
@@ -118,10 +134,15 @@ namespace DeltaIndexTestTool
             Console.WriteLine("  --max <n>                       Maximum number of checkpoints; selects the N most");
             Console.WriteLine("                                  recent intervals working backward from HEAD");
             Console.WriteLine("  --branch <name>                 Branch to walk (default: master)");
+            Console.WriteLine("  --resume                        Resume from the last complete checkpoint recorded in");
+            Console.WriteLine("                                  state.json (requires prior run with same --output dir).");
+            Console.WriteLine("                                  Cannot be combined with --resume-commit.");
             Console.WriteLine("  --resume-commit <sha>           Commit SHA to resume from");
             Console.WriteLine("  --resume-working-index <path>   Path to pre-packaging working index for resume commit");
             Console.WriteLine();
             Console.WriteLine("Resume modes:");
+            Console.WriteLine("  --resume                        Reads state.json from the output directory, finds the");
+            Console.WriteLine("                                  first incomplete checkpoint, and continues from there.");
             Console.WriteLine("  --resume-commit only            Starts a fresh index at that commit, then continues");
             Console.WriteLine("                                  forward from there (skips re-walking older history).");
             Console.WriteLine("  --resume-commit + --resume-working-index");
@@ -130,47 +151,99 @@ namespace DeltaIndexTestTool
             Console.WriteLine("  --resume-working-index requires --resume-commit.");
             Console.WriteLine();
             Console.WriteLine("Output:");
+            Console.WriteLine("  state.json         Run parameters and last complete checkpoint index (auto-managed)");
             Console.WriteLine("  results.csv        CSV of checkpoint sizes");
-            Console.WriteLine("  report.html        HTML report with comparison chart");
         }
 
         static void RunAnalysis(string repoPath, string outputDir, string branch, int intervalDays, int maxCheckpoints,
-            string resumeCommit, string resumeWorkingIndexPath)
+            string resumeCommit, string resumeWorkingIndexPath, bool autoResume)
         {
-            Console.WriteLine($"Opening repository at: {repoPath}");
             Console.WriteLine($"Output directory: {outputDir}");
-            Console.WriteLine($"Interval: every {intervalDays} day(s)");
 
+            string stateFilePath = Path.Combine(outputDir, "state.json");
             bool hasResumeCommit = !string.IsNullOrEmpty(resumeCommit);
-            bool hasResumeIndex = !string.IsNullOrEmpty(resumeWorkingIndexPath);
+            bool hasResumeIndex  = !string.IsNullOrEmpty(resumeWorkingIndexPath);
 
-            // SelectCheckpoints uses the resume commit as an anchor: it only returns commits
-            // strictly after it.  We always prepend the resume commit as checkpoints[0] so
-            // that the first ApplyGitDiff starts from the resume commit itself, ensuring no
-            // commits between the baseline and the first selected interval are skipped.
-            var checkpoints = SelectCheckpoints(repoPath, branch, intervalDays, maxCheckpoints, hasResumeCommit ? resumeCommit : null);
+            List<CommitCheckpoint> checkpoints;
+            ToolState state;
+            int startIndex;
 
-            if (hasResumeCommit)
+            if (autoResume)
             {
-                var resumeDate = LookupCommitDate(repoPath, resumeCommit);
-                checkpoints.Insert(0, new CommitCheckpoint(resumeCommit, resumeDate));
+                state = LoadState(stateFilePath);
+                checkpoints = state.Checkpoints.Select(c => new CommitCheckpoint(c.Sha, c.Date)).ToList();
+                startIndex = state.LastCompleteIndex + 1;
+
+                Console.WriteLine($"Opening repository at: {state.RepoPath}");
+                Console.WriteLine($"Interval: every {state.IntervalDays} day(s)");
+                Console.WriteLine($"Checkpoints: {checkpoints.Count} total, resuming from {startIndex}");
+
+                if (startIndex >= checkpoints.Count)
+                {
+                    Console.WriteLine("All checkpoints are already complete. Nothing to do.");
+                    // Re-write the CSV with all existing results so the output is consistent.
+                    var allResults = ReconstructResults(outputDir, checkpoints);
+                    WriteCsv(allResults, Path.Combine(outputDir, "results.csv"));
+                    return;
+                }
             }
+            else
+            {
+                Console.WriteLine($"Opening repository at: {repoPath}");
+                Console.WriteLine($"Interval: every {intervalDays} day(s)");
+
+                checkpoints = SelectCheckpoints(repoPath, branch, intervalDays, maxCheckpoints,
+                    hasResumeCommit ? resumeCommit : null);
+
+                if (hasResumeCommit)
+                {
+                    var resumeDate = LookupCommitDate(repoPath, resumeCommit);
+                    checkpoints.Insert(0, new CommitCheckpoint(resumeCommit, resumeDate));
+                }
+
+                if (checkpoints.Count == 0)
+                {
+                    Console.Error.WriteLine("No checkpoints found.");
+                    return;
+                }
+
+                state = new ToolState
+                {
+                    RepoPath = repoPath,
+                    Branch = branch,
+                    IntervalDays = intervalDays,
+                    Checkpoints = checkpoints.Select(c => new CheckpointRecord { Sha = c.Sha, Date = c.Date }).ToList(),
+                    LastCompleteIndex = -1,
+                };
+                SaveState(stateFilePath, state);
+                startIndex = 0;
+            }
+
             Console.WriteLine($"Selected {checkpoints.Count} checkpoints");
-
-            if (checkpoints.Count == 0)
-            {
-                Console.Error.WriteLine("No checkpoints found.");
-                return;
-            }
 
             string workingIndexPath = Path.Combine(outputDir, "working_index.db");
             var results = new List<CheckpointResult>();
             var factory = new WinGetFactory();
             IWinGetSQLiteIndex? workingIndex = null;
 
+            // Pre-populate results for already-complete checkpoints.
+            if (startIndex > 0)
+            {
+                results.AddRange(ReconstructResults(outputDir, checkpoints.Take(startIndex)));
+            }
+
+            // Open the working index from the last complete checkpoint when resuming mid-run.
+            if (startIndex > 0)
+            {
+                string prevSavedPath = Path.Combine(outputDir, $"checkpoint_{startIndex - 1:D4}", "working_index.db");
+                Console.WriteLine($"\nCopying working index from checkpoint {startIndex - 1}...");
+                File.Copy(prevSavedPath, workingIndexPath, overwrite: true);
+                workingIndex = factory.SQLiteIndexOpen(workingIndexPath);
+            }
+
             try
             {
-                for (int i = 0; i < checkpoints.Count; i++)
+                for (int i = startIndex; i < checkpoints.Count; i++)
                 {
                     var checkpoint = checkpoints[i];
                     Console.WriteLine($"\n[{i + 1}/{checkpoints.Count}] Processing checkpoint: {checkpoint.Sha[..8]} ({checkpoint.Date:yyyy-MM-dd})");
@@ -216,7 +289,7 @@ namespace DeltaIndexTestTool
                     }
                     else if (i == 0)
                     {
-                        // First checkpoint with no pre-built index: build from scratch at the resume commit.
+                        // First checkpoint with no pre-built index: build from scratch.
                         Console.WriteLine("  Building initial full index from scratch...");
 
                         if (File.Exists(workingIndexPath)) File.Delete(workingIndexPath);
@@ -287,7 +360,7 @@ namespace DeltaIndexTestTool
                         }
                         File.Delete(deltaPrevWorkPath);
 
-                        // Build delta index against previous full index
+                        // Build delta index against original (checkpoint 0) full index
                         string deltaOrigWorkPath = fullIndexPath + ".delta_orig_cp.db";
                         File.Copy(workingIndexPath, deltaOrigWorkPath, overwrite: true);
                         using (var deltaPackagingIndex = factory.SQLiteIndexOpen(deltaOrigWorkPath))
@@ -313,6 +386,10 @@ namespace DeltaIndexTestTool
                     }
 
                     results.Add(result);
+
+                    // Mark this checkpoint complete in the state file.
+                    state.LastCompleteIndex = i;
+                    SaveState(stateFilePath, state);
                 }
             }
             finally
@@ -323,6 +400,62 @@ namespace DeltaIndexTestTool
             string csvPath = Path.Combine(outputDir, "results.csv");
             WriteCsv(results, csvPath);
             Console.WriteLine($"\nResults written to: {csvPath}");
+        }
+
+        // -----------------------------------------------------------------------
+        // State file helpers
+        // -----------------------------------------------------------------------
+
+        static readonly JsonSerializerOptions s_jsonOptions = new()
+        {
+            WriteIndented = true,
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        };
+
+        static void SaveState(string path, ToolState state)
+        {
+            File.WriteAllText(path, JsonSerializer.Serialize(state, s_jsonOptions), Encoding.UTF8);
+        }
+
+        static ToolState LoadState(string path)
+        {
+            string json = File.ReadAllText(path, Encoding.UTF8);
+            return JsonSerializer.Deserialize<ToolState>(json, s_jsonOptions)
+                ?? throw new InvalidOperationException($"Failed to deserialize state file: {path}");
+        }
+
+        /// <summary>
+        /// Rebuilds <see cref="CheckpointResult"/> objects for already-complete checkpoints
+        /// by reading file sizes from disk.  Used when resuming a run.
+        /// </summary>
+        static List<CheckpointResult> ReconstructResults(string outputDir, IEnumerable<CommitCheckpoint> checkpoints)
+        {
+            var results = new List<CheckpointResult>();
+            int i = 0;
+            foreach (var cp in checkpoints)
+            {
+                string checkpointDir = Path.Combine(outputDir, $"checkpoint_{i:D4}");
+                string fullIndexPath = Path.Combine(checkpointDir, "full_index.db");
+                string deltaPrevPath = Path.Combine(checkpointDir, "delta_prev.db");
+                string deltaOrigPath = Path.Combine(checkpointDir, "delta_orig.db");
+
+                results.Add(new CheckpointResult
+                {
+                    Index = i,
+                    Date = cp.Date,
+                    CommitSha = cp.Sha[..8],
+                    FullIndexBytes = File.Exists(fullIndexPath) ? new FileInfo(fullIndexPath).Length : 0,
+                    DeltaPrevBytes = File.Exists(deltaPrevPath) ? new FileInfo(deltaPrevPath).Length : 0,
+                    DeltaOrigBytes = File.Exists(deltaOrigPath) ? new FileInfo(deltaOrigPath).Length : 0,
+                    FullIndexPath = fullIndexPath,
+                    PreviousFullIndexPath = i > 0
+                        ? Path.Combine(outputDir, $"checkpoint_{i - 1:D4}", "full_index.db")
+                        : null,
+                });
+                i++;
+            }
+            return results;
         }
 
         static DateTime LookupCommitDate(string repoPath, string sha)
@@ -612,9 +745,28 @@ namespace DeltaIndexTestTool
                     }
                     else if (isPureAdd)
                     {
-                        string localDir = ExtractManifestDirFromTree(repo, commit, dirPath, tempDir);
-                        TryIndexOp(index, log, commit, "add", dirPath, localDir,
-                            (idx, dir, path) => idx.AddManifest(dir, path), ref count);
+                        // If the directory already existed in the parent tree, this commit is
+                        // adding new files to an existing manifest (e.g., a new locale yaml).
+                        // The package is already in the index, so treat it as an update.
+                        bool dirExistedInParent = parent != null &&
+                            parent[dirPath]?.TargetType == TreeEntryTargetType.Tree;
+
+                        if (dirExistedInParent)
+                        {
+                            string removeDir = ExtractManifestDirFromTree(repo, parent!, dirPath, tempDir);
+                            TryIndexOp(index, log, commit, "remove", dirPath, removeDir,
+                                (idx, dir, path) => idx.RemoveManifest(dir, path), ref count);
+
+                            string addDir = ExtractManifestDirFromTree(repo, commit, dirPath, tempDir);
+                            TryIndexOp(index, log, commit, "add", dirPath, addDir,
+                                (idx, dir, path) => idx.AddManifest(dir, path), ref count);
+                        }
+                        else
+                        {
+                            string localDir = ExtractManifestDirFromTree(repo, commit, dirPath, tempDir);
+                            TryIndexOp(index, log, commit, "add", dirPath, localDir,
+                                (idx, dir, path) => idx.AddManifest(dir, path), ref count);
+                        }
                     }
                     else
                     {
@@ -697,6 +849,29 @@ namespace DeltaIndexTestTool
     }
 
     record CommitCheckpoint(string Sha, DateTime Date);
+
+    /// <summary>
+    /// Persisted run parameters and progress, written to state.json in the output directory.
+    /// </summary>
+    class ToolState
+    {
+        public string RepoPath { get; set; } = string.Empty;
+        public string Branch { get; set; } = string.Empty;
+        public int IntervalDays { get; set; } = 7;
+        public List<CheckpointRecord> Checkpoints { get; set; } = new();
+
+        /// <summary>
+        /// Index of the last fully-completed checkpoint, or -1 if none have completed.
+        /// Updated after each checkpoint succeeds; used by --resume to find the restart point.
+        /// </summary>
+        public int LastCompleteIndex { get; set; } = -1;
+    }
+
+    class CheckpointRecord
+    {
+        public string Sha { get; set; } = string.Empty;
+        public DateTime Date { get; set; }
+    }
 
     class CheckpointResult
     {

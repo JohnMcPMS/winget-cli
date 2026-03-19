@@ -1073,108 +1073,102 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_0
             }
 
             auto changedPackages = PackageUpdateTrackingTable::GetUpdatesSince(connection, deltaUpdateBaseTime);
-            if (changedPackages.empty())
+
+            SQLite::Connection deltaConn = SQLite::Connection::Create(
+                deltaOutputPath.u8string(), SQLite::Connection::OpenDisposition::Create);
+
+            anon::CreateDeltaSchema(deltaConn);
+
+            SQLite::rowid_t maxBaselinePackageRowid = anon::GetMaxPackageRowid(baselineConn);
+            SQLite::rowid_t nextNewPackageRowid = maxBaselinePackageRowid;
+
+            SQLite::rowid_t maxBaselineTagsRowid = anon::GetMaxDataTableRowid(baselineConn, "tags2");
+            SQLite::rowid_t nextNewTagsRowid = maxBaselineTagsRowid;
+
+            SQLite::rowid_t maxBaselineCommandsRowid = anon::GetMaxDataTableRowid(baselineConn, "commands2");
+            SQLite::rowid_t nextNewCommandsRowid = maxBaselineCommandsRowid;
+
+            SQLite::Savepoint deltaSavepoint = SQLite::Savepoint::Create(deltaConn, "delta_build");
+
+            for (const auto& pkg : changedPackages)
             {
-                AICLI_LOG(Repo, Info, << "No changed packages found; skipping delta generation");
-            }
-            else
-            {
-                SQLite::Connection deltaConn = SQLite::Connection::Create(
-                    deltaOutputPath.u8string(), SQLite::Connection::OpenDisposition::Create);
+                SQLite::rowid_t packageRowid = anon::GetBaselinePackageRowid(baselineConn, pkg.PackageIdentifier);
 
-                anon::CreateDeltaSchema(deltaConn);
-
-                SQLite::rowid_t maxBaselinePackageRowid = anon::GetMaxPackageRowid(baselineConn);
-                SQLite::rowid_t nextNewPackageRowid = maxBaselinePackageRowid;
-
-                SQLite::rowid_t maxBaselineTagsRowid = anon::GetMaxDataTableRowid(baselineConn, "tags2");
-                SQLite::rowid_t nextNewTagsRowid = maxBaselineTagsRowid;
-
-                SQLite::rowid_t maxBaselineCommandsRowid = anon::GetMaxDataTableRowid(baselineConn, "commands2");
-                SQLite::rowid_t nextNewCommandsRowid = maxBaselineCommandsRowid;
-
-                SQLite::Savepoint deltaSavepoint = SQLite::Savepoint::Create(deltaConn, "delta_build");
-
-                for (const auto& pkg : changedPackages)
+                if (pkg.IsRemoved)
                 {
-                    SQLite::rowid_t packageRowid = anon::GetBaselinePackageRowid(baselineConn, pkg.PackageIdentifier);
-
-                    if (pkg.IsRemoved)
+                    if (packageRowid == 0)
                     {
-                        if (packageRowid == 0)
-                        {
-                            // Package was added and removed within the same tracking window; skip.
-                            continue;
-                        }
-
-                        AICLI_LOG(Repo, Verbose, << "Delta: recording removal of [" << pkg.PackageIdentifier << "] (rowid=" << packageRowid << ")");
-
-                        std::string sql = "INSERT OR REPLACE INTO delta_packages (rowid, id, name, latest_version, is_removed) VALUES (?, ?, '', '', 1)";
-                        SQLite::Statement stmt = SQLite::Statement::Create(deltaConn, sql);
-                        stmt.Bind(1, packageRowid);
-                        stmt.Bind(2, pkg.PackageIdentifier);
-                        stmt.Execute();
+                        // Package was added and removed within the same tracking window; skip.
+                        continue;
                     }
-                    else
+
+                    AICLI_LOG(Repo, Verbose, << "Delta: recording removal of [" << pkg.PackageIdentifier << "] (rowid=" << packageRowid << ")");
+
+                    std::string sql = "INSERT OR REPLACE INTO delta_packages (rowid, id, name, latest_version, is_removed) VALUES (?, ?, '', '', 1)";
+                    SQLite::Statement stmt = SQLite::Statement::Create(deltaConn, sql);
+                    stmt.Bind(1, packageRowid);
+                    stmt.Bind(2, pkg.PackageIdentifier);
+                    stmt.Execute();
+                }
+                else
+                {
+                    bool isNewPackage = (packageRowid == 0);
+                    if (isNewPackage)
                     {
-                        bool isNewPackage = (packageRowid == 0);
-                        if (isNewPackage)
-                        {
-                            packageRowid = ++nextNewPackageRowid;
-                        }
-
-                        AICLI_LOG(Repo, Verbose, << "Delta: recording " << (isNewPackage ? "addition" : "update") << " of [" << pkg.PackageIdentifier << "] (rowid=" << packageRowid << ")");
-
-                        {
-                            std::string sql = "SELECT id, name, moniker, latest_version, arp_min_version, arp_max_version, hash "
-                                              "FROM packages WHERE id = ?";
-                            SQLite::Statement stmt = SQLite::Statement::Create(connection, sql);
-                            stmt.Bind(1, pkg.PackageIdentifier);
-                            THROW_HR_IF(E_NOT_SET, !stmt.Step());
-
-                            std::string id = stmt.GetColumn<std::string>(0);
-                            std::string name = stmt.GetColumn<std::string>(1);
-                            std::string moniker = stmt.GetColumnIsNull(2) ? "" : stmt.GetColumn<std::string>(2);
-                            std::string latestVersion = stmt.GetColumn<std::string>(3);
-                            std::string arpMin = stmt.GetColumnIsNull(4) ? "" : stmt.GetColumn<std::string>(4);
-                            std::string arpMax = stmt.GetColumnIsNull(5) ? "" : stmt.GetColumn<std::string>(5);
-                            SQLite::blob_t hash = stmt.GetColumnIsNull(6) ? SQLite::blob_t{} : stmt.GetColumn<SQLite::blob_t>(6);
-
-                            std::string insertSql =
-                                "INSERT OR REPLACE INTO delta_packages "
-                                "(rowid, id, name, moniker, latest_version, arp_min_version, arp_max_version, hash, is_removed) "
-                                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)";
-                            SQLite::Statement insertStmt = SQLite::Statement::Create(deltaConn, insertSql);
-                            insertStmt.Bind(1, packageRowid);
-                            insertStmt.Bind(2, id);
-                            insertStmt.Bind(3, name);
-                            if (moniker.empty()) insertStmt.Bind(4, nullptr); else insertStmt.Bind(4, moniker);
-                            insertStmt.Bind(5, latestVersion);
-                            if (arpMin.empty()) insertStmt.Bind(6, nullptr); else insertStmt.Bind(6, arpMin);
-                            if (arpMax.empty()) insertStmt.Bind(7, nullptr); else insertStmt.Bind(7, arpMax);
-                            if (hash.empty()) insertStmt.Bind(8, nullptr); else insertStmt.Bind(8, hash);
-                            insertStmt.Execute();
-                        }
-
-                        static constexpr std::pair<std::string_view, std::string_view> s_DeltaSysRefTables[] = {
-                            { "pfns2",            "pfn" },
-                            { "productcodes2",    "productcode" },
-                            { "norm_names2",      "norm_name" },
-                            { "norm_publishers2", "norm_publisher" },
-                            { "upgradecodes2",    "upgradecode" },
-                        };
-
-                        for (const auto& [table, value] : s_DeltaSysRefTables)
-                        {
-                            anon::ProcessDeltaSysRefTable(deltaConn, connection, baselineConn,
-                                table, value, packageRowid, pkg.PackageIdentifier);
-                        }
-
-                        anon::ProcessDeltaOneToManyTable(deltaConn, connection, baselineConn,
-                            "tags2", "tag", packageRowid, nextNewTagsRowid);
-                        anon::ProcessDeltaOneToManyTable(deltaConn, connection, baselineConn,
-                            "commands2", "command", packageRowid, nextNewCommandsRowid);
+                        packageRowid = ++nextNewPackageRowid;
                     }
+
+                    AICLI_LOG(Repo, Verbose, << "Delta: recording " << (isNewPackage ? "addition" : "update") << " of [" << pkg.PackageIdentifier << "] (rowid=" << packageRowid << ")");
+
+                    {
+                        std::string sql = "SELECT id, name, moniker, latest_version, arp_min_version, arp_max_version, hash "
+                                            "FROM packages WHERE id LIKE ?";
+                        SQLite::Statement stmt = SQLite::Statement::Create(connection, sql);
+                        stmt.Bind(1, pkg.PackageIdentifier);
+                        THROW_HR_IF(E_NOT_SET, !stmt.Step());
+
+                        std::string id = stmt.GetColumn<std::string>(0);
+                        std::string name = stmt.GetColumn<std::string>(1);
+                        std::string moniker = stmt.GetColumnIsNull(2) ? "" : stmt.GetColumn<std::string>(2);
+                        std::string latestVersion = stmt.GetColumn<std::string>(3);
+                        std::string arpMin = stmt.GetColumnIsNull(4) ? "" : stmt.GetColumn<std::string>(4);
+                        std::string arpMax = stmt.GetColumnIsNull(5) ? "" : stmt.GetColumn<std::string>(5);
+                        SQLite::blob_t hash = stmt.GetColumnIsNull(6) ? SQLite::blob_t{} : stmt.GetColumn<SQLite::blob_t>(6);
+
+                        std::string insertSql =
+                            "INSERT OR REPLACE INTO delta_packages "
+                            "(rowid, id, name, moniker, latest_version, arp_min_version, arp_max_version, hash, is_removed) "
+                            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)";
+                        SQLite::Statement insertStmt = SQLite::Statement::Create(deltaConn, insertSql);
+                        insertStmt.Bind(1, packageRowid);
+                        insertStmt.Bind(2, id);
+                        insertStmt.Bind(3, name);
+                        if (moniker.empty()) insertStmt.Bind(4, nullptr); else insertStmt.Bind(4, moniker);
+                        insertStmt.Bind(5, latestVersion);
+                        if (arpMin.empty()) insertStmt.Bind(6, nullptr); else insertStmt.Bind(6, arpMin);
+                        if (arpMax.empty()) insertStmt.Bind(7, nullptr); else insertStmt.Bind(7, arpMax);
+                        if (hash.empty()) insertStmt.Bind(8, nullptr); else insertStmt.Bind(8, hash);
+                        insertStmt.Execute();
+                    }
+
+                    static constexpr std::pair<std::string_view, std::string_view> s_DeltaSysRefTables[] = {
+                        { "pfns2",            "pfn" },
+                        { "productcodes2",    "productcode" },
+                        { "norm_names2",      "norm_name" },
+                        { "norm_publishers2", "norm_publisher" },
+                        { "upgradecodes2",    "upgradecode" },
+                    };
+
+                    for (const auto& [table, value] : s_DeltaSysRefTables)
+                    {
+                        anon::ProcessDeltaSysRefTable(deltaConn, connection, baselineConn,
+                            table, value, packageRowid, pkg.PackageIdentifier);
+                    }
+
+                    anon::ProcessDeltaOneToManyTable(deltaConn, connection, baselineConn,
+                        "tags2", "tag", packageRowid, nextNewTagsRowid);
+                    anon::ProcessDeltaOneToManyTable(deltaConn, connection, baselineConn,
+                        "commands2", "command", packageRowid, nextNewCommandsRowid);
                 }
 
                 deltaSavepoint.Commit();
