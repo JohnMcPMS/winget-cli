@@ -71,16 +71,25 @@ namespace DeltaIndexTestTool
                 }
             }
 
-            if (string.IsNullOrEmpty(repoPath) || string.IsNullOrEmpty(outputDir))
+            if (string.IsNullOrEmpty(outputDir))
             {
                 PrintUsage();
                 return 1;
             }
 
-            if (!Directory.Exists(repoPath))
+            if (!autoResume)
             {
-                Console.Error.WriteLine($"Repository path does not exist: {repoPath}");
-                return 1;
+                if (string.IsNullOrEmpty(repoPath))
+                {
+                    PrintUsage();
+                    return 1;
+                }
+
+                if (!Directory.Exists(repoPath))
+                {
+                    Console.Error.WriteLine($"Repository path does not exist: {repoPath}");
+                    return 1;
+                }
             }
 
             // --resume-working-index requires --resume-commit; the reverse is fine (build from scratch at that commit)
@@ -162,17 +171,15 @@ namespace DeltaIndexTestTool
 
             string stateFilePath = Path.Combine(outputDir, "state.json");
             bool hasResumeCommit = !string.IsNullOrEmpty(resumeCommit);
-            bool hasResumeIndex  = !string.IsNullOrEmpty(resumeWorkingIndexPath);
 
             List<CommitCheckpoint> checkpoints;
             ToolState state;
-            int startIndex;
 
             if (autoResume)
             {
                 state = LoadState(stateFilePath);
                 checkpoints = state.Checkpoints.Select(c => new CommitCheckpoint(c.Sha, c.Date)).ToList();
-                startIndex = state.LastCompleteIndex + 1;
+                int startIndex = state.LastCompleteIndex + 1;
 
                 Console.WriteLine($"Opening repository at: {state.RepoPath}");
                 Console.WriteLine($"Interval: every {state.IntervalDays} day(s)");
@@ -209,22 +216,29 @@ namespace DeltaIndexTestTool
 
                 state = new ToolState
                 {
+                    StateFilePath = stateFilePath,
                     RepoPath = repoPath,
                     Branch = branch,
                     IntervalDays = intervalDays,
                     Checkpoints = checkpoints.Select(c => new CheckpointRecord { Sha = c.Sha, Date = c.Date }).ToList(),
                     LastCompleteIndex = -1,
                 };
-                SaveState(stateFilePath, state);
-                startIndex = 0;
+                SaveState(state);
             }
 
+            RunAnalysis(state, outputDir, resumeCommit, resumeWorkingIndexPath, checkpoints);
+        }
+
+        static void RunAnalysis(ToolState state, string outputDir, string resumeCommit, string resumeWorkingIndexPath, List<CommitCheckpoint> checkpoints)
+        {
             Console.WriteLine($"Selected {checkpoints.Count} checkpoints");
 
             string workingIndexPath = Path.Combine(outputDir, "working_index.db");
             var results = new List<CheckpointResult>();
             var factory = new WinGetFactory();
             IWinGetSQLiteIndex? workingIndex = null;
+            int startIndex = state.LastCompleteIndex + 1;
+            bool hasResumeIndex = !string.IsNullOrEmpty(resumeWorkingIndexPath);
 
             // Pre-populate results for already-complete checkpoints.
             if (startIndex > 0)
@@ -297,7 +311,7 @@ namespace DeltaIndexTestTool
                         workingIndex = factory.SQLiteIndexCreate(workingIndexPath, 2u, 1u);
                         workingIndex.SetProperty(SQLiteIndexProperty.PackageUpdateTrackingBaseTime, "0");
 
-                        int added = AddAllManifests(workingIndex, repoPath, checkpoint.Sha);
+                        int added = AddAllManifests(workingIndex, state.RepoPath, checkpoint.Sha);
                         Console.WriteLine($"  Added {added} manifest files");
 
                         workingIndex.Dispose();
@@ -329,7 +343,7 @@ namespace DeltaIndexTestTool
                         string origFullIndexPath = results[0].FullIndexPath!;
 
                         Console.WriteLine("  Applying git diff from previous checkpoint...");
-                        int changed = ApplyGitDiff(workingIndex!, repoPath, prevCheckpoint.Sha, checkpoint.Sha, checkpointDir);
+                        int changed = ApplyGitDiff(workingIndex!, state.RepoPath, prevCheckpoint.Sha, checkpoint.Sha, checkpointDir);
                         Console.WriteLine($"  Applied {changed} manifest changes");
 
                         workingIndex!.Dispose();
@@ -389,7 +403,7 @@ namespace DeltaIndexTestTool
 
                     // Mark this checkpoint complete in the state file.
                     state.LastCompleteIndex = i;
-                    SaveState(stateFilePath, state);
+                    SaveState(state);
                 }
             }
             finally
@@ -413,16 +427,18 @@ namespace DeltaIndexTestTool
             DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
         };
 
-        static void SaveState(string path, ToolState state)
+        static void SaveState(ToolState state)
         {
-            File.WriteAllText(path, JsonSerializer.Serialize(state, s_jsonOptions), Encoding.UTF8);
+            File.WriteAllText(state.StateFilePath, JsonSerializer.Serialize(state, s_jsonOptions), Encoding.UTF8);
         }
 
         static ToolState LoadState(string path)
         {
             string json = File.ReadAllText(path, Encoding.UTF8);
-            return JsonSerializer.Deserialize<ToolState>(json, s_jsonOptions)
+            var result = JsonSerializer.Deserialize<ToolState>(json, s_jsonOptions)
                 ?? throw new InvalidOperationException($"Failed to deserialize state file: {path}");
+            result.StateFilePath = path;
+            return result;
         }
 
         /// <summary>
@@ -782,6 +798,8 @@ namespace DeltaIndexTestTool
                 }
             }
 
+            Directory.Delete(tempDir, true);
+
             return count;
         }
 
@@ -797,8 +815,9 @@ namespace DeltaIndexTestTool
             }
             catch (Exception ex)
             {
-                log.WriteLine($"{commit.Sha}\t{commit.Author.When:yyyy-MM-dd HH:mm:ss zzz}\t{operationName}\t{dirPath}\t{ex.HResult}");
-                Console.Error.WriteLine($"  Failed to {operationName} manifest '{dirPath}': {ex.HResult}");
+                int result = ex.InnerException?.HResult ?? ex.HResult;
+                log.WriteLine($"{commit.Sha}\t{commit.Author.When:yyyy-MM-dd HH:mm:ss zzz}\t{operationName}\t{dirPath}\t{result}");
+                Console.Error.WriteLine($"  Failed to {operationName} manifest '{dirPath}': {result}");
             }
         }
 
@@ -855,6 +874,9 @@ namespace DeltaIndexTestTool
     /// </summary>
     class ToolState
     {
+        [JsonIgnore]
+        public string StateFilePath { get; set; } = string.Empty;
+
         public string RepoPath { get; set; } = string.Empty;
         public string Branch { get; set; } = string.Empty;
         public int IntervalDays { get; set; } = 7;
