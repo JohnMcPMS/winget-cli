@@ -9,9 +9,22 @@ egress across multiple user updates under different baseline refresh schedules.
 Sweeps all candidate refresh periods and recommends the one that minimizes total
 expected compressed egress given an assumed user staleness distribution.
 
-Key approximation: the measured delta_orig_compressed growth curve (from baseline 0)
-is used as a proxy for delta growth from any hypothetical baseline. This holds when
-the repository grows at a roughly steady rate over time.
+COST MODEL SUMMARY
+------------------
+For a refresh period of P checkpoints, the baseline age cycles 0..P-1 in steady state.
+For each user type (D days between updates, population weight W):
+
+  - Avg delta cost per download = average of DeltaOrig[0..P-1]
+    (user downloads current delta-from-baseline regardless of personal staleness)
+  - P(needs new baseline) = min(D, P*interval_days) / (P*interval_days)
+    (fraction of time the user's last update predates the current baseline)
+  - Downloads per user over window = window_days / D
+    (daily users contribute 7x more download events than weekly users)
+
+Total egress = sum over buckets of: W * (window/D) * (avg_delta + p_baseline * full_avg)
+
+Key approximation: DeltaOrig growth from baseline 0 is used as a proxy for delta
+growth from any hypothetical baseline (reasonable when repository growth is steady).
 
 Usage:
     python analyze.py --csv results.csv --distribution weekly
@@ -127,47 +140,79 @@ def normalize_buckets(buckets):
     return [{"days": b["days"], "weight": b["weight"] / total} for b in buckets]
 
 
-def prob_stale_more_than(days_threshold, buckets):
-    """
-    P(user is more than `days_threshold` days stale when they update).
-    Equals the sum of weights for all buckets with days > days_threshold.
-    """
-    return sum(b["weight"] for b in buckets if b["days"] > days_threshold)
-
-
 def simulate_schedule(checkpoints, period, buckets, interval_days):
     """
     Simulate a periodic baseline refresh every `period` checkpoints and return
-    the total expected compressed egress in MB across all checkpoints.
+    the total expected compressed egress in MB across the measurement window.
 
-    At each checkpoint i, baseline age a = i % period:
+    MODEL
+    -----
+    For a given refresh period P (checkpoints), baseline age cycles 0..P-1.
+    When a user updates at a moment when the baseline is `a` checkpoints old:
 
-      delta_cost      = DeltaOrigCompressedMB[a]   (measured growth curve, used as
-                                                     proxy for any baseline period)
-      p_need_baseline = P(user stale > a * interval_days)
-      baseline_cost   = FullIndexCompressedMB at the most recent baseline
+      - They always download the current delta:  DeltaOrig[a]
+      - If they are MORE stale than the baseline (their last update was before
+        the baseline was published), they additionally download the full index.
 
-      expected_cost_i = delta_cost + p_need_baseline * baseline_cost
+    The probability that a user of type D (days between updates) needs the
+    baseline at a random update moment equals the fraction of the baseline
+    cycle during which the baseline is newer than the user's last update:
 
-    When a = 0 (baseline just published): delta_cost = 0, p_need_baseline = 1.0,
-    so every updating user downloads the full baseline — correct by construction.
+        p_needs_baseline(D) = min(D, period_days) / period_days
 
-    The total is summed across all N checkpoints; it is proportional to total
-    egress (one representative user update per checkpoint is assumed).
+    This is derived from: the baseline was published `a` days ago; user needs
+    it if a < D; in steady state `a` is uniform over [0, period_days), so the
+    probability is min(D, period_days) / period_days.
+
+    The average delta cost across a complete baseline cycle is the mean of
+    DeltaOrig[0..P-1], since in steady state the baseline is equally likely
+    to be at any age.
+
+    FREQUENCY CORRECTION
+    --------------------
+    A user who updates every D days generates window_days/D download events
+    over the measurement window — not one per checkpoint.  The total egress
+    contribution of each user type is therefore:
+
+        W[D] * (window_days / D) * (cycle_avg_delta + p_needs_baseline * full_avg)
+
+    where W[D] is the population fraction for that update frequency.  Summing
+    across all user types gives the total expected egress for the window.
+
+    This correctly accounts for the fact that daily updaters contribute far
+    more download events than monthly updaters, even though each individual
+    download for a daily updater is cheaper (smaller delta, less likely to
+    need a baseline reset).
     """
-    delta_curve = [cp["DeltaOrigCompressedMB"] for cp in checkpoints]
-    n = len(checkpoints)
+    delta_curve  = [cp["DeltaOrigCompressedMB"] for cp in checkpoints]
+    n            = len(checkpoints)
+    period_days  = period * interval_days
+    window_days  = max((n - 1) * interval_days, interval_days)
+
+    # Average full index size over the measurement window (baselines are
+    # published at various sizes as the index grows; use the mean as the
+    # representative cost of downloading a baseline).
+    full_avg = sum(cp["FullIndexCompressedMB"] for cp in checkpoints) / n
+
+    # Average delta cost across a complete baseline cycle.
+    # DeltaOrig[a] is the measured delta growth from baseline 0; used here as
+    # a proxy for delta growth from any baseline (the key approximation).
+    cycle_deltas    = [delta_curve[min(a, len(delta_curve) - 1)] for a in range(period)]
+    cycle_avg_delta = sum(cycle_deltas) / period
 
     total_mb = 0.0
-    for i, cp in enumerate(checkpoints):
-        age = i % period
-        baseline_idx = i - age
+    for bucket in buckets:
+        D = bucket["days"]
+        W = bucket["weight"]
 
-        delta_cost    = delta_curve[age] if age < len(delta_curve) else delta_curve[-1]
-        baseline_cost = checkpoints[baseline_idx]["FullIndexCompressedMB"]
-        p_baseline    = prob_stale_more_than(age * interval_days, buckets)
+        # Number of download events from this user type over the window.
+        num_downloads = window_days / D
 
-        total_mb += delta_cost + p_baseline * baseline_cost
+        # Fraction of those downloads that require a new baseline.
+        p_needs_baseline = min(D, period_days) / period_days
+
+        cost_per_download = cycle_avg_delta + p_needs_baseline * full_avg
+        total_mb += W * num_downloads * cost_per_download
 
     return total_mb
 
@@ -290,7 +335,8 @@ def main():
         show.add(p)
 
     # --- Print table --------------------------------------------------------
-    print(f"--- Schedule Comparison (total compressed egress across {n} checkpoints) ---")
+    print(f"--- Schedule Comparison (total compressed egress across measurement window) ---")
+    print(f"    ('Total' = sum of all user download events × cost; comparable across schedules)")
     col_cost = args.cost_per_gb is not None
     hdr = (f"  {'Period':>6}  {'Interval':>9}  {'Total Egress':>14}  {'Avg/Checkpoint':>16}")
     if col_cost:
