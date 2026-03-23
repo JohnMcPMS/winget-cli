@@ -10,6 +10,7 @@ namespace DeltaIndexTestTool
     using System.Collections.Generic;
     using System.Diagnostics;
     using System.IO;
+    using System.IO.Compression;
     using System.Linq;
     using System.Text;
     using System.Text.Json;
@@ -32,6 +33,7 @@ namespace DeltaIndexTestTool
             string resumeCommit = string.Empty;
             string resumeWorkingIndexPath = string.Empty;
             bool autoResume = false;
+            bool recomputeCompressed = false;
 
             for (int i = 0; i < args.Length; i++)
             {
@@ -60,6 +62,9 @@ namespace DeltaIndexTestTool
                         break;
                     case "--resume":
                         autoResume = true;
+                        break;
+                    case "--recompute-compressed":
+                        recomputeCompressed = true;
                         break;
                     case "--help":
                     case "-h":
@@ -108,9 +113,14 @@ namespace DeltaIndexTestTool
                 Console.Error.WriteLine("--resume cannot be combined with --resume-commit or --resume-working-index.");
                 return 1;
             }
-            if (autoResume && !File.Exists(Path.Combine(outputDir, "state.json")))
+            if ((autoResume || recomputeCompressed) && !File.Exists(Path.Combine(outputDir, "state.json")))
             {
                 Console.Error.WriteLine($"No state.json found in output directory. Run without --resume first.");
+                return 1;
+            }
+            if (recomputeCompressed && !autoResume)
+            {
+                Console.Error.WriteLine("--recompute-compressed requires --resume.");
                 return 1;
             }
 
@@ -119,7 +129,7 @@ namespace DeltaIndexTestTool
             try
             {
                 RunAnalysis(repoPath, outputDir, branch, intervalDays, maxCheckpoints,
-                    resumeCommit, resumeWorkingIndexPath, autoResume);
+                    resumeCommit, resumeWorkingIndexPath, autoResume, recomputeCompressed);
                 return 0;
             }
             catch (Exception ex)
@@ -146,6 +156,10 @@ namespace DeltaIndexTestTool
             Console.WriteLine("  --resume                        Resume from the last complete checkpoint recorded in");
             Console.WriteLine("                                  state.json (requires prior run with same --output dir).");
             Console.WriteLine("                                  Cannot be combined with --resume-commit.");
+            Console.WriteLine("  --recompute-compressed          Used with --resume: recomputes compressed file sizes for");
+            Console.WriteLine("                                  all already-completed checkpoints before continuing.");
+            Console.WriteLine("                                  Use this to backfill compressed sizes into a run that");
+            Console.WriteLine("                                  completed before compression measurement was added.");
             Console.WriteLine("  --resume-commit <sha>           Commit SHA to resume from");
             Console.WriteLine("  --resume-working-index <path>   Path to pre-packaging working index for resume commit");
             Console.WriteLine();
@@ -165,7 +179,7 @@ namespace DeltaIndexTestTool
         }
 
         static void RunAnalysis(string repoPath, string outputDir, string branch, int intervalDays, int maxCheckpoints,
-            string resumeCommit, string resumeWorkingIndexPath, bool autoResume)
+            string resumeCommit, string resumeWorkingIndexPath, bool autoResume, bool recomputeCompressed)
         {
             Console.WriteLine($"Output directory: {outputDir}");
 
@@ -185,12 +199,37 @@ namespace DeltaIndexTestTool
                 Console.WriteLine($"Interval: every {state.IntervalDays} day(s)");
                 Console.WriteLine($"Checkpoints: {checkpoints.Count} total, resuming from {startIndex}");
 
+                if (recomputeCompressed && startIndex > 0)
+                {
+                    Console.WriteLine($"\nRecomputing compressed sizes for {startIndex} completed checkpoint(s)...");
+                    for (int ci = 0; ci < startIndex; ci++)
+                    {
+                        string cpDir = Path.Combine(outputDir, $"checkpoint_{ci:D4}");
+                        string fullPath = Path.Combine(cpDir, "full_index.db");
+                        string prevPath = Path.Combine(cpDir, "delta_prev.db");
+                        string origPath = Path.Combine(cpDir, "delta_orig.db");
+
+                        var rec = state.Checkpoints[ci];
+                        rec.FullIndexCompressedBytes = File.Exists(fullPath) ? GetCompressedSize(fullPath) : 0;
+                        rec.DeltaPrevCompressedBytes = File.Exists(prevPath) ? GetCompressedSize(prevPath) : 0;
+                        rec.DeltaOrigCompressedBytes = File.Exists(origPath) ? GetCompressedSize(origPath) : 0;
+
+                        Console.WriteLine($"  [{ci + 1}/{startIndex}] checkpoint_{ci:D4}: " +
+                            $"full={rec.FullIndexCompressedBytes / 1024.0 / 1024.0:F2} MB  " +
+                            $"prev={rec.DeltaPrevCompressedBytes / 1024.0 / 1024.0:F2} MB  " +
+                            $"orig={rec.DeltaOrigCompressedBytes / 1024.0 / 1024.0:F2} MB");
+                    }
+                    SaveState(state);
+                    Console.WriteLine("  Compressed sizes saved to state.json");
+                }
+
                 if (startIndex >= checkpoints.Count)
                 {
                     Console.WriteLine("All checkpoints are already complete. Nothing to do.");
                     // Re-write the CSV with all existing results so the output is consistent.
-                    var allResults = ReconstructResults(outputDir, checkpoints);
+                    var allResults = ReconstructResults(outputDir, state.Checkpoints);
                     WriteCsv(allResults, Path.Combine(outputDir, "results.csv"));
+                    Console.WriteLine($"Results written to: {Path.Combine(outputDir, "results.csv")}");
                     return;
                 }
             }
@@ -243,7 +282,7 @@ namespace DeltaIndexTestTool
             // Pre-populate results for already-complete checkpoints.
             if (startIndex > 0)
             {
-                results.AddRange(ReconstructResults(outputDir, checkpoints.Take(startIndex)));
+                results.AddRange(ReconstructResults(outputDir, state.Checkpoints.Take(startIndex)));
             }
 
             // Open the working index from the last complete checkpoint when resuming mid-run.
@@ -296,10 +335,11 @@ namespace DeltaIndexTestTool
                         workingIndex = factory.SQLiteIndexOpen(workingIndexPath);
 
                         result.FullIndexBytes = new FileInfo(fullIndexPath).Length;
+                        result.FullIndexCompressedBytes = GetCompressedSize(fullIndexPath);
                         result.PreviousFullIndexPath = null;
                         result.FullIndexPath = fullIndexPath;
 
-                        Console.WriteLine($"  Full index: {result.FullIndexBytes / 1024.0 / 1024.0:F2} MB");
+                        Console.WriteLine($"  Full index: {result.FullIndexBytes / 1024.0 / 1024.0:F2} MB  ({result.FullIndexCompressedBytes / 1024.0 / 1024.0:F2} MB compressed)");
                     }
                     else if (i == 0)
                     {
@@ -330,10 +370,11 @@ namespace DeltaIndexTestTool
                         workingIndex = factory.SQLiteIndexOpen(workingIndexPath);
 
                         result.FullIndexBytes = new FileInfo(fullIndexPath).Length;
+                        result.FullIndexCompressedBytes = GetCompressedSize(fullIndexPath);
                         result.PreviousFullIndexPath = null;
                         result.FullIndexPath = fullIndexPath;
 
-                        Console.WriteLine($"  Full index: {result.FullIndexBytes / 1024.0 / 1024.0:F2} MB");
+                        Console.WriteLine($"  Full index: {result.FullIndexBytes / 1024.0 / 1024.0:F2} MB  ({result.FullIndexCompressedBytes / 1024.0 / 1024.0:F2} MB compressed)");
                     }
                     else
                     {
@@ -391,17 +432,25 @@ namespace DeltaIndexTestTool
                         result.FullIndexBytes = new FileInfo(fullIndexPath).Length;
                         result.DeltaPrevBytes = File.Exists(deltaPrevPath) ? new FileInfo(deltaPrevPath).Length : 0;
                         result.DeltaOrigBytes = File.Exists(deltaOrigPath) ? new FileInfo(deltaOrigPath).Length : 0;
+                        result.FullIndexCompressedBytes = GetCompressedSize(fullIndexPath);
+                        result.DeltaPrevCompressedBytes = File.Exists(deltaPrevPath) ? GetCompressedSize(deltaPrevPath) : 0;
+                        result.DeltaOrigCompressedBytes = File.Exists(deltaOrigPath) ? GetCompressedSize(deltaOrigPath) : 0;
                         result.PreviousFullIndexPath = prevFullIndexPath;
                         result.FullIndexPath = fullIndexPath;
 
-                        Console.WriteLine($"  Full index: {result.FullIndexBytes / 1024.0 / 1024.0:F2} MB");
-                        Console.WriteLine($"  Delta prev: {result.DeltaPrevBytes / 1024.0 / 1024.0:F2} MB");
-                        Console.WriteLine($"  Delta orig: {result.DeltaOrigBytes / 1024.0 / 1024.0:F2} MB");
+                        Console.WriteLine($"  Full index: {result.FullIndexBytes / 1024.0 / 1024.0:F2} MB  ({result.FullIndexCompressedBytes / 1024.0 / 1024.0:F2} MB compressed)");
+                        Console.WriteLine($"  Delta prev: {result.DeltaPrevBytes / 1024.0 / 1024.0:F2} MB  ({result.DeltaPrevCompressedBytes / 1024.0 / 1024.0:F2} MB compressed)");
+                        Console.WriteLine($"  Delta orig: {result.DeltaOrigBytes / 1024.0 / 1024.0:F2} MB  ({result.DeltaOrigCompressedBytes / 1024.0 / 1024.0:F2} MB compressed)");
                     }
 
                     results.Add(result);
 
-                    // Mark this checkpoint complete in the state file.
+                    // Mark this checkpoint complete in the state file, persisting compressed sizes
+                    // so --resume can reconstruct results without re-compressing.
+                    var rec = state.Checkpoints[i];
+                    rec.FullIndexCompressedBytes = result.FullIndexCompressedBytes;
+                    rec.DeltaPrevCompressedBytes = result.DeltaPrevCompressedBytes;
+                    rec.DeltaOrigCompressedBytes = result.DeltaOrigCompressedBytes;
                     state.LastCompleteIndex = i;
                     SaveState(state);
                 }
@@ -443,13 +492,14 @@ namespace DeltaIndexTestTool
 
         /// <summary>
         /// Rebuilds <see cref="CheckpointResult"/> objects for already-complete checkpoints
-        /// by reading file sizes from disk.  Used when resuming a run.
+        /// by reading file sizes from disk and compressed sizes from the persisted state records.
+        /// Used when resuming a run.
         /// </summary>
-        static List<CheckpointResult> ReconstructResults(string outputDir, IEnumerable<CommitCheckpoint> checkpoints)
+        static List<CheckpointResult> ReconstructResults(string outputDir, IEnumerable<CheckpointRecord> records)
         {
             var results = new List<CheckpointResult>();
             int i = 0;
-            foreach (var cp in checkpoints)
+            foreach (var rec in records)
             {
                 string checkpointDir = Path.Combine(outputDir, $"checkpoint_{i:D4}");
                 string fullIndexPath = Path.Combine(checkpointDir, "full_index.db");
@@ -459,11 +509,14 @@ namespace DeltaIndexTestTool
                 results.Add(new CheckpointResult
                 {
                     Index = i,
-                    Date = cp.Date,
-                    CommitSha = cp.Sha[..8],
+                    Date = rec.Date,
+                    CommitSha = rec.Sha[..8],
                     FullIndexBytes = File.Exists(fullIndexPath) ? new FileInfo(fullIndexPath).Length : 0,
                     DeltaPrevBytes = File.Exists(deltaPrevPath) ? new FileInfo(deltaPrevPath).Length : 0,
                     DeltaOrigBytes = File.Exists(deltaOrigPath) ? new FileInfo(deltaOrigPath).Length : 0,
+                    FullIndexCompressedBytes = rec.FullIndexCompressedBytes,
+                    DeltaPrevCompressedBytes = rec.DeltaPrevCompressedBytes,
+                    DeltaOrigCompressedBytes = rec.DeltaOrigCompressedBytes,
                     FullIndexPath = fullIndexPath,
                     PreviousFullIndexPath = i > 0
                         ? Path.Combine(outputDir, $"checkpoint_{i - 1:D4}", "full_index.db")
@@ -851,18 +904,47 @@ namespace DeltaIndexTestTool
             return localDir;
         }
 
+        /// <summary>
+        /// Compresses <paramref name="filePath"/> using Deflate (the same algorithm used by MSIX/ZIP
+        /// packaging) and returns the compressed byte count.  A temporary file is used so that
+        /// large files are not loaded into memory.  The temporary file is always deleted on return.
+        /// </summary>
+        static long GetCompressedSize(string filePath)
+        {
+            string tempPath = filePath + ".compressed_measure.zip";
+            try
+            {
+                using (var zipStream = File.Create(tempPath))
+                using (var archive = new ZipArchive(zipStream, ZipArchiveMode.Create, leaveOpen: false))
+                {
+                    var entry = archive.CreateEntry(Path.GetFileName(filePath), CompressionLevel.Optimal);
+                    using var entryStream = entry.Open();
+                    using var sourceStream = File.OpenRead(filePath);
+                    sourceStream.CopyTo(entryStream);
+                }
+                return new FileInfo(tempPath).Length;
+            }
+            finally
+            {
+                if (File.Exists(tempPath)) File.Delete(tempPath);
+            }
+        }
+
         static void WriteCsv(List<CheckpointResult> results, string path)
         {
             using var writer = new StreamWriter(path, false, Encoding.UTF8);
-            writer.WriteLine("Index,Date,CommitSha,FullIndexMB,DeltaPrevMB,DeltaOrigMB");
+            writer.WriteLine("Index,Date,CommitSha,FullIndexMB,DeltaPrevMB,DeltaOrigMB,FullIndexCompressedMB,DeltaPrevCompressedMB,DeltaOrigCompressedMB");
 
             foreach (var r in results)
             {
-                double fullMb = r.FullIndexBytes / 1024.0 / 1024.0;
-                double deltaPrevMb = r.DeltaPrevBytes / 1024.0 / 1024.0;
-                double deltaOrigMb = r.DeltaOrigBytes / 1024.0 / 1024.0;
+                double fullMb       = r.FullIndexBytes / 1024.0 / 1024.0;
+                double deltaPrevMb  = r.DeltaPrevBytes / 1024.0 / 1024.0;
+                double deltaOrigMb  = r.DeltaOrigBytes / 1024.0 / 1024.0;
+                double fullCMb      = r.FullIndexCompressedBytes / 1024.0 / 1024.0;
+                double deltaPrevCMb = r.DeltaPrevCompressedBytes / 1024.0 / 1024.0;
+                double deltaOrigCMb = r.DeltaOrigCompressedBytes / 1024.0 / 1024.0;
 
-                writer.WriteLine($"{r.Index},{r.Date:yyyy-MM-dd},{r.CommitSha},{fullMb:F2},{deltaPrevMb:F2},{deltaOrigMb:F2}");
+                writer.WriteLine($"{r.Index},{r.Date:yyyy-MM-dd},{r.CommitSha},{fullMb:F2},{deltaPrevMb:F2},{deltaOrigMb:F2},{fullCMb:F2},{deltaPrevCMb:F2},{deltaOrigCMb:F2}");
             }
         }
     }
@@ -893,6 +975,9 @@ namespace DeltaIndexTestTool
     {
         public string Sha { get; set; } = string.Empty;
         public DateTime Date { get; set; }
+        public long FullIndexCompressedBytes { get; set; }
+        public long DeltaPrevCompressedBytes { get; set; }
+        public long DeltaOrigCompressedBytes { get; set; }
     }
 
     class CheckpointResult
@@ -903,6 +988,9 @@ namespace DeltaIndexTestTool
         public long FullIndexBytes { get; set; }
         public long DeltaPrevBytes { get; set; }
         public long DeltaOrigBytes { get; set; }
+        public long FullIndexCompressedBytes { get; set; }
+        public long DeltaPrevCompressedBytes { get; set; }
+        public long DeltaOrigCompressedBytes { get; set; }
         public string? FullIndexPath { get; set; }
         public string? PreviousFullIndexPath { get; set; }
     }
