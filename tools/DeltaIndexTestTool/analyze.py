@@ -22,12 +22,33 @@ For a refresh period of P checkpoints (P * interval_days days):
                         (expected delta size at a random moment in the cycle)
   weighted_p_baseline = sum over D of W[D] * min(D, period_days) / period_days
                         (expected fraction of downloads that need a new baseline)
+                        For "new_client" buckets: p_needs_baseline = 1.0 always.
   cost_per_download   = cycle_avg_delta + weighted_p_baseline * full_avg
 
 Comparing cost_per_download across periods finds the optimal refresh interval.
 
 Key approximation: DeltaOrig growth from baseline 0 is used as a proxy for delta
 growth from any hypothetical baseline (reasonable when repository growth is steady).
+
+DISTRIBUTION FORMAT
+-------------------
+Buckets can be either:
+  { "days": N, "weight": W }         -- clients N days stale at update time
+  { "new_client": true, "weight": W } -- net-new clients (no prior index; always
+                                         pay full baseline cost)
+
+Built-in presets: daily_heavy, weekly, monthly
+
+Telemetry-derived JSON example:
+  {
+    "description": "Telemetry-derived YYYY-MM-DD",
+    "buckets": [
+      { "days": 1,  "weight": 0.30 },
+      { "days": 7,  "weight": 0.50 },
+      { "days": 30, "weight": 0.15 },
+      { "new_client": true, "weight": 0.05 }
+    ]
+  }
 
 Usage:
     python analyze.py --csv results.csv --distribution weekly
@@ -135,12 +156,24 @@ def compute_interval_days(checkpoints):
 
 
 def normalize_buckets(buckets):
-    """Return a copy of buckets with weights normalized to sum to 1.0."""
+    """Return a copy of buckets with weights normalized to sum to 1.0.
+
+    Supports both regular staleness buckets {"days": N, "weight": W} and
+    net-new client buckets {"new_client": true, "weight": W}.
+    """
     total = sum(b["weight"] for b in buckets)
     if abs(total - 1.0) > 0.01:
         print(f"Warning: distribution weights sum to {total:.3f}, normalizing to 1.0",
               file=sys.stderr)
-    return [{"days": b["days"], "weight": b["weight"] / total} for b in buckets]
+    result = []
+    for b in buckets:
+        normalized = {"weight": b["weight"] / total}
+        if b.get("new_client"):
+            normalized["new_client"] = True
+        else:
+            normalized["days"] = b["days"]
+        result.append(normalized)
+    return result
 
 
 def simulate_schedule(checkpoints, period, buckets, interval_days):
@@ -178,7 +211,7 @@ def simulate_schedule(checkpoints, period, buckets, interval_days):
     cycle_avg_delta = sum(cycle_deltas) / period
 
     weighted_p_baseline = sum(
-        b["weight"] * min(b["days"], period_days) / period_days
+        b["weight"] * (1.0 if b.get("new_client") else min(b["days"], period_days) / period_days)
         for b in buckets
     )
 
