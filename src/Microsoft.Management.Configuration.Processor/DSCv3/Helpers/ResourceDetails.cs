@@ -60,8 +60,20 @@ namespace Microsoft.Management.Configuration.Processor.DSCv3.Helpers
         }
 
         /// <summary>
-        /// Gets the path of the resource.
+        /// Gets a value indicating whether this resource is an adapter.
         /// </summary>
+        public bool IsAdapter
+        {
+            get
+            {
+                lock (this.detailsUpdateLock)
+                {
+                    return this.resourceListItem?.Kind == ResourceKind.Adapter;
+                }
+            }
+        }
+
+        /// <summary>
         public string? Path
         {
             get

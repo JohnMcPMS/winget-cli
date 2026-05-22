@@ -32,7 +32,8 @@ namespace Microsoft.Management.Configuration.Processor.DSCv3.Helpers
         private bool processorPathVerified = false;
         private bool disposed = false;
 
-        private Dictionary<string, ResourceDetails> resourceDetailsDictionary = new ();
+        private Dictionary<string, ResourceDetails> resourceDetailsDictionary = new (StringComparer.OrdinalIgnoreCase);
+        private ResourceCacheState cacheState = new ResourceCacheState();
 
         /// <summary>
         /// Gets or sets the path to the DSC v3 executable.
@@ -196,6 +197,7 @@ namespace Microsoft.Management.Configuration.Processor.DSCv3.Helpers
             ProcessorSettings result = new ProcessorSettings();
 
             result.resourceDetailsDictionary = this.resourceDetailsDictionary;
+            result.cacheState = this.cacheState;
             result.DiagnosticsSink = this.DiagnosticsSink;
             result.DscExecutablePath = this.DscExecutablePath;
             result.DscExecutablePathHash = this.DscExecutablePathHash;
@@ -240,37 +242,43 @@ namespace Microsoft.Management.Configuration.Processor.DSCv3.Helpers
         /// <returns>The ResourceDetails for the unit, or null if not found.</returns>
         public ResourceDetails? GetResourceDetails(ConfigurationUnitInternal configurationUnitInternal, ConfigurationUnitDetailFlags detailFlags)
         {
-            ResourceDetails? result = null;
-            bool inDictionary = false;
+            // Check cache first.
+            ResourceDetails? result = this.TryGetFromCache(configurationUnitInternal.QualifiedName);
 
-            lock (this.resourceDetailsDictionary)
+            if (result == null)
             {
-                inDictionary = this.resourceDetailsDictionary.TryGetValue(configurationUnitInternal.QualifiedName, out result);
+                // Pre-populate cache with all top-level resources if not done yet.
+                this.EnsureAllResourcesCached();
+                result = this.TryGetFromCache(configurationUnitInternal.QualifiedName);
             }
 
             if (result == null)
             {
-                result = new ResourceDetails(configurationUnitInternal.QualifiedName);
-            }
+                // Not a top-level resource; check within each known adapter.
+                List<string> adapterTypes = this.GetCachedAdapterTypes();
 
-            result.EnsureDetails(this, detailFlags);
-
-            if (result.Exists)
-            {
-                if (!inDictionary)
+                foreach (string adapterType in adapterTypes)
                 {
-                    lock (this.resourceDetailsDictionary)
+                    this.EnsureAdapterResourcesCached(adapterType);
+                    result = this.TryGetFromCache(configurationUnitInternal.QualifiedName);
+                    if (result != null)
                     {
-                        this.resourceDetailsDictionary.Add(configurationUnitInternal.QualifiedName, result);
+                        break;
                     }
                 }
+            }
 
-                return result;
-            }
-            else
+            if (result != null)
             {
-                return null;
+                result.EnsureDetails(this, detailFlags);
+
+                if (result.Exists)
+                {
+                    return result;
+                }
             }
+
+            return null;
         }
 
         /// <summary>
@@ -282,38 +290,33 @@ namespace Microsoft.Management.Configuration.Processor.DSCv3.Helpers
         {
             List<ResourceDetails> result = new List<ResourceDetails>();
 
-            var resourceItemList = this.DSCv3.GetAllResources(ProcessorRunSettings.CreateFromFindUnitProcessorsOptions(findOptions));
+            var runSettings = ProcessorRunSettings.CreateFromFindUnitProcessorsOptions(findOptions);
+            var resourceItemList = this.DSCv3.GetAllResources(runSettings);
+
+            lock (this.resourceDetailsDictionary)
+            {
+                this.PopulateCacheFromResourceListUnderLock(resourceItemList);
+
+                // If no custom search paths were used, the result represents the full default resource set.
+                if (string.IsNullOrEmpty(findOptions.SearchPaths))
+                {
+                    this.cacheState.AllResourcesCached = true;
+                }
+            }
 
             foreach (var item in resourceItemList)
             {
-                ResourceDetails? details = null;
-                bool inDictionary = false;
+                ResourceDetails? details;
                 lock (this.resourceDetailsDictionary)
                 {
-                    inDictionary = this.resourceDetailsDictionary.TryGetValue(item.Type, out details);
+                    this.resourceDetailsDictionary.TryGetValue(item.Type, out details);
                 }
 
-                if (details == null)
+                if (details != null)
                 {
-                    details = new ResourceDetails(item.Type);
+                    details.EnsureDetails(this, findOptions.UnitDetailFlags);
+                    result.Add(details);
                 }
-
-                if (!details.Exists)
-                {
-                    details.SetResourceListItem(item);
-                }
-
-                details.EnsureDetails(this, findOptions.UnitDetailFlags);
-
-                if (!inDictionary)
-                {
-                    lock (this.resourceDetailsDictionary)
-                    {
-                        this.resourceDetailsDictionary.Add(item.Type, details);
-                    }
-                }
-
-                result.Add(details);
             }
 
             return result;
@@ -371,6 +374,109 @@ namespace Microsoft.Management.Configuration.Processor.DSCv3.Helpers
                     this.processorPathVerified = true;
                 }
             }
+        }
+
+        private ResourceDetails? TryGetFromCache(string resourceType)
+        {
+            lock (this.resourceDetailsDictionary)
+            {
+                this.resourceDetailsDictionary.TryGetValue(resourceType, out ResourceDetails? result);
+                return result;
+            }
+        }
+
+        private List<string> GetCachedAdapterTypes()
+        {
+            List<string> adapters = new List<string>();
+            lock (this.resourceDetailsDictionary)
+            {
+                foreach (var kvp in this.resourceDetailsDictionary)
+                {
+                    if (kvp.Value.IsAdapter)
+                    {
+                        adapters.Add(kvp.Key);
+                    }
+                }
+            }
+
+            return adapters;
+        }
+
+        /// <summary>
+        /// Populates the resource details cache from the provided list.
+        /// Must be called while holding the resourceDetailsDictionary lock.
+        /// </summary>
+        private void PopulateCacheFromResourceListUnderLock(IList<IResourceListItem> items)
+        {
+            foreach (var item in items)
+            {
+                if (!this.resourceDetailsDictionary.ContainsKey(item.Type))
+                {
+                    var details = new ResourceDetails(item.Type);
+                    details.SetResourceListItem(item);
+                    this.resourceDetailsDictionary.Add(item.Type, details);
+                }
+            }
+        }
+
+        private void EnsureAllResourcesCached()
+        {
+            lock (this.resourceDetailsDictionary)
+            {
+                if (this.cacheState.AllResourcesCached)
+                {
+                    return;
+                }
+            }
+
+            var resources = this.DSCv3.GetAllResources(null);
+
+            lock (this.resourceDetailsDictionary)
+            {
+                if (!this.cacheState.AllResourcesCached)
+                {
+                    this.PopulateCacheFromResourceListUnderLock(resources);
+                    this.cacheState.AllResourcesCached = true;
+                }
+            }
+        }
+
+        private void EnsureAdapterResourcesCached(string adapterType)
+        {
+            lock (this.resourceDetailsDictionary)
+            {
+                if (this.cacheState.CachedAdapters.Contains(adapterType))
+                {
+                    return;
+                }
+            }
+
+            var resources = this.DSCv3.GetAllResourcesFromAdapter(adapterType, null);
+
+            lock (this.resourceDetailsDictionary)
+            {
+                if (!this.cacheState.CachedAdapters.Contains(adapterType))
+                {
+                    this.PopulateCacheFromResourceListUnderLock(resources);
+                    this.cacheState.CachedAdapters.Add(adapterType);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Tracks whether bulk resource listing calls have been made, shared between cloned instances.
+        /// </summary>
+        private class ResourceCacheState
+        {
+            /// <summary>
+            /// Gets or sets a value indicating whether all top-level resources have been fetched and cached.
+            /// </summary>
+            public bool AllResourcesCached { get; set; } = false;
+
+            /// <summary>
+            /// Gets the set of adapter type names whose resources have been fully fetched and cached.
+            /// </summary>
+            public HashSet<string> CachedAdapters { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         }
     }
 }

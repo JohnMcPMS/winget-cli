@@ -42,6 +42,14 @@ namespace Microsoft.Management.Configuration.Processor.DSCv3.Model
         public List<IResourceListItem> GetAllResources(ProcessorRunSettings? runSettings);
 
         /// <summary>
+        /// Gets all resource items from a specific adapter.
+        /// </summary>
+        /// <param name="adapter">The adapter type name.</param>
+        /// <param name="runSettings">The processor run settings.</param>
+        /// <returns>A list of resource items from the adapter.</returns>
+        public List<IResourceListItem> GetAllResourcesFromAdapter(string adapter, ProcessorRunSettings? runSettings);
+
+        /// <summary>
         /// Tests a configuration unit.
         /// </summary>
         /// <param name="unitInternal">The unit to test.</param>

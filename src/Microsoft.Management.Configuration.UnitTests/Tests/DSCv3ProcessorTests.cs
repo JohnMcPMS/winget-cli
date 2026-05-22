@@ -49,6 +49,61 @@ namespace Microsoft.Management.Configuration.UnitTests.Tests
         [Fact]
         public void Set_UnitPropertyDetailsCached()
         {
+            string type1 = "Type1";
+            string type2 = "Type2";
+
+            // Resource found in GetAllResources is returned, then subsequent lookups use the cache.
+            {
+                var (factory, dsc) = CreateTestFactory();
+                var set = this.ConfigurationSet();
+                var unit1 = this.ConfigurationUnit().Assign(new { Type = type1 });
+                var unit2 = this.ConfigurationUnit().Assign(new { Type = type2 });
+
+                dsc.GetAllResourcesResult = new List<IResourceListItem>() { new TestResourceListItem() { Type = type1 } };
+
+                var setProcessor = factory.CreateSetProcessor(set);
+
+                // First lookup: calls GetAllResources, finds type1.
+                var details = setProcessor.GetUnitProcessorDetails(unit1, ConfigurationUnitDetailFlags.Local);
+                Assert.NotNull(details);
+                Assert.Equal(type1, details.UnitType);
+                Assert.Equal(1, dsc.GetAllResourcesCallCount);
+
+                // Second lookup for same type: uses cache, no additional GetAllResources call.
+                dsc.GetAllResourcesResult = null;
+                details = setProcessor.GetUnitProcessorDetails(unit1, ConfigurationUnitDetailFlags.Local);
+                Assert.NotNull(details);
+                Assert.Equal(type1, details.UnitType);
+                Assert.Equal(1, dsc.GetAllResourcesCallCount);
+
+                // Lookup for type2 (not in list): cache is fully populated, no additional call, returns null.
+                details = setProcessor.GetUnitProcessorDetails(unit2, ConfigurationUnitDetailFlags.Local);
+                Assert.Null(details);
+                Assert.Equal(1, dsc.GetAllResourcesCallCount);
+            }
+
+            // Resource not in GetAllResources returns null.
+            {
+                var (factory, dsc) = CreateTestFactory();
+                var set = this.ConfigurationSet();
+                var unit1 = this.ConfigurationUnit().Assign(new { Type = type1 });
+
+                dsc.GetAllResourcesResult = new List<IResourceListItem>();
+
+                var setProcessor = factory.CreateSetProcessor(set);
+
+                var details = setProcessor.GetUnitProcessorDetails(unit1, ConfigurationUnitDetailFlags.Local);
+                Assert.Null(details);
+                Assert.Equal(1, dsc.GetAllResourcesCallCount);
+            }
+        }
+
+        /// <summary>
+        /// Tests that multiple resource lookups only invoke GetAllResources once.
+        /// </summary>
+        [Fact]
+        public void Set_AllResourcesCachedOnFirstLookup()
+        {
             var (factory, dsc) = CreateTestFactory();
             var set = this.ConfigurationSet();
             string type1 = "Type1";
@@ -56,42 +111,68 @@ namespace Microsoft.Management.Configuration.UnitTests.Tests
             var unit1 = this.ConfigurationUnit().Assign(new { Type = type1 });
             var unit2 = this.ConfigurationUnit().Assign(new { Type = type2 });
 
+            dsc.GetAllResourcesResult = new List<IResourceListItem>()
+            {
+                new TestResourceListItem() { Type = type1 },
+                new TestResourceListItem() { Type = type2 },
+            };
+
             var setProcessor = factory.CreateSetProcessor(set);
 
-            // Initially, no details
-            var details = setProcessor.GetUnitProcessorDetails(unit1, ConfigurationUnitDetailFlags.Local);
-            Assert.Null(details);
+            setProcessor.GetUnitProcessorDetails(unit1, ConfigurationUnitDetailFlags.Local);
+            setProcessor.GetUnitProcessorDetails(unit2, ConfigurationUnitDetailFlags.Local);
+            setProcessor.GetUnitProcessorDetails(unit1, ConfigurationUnitDetailFlags.Local);
 
-            // Null result not cached
-            dsc.GetResourceByTypeResult = new TestResourceListItem() { Type = type1 };
-            details = setProcessor.GetUnitProcessorDetails(unit1, ConfigurationUnitDetailFlags.Local);
-            Assert.NotNull(details);
-            Assert.Equal(type1, details.UnitType);
+            // All three lookups should only trigger one GetAllResources call.
+            Assert.Equal(1, dsc.GetAllResourcesCallCount);
+        }
 
-            // Not-null result cached
-            dsc.GetResourceByTypeResult = null;
-            dsc.GetResourceByTypeDelegate = s => throw new System.Exception("Shouldn't be called");
-            details = setProcessor.GetUnitProcessorDetails(unit1, ConfigurationUnitDetailFlags.Local);
-            Assert.NotNull(details);
-            Assert.Equal(type1, details.UnitType);
+        /// <summary>
+        /// Tests that adapter resources are found and cached after a single per-adapter bulk fetch.
+        /// </summary>
+        [Fact]
+        public void Set_AdapterResourcesCachedAfterFirstAdapterLookup()
+        {
+            var (factory, dsc) = CreateTestFactory();
+            var set = this.ConfigurationSet();
+            string adapterType = "Adapter/Resource";
+            string adaptedType1 = "Adapted/Type1";
+            string adaptedType2 = "Adapted/Type2";
+            var unit1 = this.ConfigurationUnit().Assign(new { Type = adaptedType1 });
+            var unit2 = this.ConfigurationUnit().Assign(new { Type = adaptedType2 });
 
-            // Different type, no details
-            dsc.GetResourceByTypeDelegate = null;
-            details = setProcessor.GetUnitProcessorDetails(unit2, ConfigurationUnitDetailFlags.Local);
-            Assert.Null(details);
+            // Top-level list contains only the adapter; adapted resources are not in the top-level list.
+            dsc.GetAllResourcesResult = new List<IResourceListItem>()
+            {
+                new TestResourceListItem() { Type = adapterType, Kind = ResourceKind.Adapter },
+            };
 
-            // Null result not cached
-            dsc.GetResourceByTypeResult = new TestResourceListItem() { Type = type2 };
-            details = setProcessor.GetUnitProcessorDetails(unit2, ConfigurationUnitDetailFlags.Local);
-            Assert.NotNull(details);
-            Assert.Equal(type2, details.UnitType);
+            // The adapter provides both adapted types.
+            dsc.GetAllResourcesFromAdapterDelegate = (adapter) =>
+            {
+                Assert.Equal(adapterType, adapter);
+                return new List<IResourceListItem>()
+                {
+                    new TestResourceListItem() { Type = adaptedType1 },
+                    new TestResourceListItem() { Type = adaptedType2 },
+                };
+            };
 
-            // First type is still first type
-            dsc.GetResourceByTypeResult = null;
-            dsc.GetResourceByTypeDelegate = s => throw new System.Exception("Shouldn't be called");
-            details = setProcessor.GetUnitProcessorDetails(unit1, ConfigurationUnitDetailFlags.Local);
-            Assert.NotNull(details);
-            Assert.Equal(type1, details.UnitType);
+            var setProcessor = factory.CreateSetProcessor(set);
+
+            // First lookup finds adaptedType1 by enumerating the adapter.
+            var details1 = setProcessor.GetUnitProcessorDetails(unit1, ConfigurationUnitDetailFlags.Local);
+            Assert.NotNull(details1);
+            Assert.Equal(adaptedType1, details1.UnitType);
+            Assert.Equal(1, dsc.GetAllResourcesCallCount);
+            Assert.Equal(1, dsc.GetAllResourcesFromAdapterCallCount);
+
+            // Second lookup for adaptedType2 uses cache; no additional dsc.exe calls.
+            var details2 = setProcessor.GetUnitProcessorDetails(unit2, ConfigurationUnitDetailFlags.Local);
+            Assert.NotNull(details2);
+            Assert.Equal(adaptedType2, details2.UnitType);
+            Assert.Equal(1, dsc.GetAllResourcesCallCount);
+            Assert.Equal(1, dsc.GetAllResourcesFromAdapterCallCount);
         }
 
         /// <summary>
@@ -129,11 +210,7 @@ namespace Microsoft.Management.Configuration.UnitTests.Tests
             string type1 = "Type1";
             var unit1 = this.ConfigurationUnit().Assign(new { Type = type1 });
 
-            dsc.GetResourceByTypeDelegate = (type) =>
-            {
-                Assert.Equal(type1, type);
-                return new TestResourceListItem() { Type = type1 };
-            };
+            dsc.GetAllResourcesResult = new List<IResourceListItem>() { new TestResourceListItem() { Type = type1 } };
 
             ValueSet set1 = new ValueSet();
             set1.Add("key1", "val1");
@@ -171,11 +248,7 @@ namespace Microsoft.Management.Configuration.UnitTests.Tests
             string type2 = "Type2";
             var unit1 = this.ConfigurationUnit().Assign(new { Type = type1 });
 
-            dsc.GetResourceByTypeDelegate = (type) =>
-            {
-                Assert.Equal(type1, type);
-                return new TestResourceListItem() { Type = type1 };
-            };
+            dsc.GetAllResourcesResult = new List<IResourceListItem>() { new TestResourceListItem() { Type = type1 } };
 
             ValueSet set1 = new ValueSet();
             set1.Add("key1", "val1");
@@ -209,11 +282,7 @@ namespace Microsoft.Management.Configuration.UnitTests.Tests
             string type1 = "Type1";
             var unit1 = this.ConfigurationUnit().Assign(new { Type = type1 });
 
-            dsc.GetResourceByTypeDelegate = (type) =>
-            {
-                Assert.Equal(type1, type);
-                return new TestResourceListItem() { Type = type1 };
-            };
+            dsc.GetAllResourcesResult = new List<IResourceListItem>() { new TestResourceListItem() { Type = type1 } };
 
             ValueSet set1 = new ValueSet();
             set1.Add("key1", "val1");
@@ -264,11 +333,7 @@ namespace Microsoft.Management.Configuration.UnitTests.Tests
 
             var unit1 = this.ConfigurationUnit().Assign(new { Type = type1 });
 
-            dsc.GetResourceByTypeDelegate = (type) =>
-            {
-                Assert.Equal(type1, type);
-                return new TestResourceListItem() { Type = type1 };
-            };
+            dsc.GetAllResourcesResult = new List<IResourceListItem>() { new TestResourceListItem() { Type = type1 } };
 
             ValueSet set1 = new ValueSet();
             set1.Add("key1", "val1");

@@ -176,7 +176,28 @@ namespace Microsoft.Management.Configuration.Processor.DSCv3.Schema_2024_04
                 EnvironmentVariables = CreateEnvironmentVariablesFromProcessorRunSettings(runSettings),
             };
 
-            this.RunSynchronously(processExecution);
+            if (this.RunSynchronously(processExecution))
+            {
+                throw new Exceptions.InvokeDscResourceException(ListCommand, string.Empty, null, processExecution.GetAllErrorLines());
+            }
+
+            return GetOutputLinesAs<ResourceListItem>(processExecution).ToList<IResourceListItem>();
+        }
+
+        /// <inheritdoc />
+        public List<IResourceListItem> GetAllResourcesFromAdapter(string adapter, ProcessorRunSettings? runSettings)
+        {
+            ProcessExecution processExecution = new ProcessExecution()
+            {
+                ExecutablePath = this.processorSettings.EffectiveDscExecutablePath,
+                Arguments = new[] { PlainTextTraces, this.DiagnosticTraceLevel, ResourceCommand, ListCommand, $"-a {adapter}" },
+                EnvironmentVariables = CreateEnvironmentVariablesFromProcessorRunSettings(runSettings),
+            };
+
+            if (this.RunSynchronously(processExecution))
+            {
+                throw new Exceptions.InvokeDscResourceException(ListCommand, adapter, null, processExecution.GetAllErrorLines());
+            }
 
             return GetOutputLinesAs<ResourceListItem>(processExecution).ToList<IResourceListItem>();
         }

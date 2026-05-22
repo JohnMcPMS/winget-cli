@@ -52,6 +52,13 @@ namespace Microsoft.Management.Configuration.UnitTests.Helpers
         internal delegate IList<IResourceExportItem> ExportResourceDelegateType(ConfigurationUnitInternal unitInternal);
 
         /// <summary>
+        /// The delegate type for GetAllResourcesFromAdapter.
+        /// </summary>
+        /// <param name="adapter">The adapter type name.</param>
+        /// <returns>A list of resource items from the adapter.</returns>
+        internal delegate List<IResourceListItem> GetAllResourcesFromAdapterDelegateType(string adapter);
+
+        /// <summary>
         /// Gets or sets the GetResourceByType result.
         /// </summary>
         public IResourceListItem? GetResourceByTypeResult { get; set; }
@@ -106,6 +113,26 @@ namespace Microsoft.Management.Configuration.UnitTests.Helpers
         /// </summary>
         public List<IResourceListItem>? GetAllResourcesResult { get; set; }
 
+        /// <summary>
+        /// Gets the number of times GetAllResources has been called.
+        /// </summary>
+        public int GetAllResourcesCallCount { get; private set; } = 0;
+
+        /// <summary>
+        /// Gets or sets the GetAllResourcesFromAdapter result.
+        /// </summary>
+        public List<IResourceListItem>? GetAllResourcesFromAdapterResult { get; set; }
+
+        /// <summary>
+        /// Gets or sets the GetAllResourcesFromAdapter delegate.
+        /// </summary>
+        public GetAllResourcesFromAdapterDelegateType? GetAllResourcesFromAdapterDelegate { get; set; }
+
+        /// <summary>
+        /// Gets the number of times GetAllResourcesFromAdapter has been called.
+        /// </summary>
+        public int GetAllResourcesFromAdapterCallCount { get; private set; } = 0;
+
         /// <inheritdoc/>
         public IResourceListItem? GetResourceByType(string resourceType, ProcessorRunSettings? runSettings)
         {
@@ -139,7 +166,15 @@ namespace Microsoft.Management.Configuration.UnitTests.Helpers
         /// <inheritdoc/>
         public List<IResourceListItem> GetAllResources(ProcessorRunSettings? runSettings)
         {
+            this.GetAllResourcesCallCount++;
             return this.GetAllResourcesResult ?? throw new System.NotImplementedException();
+        }
+
+        /// <inheritdoc/>
+        public List<IResourceListItem> GetAllResourcesFromAdapter(string adapter, ProcessorRunSettings? runSettings)
+        {
+            this.GetAllResourcesFromAdapterCallCount++;
+            return this.GetAllResourcesFromAdapterResult ?? this.GetAllResourcesFromAdapterDelegate?.Invoke(adapter) ?? throw new System.NotImplementedException();
         }
     }
 }
