@@ -176,6 +176,52 @@ namespace Microsoft.Management.Configuration.UnitTests.Tests
         }
 
         /// <summary>
+        /// Tests that applying settings allows the cache to be refreshed so newly introduced resources can be discovered.
+        /// </summary>
+        [Fact]
+        public void Set_CacheRefreshedAfterApply()
+        {
+            var (factory, dsc) = CreateTestFactory();
+            var set = this.ConfigurationSet();
+            string type1 = "Type1";
+            string type2 = "Type2";
+            var unit1 = this.ConfigurationUnit().Assign(new { Type = type1 });
+            var unit2 = this.ConfigurationUnit().Assign(new { Type = type2 });
+
+            // Initial resource list contains only type1.
+            dsc.GetAllResourcesResult = new List<IResourceListItem>() { new TestResourceListItem() { Type = type1 } };
+            dsc.SetResourceSettingsResult = new TestResourceSetItem();
+
+            var setProcessor = factory.CreateSetProcessor(set);
+
+            // First lookup populates the cache.
+            var details1 = setProcessor.GetUnitProcessorDetails(unit1, ConfigurationUnitDetailFlags.Local);
+            Assert.NotNull(details1);
+            Assert.Equal(1, dsc.GetAllResourcesCallCount);
+
+            // type2 is not found because the cache is fully populated with only type1.
+            var details2 = setProcessor.GetUnitProcessorDetails(unit2, ConfigurationUnitDetailFlags.Local);
+            Assert.Null(details2);
+            Assert.Equal(1, dsc.GetAllResourcesCallCount);
+
+            // Applying settings may introduce new resources; update the result to include type2.
+            dsc.GetAllResourcesResult = new List<IResourceListItem>()
+            {
+                new TestResourceListItem() { Type = type1 },
+                new TestResourceListItem() { Type = type2 },
+            };
+
+            var unitProcessor = setProcessor.CreateUnitProcessor(unit1);
+            unitProcessor.ApplySettings();
+
+            // Cache is invalidated; next lookup for type2 triggers a fresh GetAllResources call.
+            details2 = setProcessor.GetUnitProcessorDetails(unit2, ConfigurationUnitDetailFlags.Local);
+            Assert.NotNull(details2);
+            Assert.Equal(type2, details2.UnitType);
+            Assert.Equal(2, dsc.GetAllResourcesCallCount);
+        }
+
+        /// <summary>
         /// Test for unit processor creation requiring resource to be found.
         /// </summary>
         [Fact(Skip = "Disable this test while we have the bypass in place")]

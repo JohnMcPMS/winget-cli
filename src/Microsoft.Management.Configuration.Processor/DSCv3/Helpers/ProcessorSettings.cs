@@ -32,8 +32,7 @@ namespace Microsoft.Management.Configuration.Processor.DSCv3.Helpers
         private bool processorPathVerified = false;
         private bool disposed = false;
 
-        private Dictionary<string, ResourceDetails> resourceDetailsDictionary = new (StringComparer.OrdinalIgnoreCase);
-        private ResourceCacheState cacheState = new ResourceCacheState();
+        private ResourceCache resourceCache = new ResourceCache();
 
         /// <summary>
         /// Gets or sets the path to the DSC v3 executable.
@@ -196,8 +195,7 @@ namespace Microsoft.Management.Configuration.Processor.DSCv3.Helpers
         {
             ProcessorSettings result = new ProcessorSettings();
 
-            result.resourceDetailsDictionary = this.resourceDetailsDictionary;
-            result.cacheState = this.cacheState;
+            result.resourceCache = this.resourceCache;
             result.DiagnosticsSink = this.DiagnosticsSink;
             result.DscExecutablePath = this.DscExecutablePath;
             result.DscExecutablePathHash = this.DscExecutablePathHash;
@@ -242,43 +240,7 @@ namespace Microsoft.Management.Configuration.Processor.DSCv3.Helpers
         /// <returns>The ResourceDetails for the unit, or null if not found.</returns>
         public ResourceDetails? GetResourceDetails(ConfigurationUnitInternal configurationUnitInternal, ConfigurationUnitDetailFlags detailFlags)
         {
-            // Check cache first.
-            ResourceDetails? result = this.TryGetFromCache(configurationUnitInternal.QualifiedName);
-
-            if (result == null)
-            {
-                // Prepopulate cache with all top-level resources if not done yet.
-                this.EnsureAllResourcesCached();
-                result = this.TryGetFromCache(configurationUnitInternal.QualifiedName);
-            }
-
-            if (result == null)
-            {
-                // Not a top-level resource; check within each known adapter.
-                List<string> adapterTypes = this.GetCachedAdapterTypes();
-
-                foreach (string adapterType in adapterTypes)
-                {
-                    this.EnsureAdapterResourcesCached(adapterType);
-                    result = this.TryGetFromCache(configurationUnitInternal.QualifiedName);
-                    if (result != null)
-                    {
-                        break;
-                    }
-                }
-            }
-
-            if (result != null)
-            {
-                result.EnsureDetails(this, detailFlags);
-
-                if (result.Exists)
-                {
-                    return result;
-                }
-            }
-
-            return null;
+            return this.resourceCache.GetResourceDetails(configurationUnitInternal, detailFlags, this);
         }
 
         /// <summary>
@@ -288,38 +250,17 @@ namespace Microsoft.Management.Configuration.Processor.DSCv3.Helpers
         /// <returns>A list of ResourceDetails.</returns>
         public List<ResourceDetails> FindAllResourceDetails(FindUnitProcessorsOptions findOptions)
         {
-            List<ResourceDetails> result = new List<ResourceDetails>();
+            return this.resourceCache.FindAllResourceDetails(findOptions, this);
+        }
 
-            var runSettings = ProcessorRunSettings.CreateFromFindUnitProcessorsOptions(findOptions);
-            var resourceItemList = this.DSCv3.GetAllResources(runSettings);
-
-            lock (this.resourceDetailsDictionary)
-            {
-                this.PopulateCacheFromResourceListUnderLock(resourceItemList);
-
-                // If no custom search paths were used, the result represents the full default resource set.
-                if (string.IsNullOrEmpty(findOptions.SearchPaths))
-                {
-                    this.cacheState.AllResourcesCached = true;
-                }
-            }
-
-            foreach (var item in resourceItemList)
-            {
-                ResourceDetails? details;
-                lock (this.resourceDetailsDictionary)
-                {
-                    this.resourceDetailsDictionary.TryGetValue(item.Type, out details);
-                }
-
-                if (details != null)
-                {
-                    details.EnsureDetails(this, findOptions.UnitDetailFlags);
-                    result.Add(details);
-                }
-            }
-
-            return result;
+        /// <summary>
+        /// Resets the cached state flags so that subsequent lookups will re-fetch from DSC.
+        /// Existing entries remain valid; only the "fully populated" markers are cleared so
+        /// newly introduced resources can be discovered.
+        /// </summary>
+        public void IndicatePotentialResourceChanges()
+        {
+            this.resourceCache.IndicatePotentialResourceChanges();
         }
 
         /// <summary>
@@ -374,109 +315,6 @@ namespace Microsoft.Management.Configuration.Processor.DSCv3.Helpers
                     this.processorPathVerified = true;
                 }
             }
-        }
-
-        private ResourceDetails? TryGetFromCache(string resourceType)
-        {
-            lock (this.resourceDetailsDictionary)
-            {
-                this.resourceDetailsDictionary.TryGetValue(resourceType, out ResourceDetails? result);
-                return result;
-            }
-        }
-
-        private List<string> GetCachedAdapterTypes()
-        {
-            List<string> adapters = new List<string>();
-            lock (this.resourceDetailsDictionary)
-            {
-                foreach (var item in this.resourceDetailsDictionary)
-                {
-                    if (item.Value.IsAdapter)
-                    {
-                        adapters.Add(item.Key);
-                    }
-                }
-            }
-
-            return adapters;
-        }
-
-        /// <summary>
-        /// Populates the resource details cache from the provided list.
-        /// Must be called while holding the resourceDetailsDictionary lock.
-        /// </summary>
-        private void PopulateCacheFromResourceListUnderLock(IList<IResourceListItem> items)
-        {
-            foreach (var item in items)
-            {
-                if (!this.resourceDetailsDictionary.ContainsKey(item.Type))
-                {
-                    var details = new ResourceDetails(item.Type);
-                    details.SetResourceListItem(item);
-                    this.resourceDetailsDictionary.Add(item.Type, details);
-                }
-            }
-        }
-
-        private void EnsureAllResourcesCached()
-        {
-            lock (this.resourceDetailsDictionary)
-            {
-                if (this.cacheState.AllResourcesCached)
-                {
-                    return;
-                }
-            }
-
-            var resources = this.DSCv3.GetAllResources(null);
-
-            lock (this.resourceDetailsDictionary)
-            {
-                if (!this.cacheState.AllResourcesCached)
-                {
-                    this.PopulateCacheFromResourceListUnderLock(resources);
-                    this.cacheState.AllResourcesCached = true;
-                }
-            }
-        }
-
-        private void EnsureAdapterResourcesCached(string adapterType)
-        {
-            lock (this.resourceDetailsDictionary)
-            {
-                if (this.cacheState.CachedAdapters.Contains(adapterType))
-                {
-                    return;
-                }
-            }
-
-            var resources = this.DSCv3.GetAllResourcesFromAdapter(adapterType, null);
-
-            lock (this.resourceDetailsDictionary)
-            {
-                if (!this.cacheState.CachedAdapters.Contains(adapterType))
-                {
-                    this.PopulateCacheFromResourceListUnderLock(resources);
-                    this.cacheState.CachedAdapters.Add(adapterType);
-                }
-            }
-        }
-
-        /// <summary>
-        /// Tracks whether bulk resource listing calls have been made, shared between cloned instances.
-        /// </summary>
-        private class ResourceCacheState
-        {
-            /// <summary>
-            /// Gets or sets a value indicating whether all top-level resources have been fetched and cached.
-            /// </summary>
-            public bool AllResourcesCached { get; set; } = false;
-
-            /// <summary>
-            /// Gets the set of adapter type names whose resources have been fully fetched and cached.
-            /// </summary>
-            public HashSet<string> CachedAdapters { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         }
     }
 }

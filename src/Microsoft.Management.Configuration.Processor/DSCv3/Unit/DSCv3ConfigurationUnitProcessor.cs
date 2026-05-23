@@ -58,7 +58,14 @@ namespace Microsoft.Management.Configuration.Processor.DSCv3.Unit
         /// <inheritdoc />
         protected override bool ApplySettingsInternal()
         {
-            return this.processorSettings.DSCv3.SetResourceSettings(this.UnitInternal, ProcessorRunSettings.CreateFromResourceDetails(this.resourceDetails)).RebootRequired;
+            try
+            {
+                return this.processorSettings.DSCv3.SetResourceSettings(this.UnitInternal, ProcessorRunSettings.CreateFromResourceDetails(this.resourceDetails)).RebootRequired;
+            }
+            finally
+            {
+                this.processorSettings.IndicatePotentialResourceChanges();
+            }
         }
 
         /// <inheritdoc />
