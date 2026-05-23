@@ -247,7 +247,7 @@ namespace Microsoft.Management.Configuration.Processor.DSCv3.Helpers
 
             if (result == null)
             {
-                // Pre-populate cache with all top-level resources if not done yet.
+                // Prepopulate cache with all top-level resources if not done yet.
                 this.EnsureAllResourcesCached();
                 result = this.TryGetFromCache(configurationUnitInternal.QualifiedName);
             }
@@ -390,11 +390,11 @@ namespace Microsoft.Management.Configuration.Processor.DSCv3.Helpers
             List<string> adapters = new List<string>();
             lock (this.resourceDetailsDictionary)
             {
-                foreach (var kvp in this.resourceDetailsDictionary)
+                foreach (var item in this.resourceDetailsDictionary)
                 {
-                    if (kvp.Value.IsAdapter)
+                    if (item.Value.IsAdapter)
                     {
-                        adapters.Add(kvp.Key);
+                        adapters.Add(item.Key);
                     }
                 }
             }
