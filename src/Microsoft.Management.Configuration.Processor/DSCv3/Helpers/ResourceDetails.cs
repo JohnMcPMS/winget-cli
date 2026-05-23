@@ -74,6 +74,8 @@ namespace Microsoft.Management.Configuration.Processor.DSCv3.Helpers
         }
 
         /// <summary>
+        /// Gets the path of the resource.
+        /// </summary>
         public string? Path
         {
             get
