@@ -34,6 +34,7 @@ namespace AppInstaller
         void TestHook_SetPathOverride(PathName target, const std::filesystem::path& path);
         void TestHook_SetPathOverride(PathName target, const Filesystem::PathDetails& details);
         void TestHook_ClearPathOverrides();
+        void TestHook_SetIsRunningWithNonDefaultFullToken_Override(bool* value);
     }
 
     namespace Repository
@@ -75,6 +76,11 @@ namespace AppInstaller
         void TestHook_SetScanArchiveResult_Override(bool* status);
     }
 
+    namespace CLI::Execution
+    {
+        void TestHook_SetConsoleWidth_Override(std::optional<size_t>* value);
+    }
+
     namespace CLI::Workflow
     {
         void TestHook_SetEnableWindowsFeatureResult_Override(std::optional<DWORD>&& result);
@@ -100,6 +106,8 @@ namespace AppInstaller
         void SetSfsClientAppContents_Override(std::function<std::vector<SFS::AppContent>(std::string_view)>* value);
 
         void SetLicensingHttpPipelineStage_Override(std::shared_ptr<web::http::http_pipeline_stage> value);
+
+        void TestHook_SetProvisionAfterInstall(bool* value);
     }
 
     namespace Utility::TestHooks
@@ -320,6 +328,22 @@ namespace TestHook
         }
     };
 
+    struct SetForceProvisionAfterInstall_Override
+    {
+        SetForceProvisionAfterInstall_Override(bool value) : m_value(value)
+        {
+            AppInstaller::MSStore::TestHooks::TestHook_SetProvisionAfterInstall(&m_value);
+        }
+
+        ~SetForceProvisionAfterInstall_Override()
+        {
+            AppInstaller::MSStore::TestHooks::TestHook_SetProvisionAfterInstall(nullptr);
+        }
+
+    private:
+        bool m_value;
+    };
+
     struct SetDownloadResult_Function_Override
     {
         SetDownloadResult_Function_Override(std::function<AppInstaller::Utility::DownloadResult(
@@ -346,6 +370,24 @@ namespace TestHook
             std::optional<AppInstaller::Utility::DownloadInfo> info)> m_downloadFunction;
     };
 
+    struct SetConsoleWidth_Override
+    {
+        // Pass std::nullopt to simulate no console (redirected output);
+        // pass a size_t value to simulate a console of that width.
+        SetConsoleWidth_Override(std::optional<size_t> width) : m_width(width)
+        {
+            AppInstaller::CLI::Execution::TestHook_SetConsoleWidth_Override(&m_width);
+        }
+
+        ~SetConsoleWidth_Override()
+        {
+            AppInstaller::CLI::Execution::TestHook_SetConsoleWidth_Override(nullptr);
+        }
+
+    private:
+        std::optional<size_t> m_width;
+    };
+
     struct SetGetFontRegistryRoot_Override
     {
         SetGetFontRegistryRoot_Override(std::function<AppInstaller::Registry::Key(AppInstaller::Manifest::ScopeEnum)> function)
@@ -359,6 +401,22 @@ namespace TestHook
         }
 
     private:
+    };
+
+    struct SetIsRunningWithNonDefaultFullToken_Override
+    {
+        SetIsRunningWithNonDefaultFullToken_Override(bool value) : m_value(value)
+        {
+            AppInstaller::Runtime::TestHook_SetIsRunningWithNonDefaultFullToken_Override(&m_value);
+        }
+
+        ~SetIsRunningWithNonDefaultFullToken_Override()
+        {
+            AppInstaller::Runtime::TestHook_SetIsRunningWithNonDefaultFullToken_Override(nullptr);
+        }
+
+    private:
+        bool m_value;
     };
 
     struct SetUserSettings_Override

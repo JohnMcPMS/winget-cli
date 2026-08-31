@@ -36,12 +36,16 @@ namespace Microsoft.WinGetSourceCreator
 
             string pathToSDK = SDKDetector.Instance.LatestSDKBinPath;
             string signtoolExecutable = Path.Combine(pathToSDK, "signtool.exe");
-            string command = $"sign /a /fd sha256 /f {signature.CertFile} ";
+            string command = $"sign /a /fd sha256 /f \"{signature.CertFile}\" ";
             if (!string.IsNullOrEmpty(signature.Password))
             {
                 command += $"/p {signature.Password} ";
             }
-            command += fileToSign;
+            if (!string.IsNullOrEmpty(signature.TimestampServer))
+            {
+                command += $"/tr {signature.TimestampServer} /td sha256 ";
+            }
+            command += $"\"{fileToSign}\"";
             RunCommand(signtoolExecutable, command);
         }
 
@@ -81,13 +85,8 @@ namespace Microsoft.WinGetSourceCreator
 
             string pathToSDK = SDKDetector.Instance.LatestSDKBinPath;
             string makeappxExecutable = Path.Combine(pathToSDK, "makeappx.exe");
-            string args = $"unpack /nv /p {package} /d {outDir}";
-            Process p = new Process
-            {
-                StartInfo = new ProcessStartInfo(makeappxExecutable, args)
-            };
-            p.Start();
-            p.WaitForExit();
+            string args = $"unpack /nv /p \"{package}\" /d \"{outDir}\"";
+            RunCommand(makeappxExecutable, args);
         }
 
         public static void PackWithMappingFile(string outputPackage, string mappingFile)
@@ -99,7 +98,7 @@ namespace Microsoft.WinGetSourceCreator
 
             string pathToSDK = SDKDetector.Instance.LatestSDKBinPath;
             string makeappxExecutable = Path.Combine(pathToSDK, "makeappx.exe");
-            string args = $"pack /o /nv /f {mappingFile} /p {outputPackage}";
+            string args = $"pack /o /nv /f \"{mappingFile}\" /p \"{outputPackage}\"";
             RunCommand(makeappxExecutable, args);
         }
 
@@ -117,7 +116,7 @@ namespace Microsoft.WinGetSourceCreator
 
             string pathToSDK = SDKDetector.Instance.LatestSDKBinPath;
             string makeappxExecutable = Path.Combine(pathToSDK, "makeappx.exe");
-            string args = $"pack /o /d {directoryToPack} /p {outputPackage}";
+            string args = $"pack /o /d \"{directoryToPack}\" /p \"{outputPackage}\"";
             RunCommand(makeappxExecutable, args);
         }
 
@@ -134,6 +133,11 @@ namespace Microsoft.WinGetSourceCreator
             }
             p.Start();
             p.WaitForExit();
+
+            if (p.ExitCode != 0)
+            {
+                throw new Exception($"Command failed with exit code {p.ExitCode}: {command}");
+            }
         }
 
         // If in the future we edit more elements, this should be a nice wrapper class.

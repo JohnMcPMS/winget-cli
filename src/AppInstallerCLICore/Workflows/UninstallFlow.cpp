@@ -67,6 +67,21 @@ namespace AppInstaller::CLI::Workflow
 
             std::vector<Item> Items;
         };
+
+        bool AdminExecutionShouldBlockUserScopePackages(InstallerTypeEnum installerType)
+        {
+            switch (installerType)
+            {
+            case InstallerTypeEnum::Exe:
+            case InstallerTypeEnum::Burn:
+            case InstallerTypeEnum::Inno:
+            case InstallerTypeEnum::Nullsoft:
+            case InstallerTypeEnum::Portable:
+                return true;
+            default:
+                return false;
+            }
+        }
     }
 
     void UninstallSinglePackage(Execution::Context& context)
@@ -214,16 +229,27 @@ namespace AppInstaller::CLI::Workflow
             return;
         }
 
-        const std::string installedTypeString = installedPackageVersion->GetMetadata()[PackageVersionMetadata::InstalledType];
-        switch (ConvertToInstallerTypeEnum(installedTypeString))
+        auto packageMetadata = installedPackageVersion->GetMetadata();
+        auto installedType = ConvertToInstallerTypeEnum(packageMetadata[PackageVersionMetadata::InstalledType]);
+
+        // When running as admin, block attempt to uninstall user scope package to prevent elevation of privilege paths.
+        if (AdminExecutionShouldBlockUserScopePackages(installedType) && Runtime::IsRunningWithNonDefaultFullToken())
+        {
+            auto scopeEnum = ConvertToScopeEnum(packageMetadata[PackageVersionMetadata::InstalledScope]);
+            if (scopeEnum == ScopeEnum::User)
+            {
+                context.Reporter.Error() << Resource::String::NoAdminUninstallForUserScopePackage << std::endl;
+                AICLI_TERMINATE_CONTEXT(APPINSTALLER_CLI_ERROR_ADMIN_CONTEXT_ACTION_PROHIBITED);
+            }
+        }
+
+        switch (installedType)
         {
         case InstallerTypeEnum::Exe:
         case InstallerTypeEnum::Burn:
         case InstallerTypeEnum::Inno:
         case InstallerTypeEnum::Nullsoft:
         {
-            IPackageVersion::Metadata packageMetadata = installedPackageVersion->GetMetadata();
-
             // Default to silent unless it is not present or interactivity is requested
             auto uninstallCommandItr = packageMetadata.find(PackageVersionMetadata::SilentUninstallCommand);
             if (uninstallCommandItr == packageMetadata.end() || context.Args.Contains(Execution::Args::Type::Interactive))
@@ -281,8 +307,8 @@ namespace AppInstaller::CLI::Workflow
                 AICLI_TERMINATE_CONTEXT(APPINSTALLER_CLI_ERROR_NO_UNINSTALL_INFO_FOUND);
             }
 
-            const std::string installedScope = context.Get<Execution::Data::InstalledPackageVersion>()->GetMetadata()[Repository::PackageVersionMetadata::InstalledScope];
-            const std::string installedArch = context.Get<Execution::Data::InstalledPackageVersion>()->GetMetadata()[Repository::PackageVersionMetadata::InstalledArchitecture];
+            const std::string installedScope = packageMetadata[Repository::PackageVersionMetadata::InstalledScope];
+            const std::string installedArch = packageMetadata[Repository::PackageVersionMetadata::InstalledArchitecture];
 
             PortableInstaller portableInstaller = PortableInstaller(
                 Manifest::ConvertToScopeEnum(installedScope),
@@ -366,16 +392,6 @@ namespace AppInstaller::CLI::Workflow
     {
         bool isMachineScope = Manifest::ConvertToScopeEnum(context.Args.GetArg(Execution::Args::Type::InstallScope)) == Manifest::ScopeEnum::Machine;
 
-        // TODO: There was a bug in deployment api if deprovision api was called in packaged context.
-        // Remove this check when the OS bug is fixed and back ported.
-        if (isMachineScope && Runtime::IsRunningInPackagedContext())
-        {
-            context.Reporter.Error() << Resource::String::InstallFlowReturnCodeSystemNotSupported << std::endl;
-            context.Add<Execution::Data::OperationReturnCode>(static_cast<DWORD>(APPINSTALLER_CLI_ERROR_INSTALL_SYSTEM_NOT_SUPPORTED));
-            AICLI_LOG(CLI, Error, << "Device wide uninstall for msix type is not supported in packaged context.");
-            AICLI_TERMINATE_CONTEXT(APPINSTALLER_CLI_ERROR_INSTALL_SYSTEM_NOT_SUPPORTED);
-        }
-
         const auto& packageFamilyNames = context.Get<Execution::Data::PackageFamilyNames>();
         context.Reporter.Info() << Resource::String::UninstallFlowStartingPackageUninstall << std::endl;
 
@@ -402,6 +418,18 @@ namespace AppInstaller::CLI::Workflow
             }
             catch (const wil::ResultException& re)
             {
+                // There was a bug in the deployment deprovision API when called in a packaged context,
+                // fixed in 10.0.26100.0. On older OS versions, convert any failure under these conditions
+                // to the error that was previously always returned.
+                if (isMachineScope && Runtime::IsRunningInPackagedContext() &&
+                    !Runtime::IsCurrentOSVersionGreaterThanOrEqual(Utility::Version{ "10.0.26100.0" }))
+                {
+                    context.Reporter.Error() << Resource::String::InstallFlowReturnCodeSystemNotSupported << std::endl;
+                    context.Add<Execution::Data::OperationReturnCode>(static_cast<DWORD>(APPINSTALLER_CLI_ERROR_INSTALL_SYSTEM_NOT_SUPPORTED));
+                    AICLI_LOG(CLI, Error, << "Device wide uninstall for msix type is not supported in packaged context on this OS version. Error: " << re.GetErrorCode());
+                    AICLI_TERMINATE_CONTEXT(APPINSTALLER_CLI_ERROR_INSTALL_SYSTEM_NOT_SUPPORTED);
+                }
+
                 context.Add<Execution::Data::OperationReturnCode>(re.GetErrorCode());
                 context << ReportUninstallerResult("MSIXUninstall"sv, re.GetErrorCode(), /* isHResult */ true);
                 return;

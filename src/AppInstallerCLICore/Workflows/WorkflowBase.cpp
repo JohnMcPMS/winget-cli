@@ -3,11 +3,13 @@
 #include "pch.h"
 #include "WorkflowBase.h"
 #include "ExecutionContext.h"
-#include <winget/ManifestComparator.h>
+#include "PackageTableSortHelper.h"
 #include "PromptFlow.h"
 #include "ShowFlow.h"
 #include "Sixel.h"
 #include "TableOutput.h"
+#include <winget/UserSettings.h>
+#include <winget/ManifestComparator.h>
 #include <winget/FileCache.h>
 #include <winget/ExperimentalFeature.h>
 #include <winget/ManifestYamlParser.h>
@@ -113,7 +115,7 @@ namespace AppInstaller::CLI::Workflow
         {
             // Using a height of 4 arbitrarily; allow width up to the entire console.
             UINT imageHeightCells = 4;
-            UINT imageWidthCells = static_cast<UINT>(Execution::GetConsoleWidth());
+            UINT imageWidthCells = static_cast<UINT>(Execution::GetConsoleWidth().value_or(120));
 
             icon.RenderSizeInCells(imageWidthCells, imageHeightCells);
             icon.RenderTo(outputStream);
@@ -459,8 +461,43 @@ namespace AppInstaller::CLI::Workflow
             }
         }
 
+        // Sorts a vector of InstalledPackagesTableLine according to the user's sort preferences.
+        // Resolution order: CLI args (--sort) > settings (output.sortOrder) > query-aware default.
+        void SortInstalledPackagesTableLines(Execution::Context& context, std::vector<InstalledPackagesTableLine>& lines)
+        {
+            if (lines.size() <= 1)
+            {
+                return;
+            }
+
+            const SortParameters params(context);
+
+            // Not strictly required — SortBy handles this internally — but avoids
+            // constructing the SortablePackageEntry vector when no sorting is needed.
+            if (!params.ShouldSort)
+            {
+                return;
+            }
+
+            const SortField mask = ComputeSortFieldMask(params.Fields);
+            SortBy(lines,
+                [mask](const InstalledPackagesTableLine& line, size_t index) {
+                    return SortablePackageEntry(
+                        index,
+                        line.Name.get(),
+                        line.Id.get(),
+                        line.InstalledVersion.get(),
+                        line.AvailableVersion.get(),
+                        line.Source.get(),
+                        mask);
+                },
+                params);
+        }
+
         void OutputInstalledPackages(Execution::Context& context, std::vector<InstalledPackagesTableLine>& lines)
         {
+            SortInstalledPackagesTableLines(context, lines);
+
             if (context.Args.Contains(Execution::Args::Type::ListDetails))
             {
                 OutputInstalledPackagesDetails(context, lines);
@@ -1102,6 +1139,7 @@ namespace AppInstaller::CLI::Workflow
 
         auto &source = context.Get<Execution::Data::Source>();
         bool shouldShowSource = source.IsComposite() && source.GetAvailableSources().size() > 1;
+        bool sourceFilterProvided = context.Args.Contains(Execution::Args::Type::Source);
 
         PinBehavior pinBehavior;
         if (m_onlyShowUpgrades && !context.Args.Contains(Execution::Args::Type::Force))
@@ -1175,7 +1213,13 @@ namespace AppInstaller::CLI::Workflow
                     }
                 }
 
-                // The only time we don't want to output a line is when filtering and no update is available.
+                // When --source is given, only show packages that have a correlation (available version)
+                // in the specified source. Packages with no available match are not from that source.
+                if (sourceFilterProvided && !latestVersion)
+                {
+                    continue;
+                }
+
                 if (updateAvailable || !m_onlyShowUpgrades)
                 {
                     Utility::LocIndString availableVersion, sourceName;

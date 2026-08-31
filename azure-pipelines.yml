@@ -15,7 +15,7 @@ pr:
     - schemas/JSON/manifests/*
 
 pool:
-  vmImage: 'windows-2025'
+  vmImage: 'windows-2025-vs2026'
 
 variables:
   solution: 'src\AppInstallerCLI.sln'
@@ -348,7 +348,7 @@ jobs:
   - powershell: |
       Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force
       Install-Module Microsoft.WinGet.Client -Repository PSGallery -Force
-      try { Repair-WingetPackageManager -Latest -Verbose } catch { $_.Exception }
+      try { Repair-WingetPackageManager -Version 1.28.240 -Verbose } catch { $_.Exception }
       Install-WinGetPackage -Id Microsoft.Sysinternals.PsTools -Source winget
     displayName: Install Sysinternals PsTools Using Winget
     condition: succeededOrFailed()
@@ -447,7 +447,7 @@ jobs:
       TargetFolder: '$(artifactsDir)\PackagedLog'
     condition: succeededOrFailed()
 
-  - task: VSTest@2
+  - task: VSTest@3
     displayName: 'Run tests: Microsoft.WinGet.UnitTests'
     inputs:
       testSelector: 'testAssemblies'
@@ -459,7 +459,7 @@ jobs:
       diagnosticsEnabled: true
     condition: succeededOrFailed()
 
-  - task: VSTest@2
+  - task: VSTest@3
     displayName: 'Run tests: WinGetUtilInterop.UnitTests'
     inputs:
       testSelector: 'testAssemblies'
@@ -471,7 +471,7 @@ jobs:
       diagnosticsEnabled: true
     condition: succeededOrFailed()
 
-  - task: VSTest@2
+  - task: VSTest@3
     displayName: 'Run tests: Microsoft.Management.Configuration.UnitTests (InProc)'
     inputs:
       testRunTitle: Microsoft.Management.Configuration.UnitTests (InProc)
@@ -492,7 +492,7 @@ jobs:
       arguments: '-BuildOutputPath $(buildOutDir) -PackageLayoutPath $(packageLayoutDir)'
     condition: succeededOrFailed()
 
-  - task: VSTest@2
+  - task: VSTest@3
     displayName: 'Run tests: Microsoft.Management.Configuration.UnitTests (OutOfProc)'
     inputs:
       testRunTitle: Microsoft.Management.Configuration.UnitTests (OutOfProc)

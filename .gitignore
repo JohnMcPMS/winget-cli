@@ -288,6 +288,10 @@ node_modules/
 **/*.Server/ModelManifest.xml
 _Pvt_Extensions
 
+# Local E2E test settings (developer-specific), keep the example one tracked
+*.runsettings
+!src/AppInstallerCLIE2ETests/Test.runsettings
+
 # Paket dependency manager
 .paket/paket.exe
 paket-files/
@@ -351,3 +355,6 @@ src/PowerShell/scripts/Module
 
 # Interop nuget
 src/WinGetUtilInterop/scripts/Nuget*
+
+# VS Code extension packages
+*.vsix

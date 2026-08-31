@@ -1,8 +1,22 @@
 # Helper functions for dealing with the port overlay
 
+[CmdletBinding()]
+param(
+    # When provided, serializes concurrent invocations via a named mutex and skips work
+    # if the stamp file is already up-to-date. Used by VcpkgPortOverlay.proj.
+    [string]$StampFile
+)
+
 $OverlayRoot = $PSScriptRoot
 
 $ErrorActionPreference = "Stop"
+
+# Windows PowerShell 5.1 (.NET Framework) does not load these assemblies by default.
+Add-Type -AssemblyName System.IO.Compression
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+
+# Windows PowerShell 5.1's Out-File defaults to UTF-16; vcpkg requires UTF-8 port files.
+$PSDefaultParameterValues['Out-File:Encoding'] = 'utf8'
 
 
 # Gets the versions of a port available from the official registry.
@@ -22,7 +36,7 @@ function Get-PortVersions
 
     $initial = $Port[0]
     $jsonUri = "https://raw.githubusercontent.com/microsoft/vcpkg/heads/master/versions/$initial-/$Port.json"
-    $versions = (Invoke-WebRequest -Uri $jsonUri).Content | ConvertFrom-Json -Depth 5
+    $versions = (Invoke-WebRequest -Uri $jsonUri -UseBasicParsing).Content | ConvertFrom-Json
     return $versions.versions
 }
 
@@ -50,24 +64,27 @@ function Get-GitTreeAsArchive
 {
     param(
         [Parameter(Mandatory)]
-        [string]$GitTree
+        [string]$GitTree,
+        [string]$Repo = 'microsoft/vcpkg'
     )
 
-    $archiveUri = "https://github.com/microsoft/vcpkg/archive/$gitTree.zip"
-    $response = Invoke-WebRequest -Uri $archiveUri
+    $archiveUri = "https://github.com/$Repo/archive/$gitTree.zip"
+    $response = Invoke-WebRequest -Uri $archiveUri -UseBasicParsing
     $zipStream = [System.IO.MemoryStream]::new($response.Content)
     $zipArchive = [System.IO.Compression.ZipArchive]::new($zipStream)
     return $zipArchive
 }
 
-# Expands an in-memory archive and writes it to disk
+# Expands an in-memory archive and writes it to disk.
+# If SubPath is specified, only files under that path are extracted.
 function Expand-ArchiveFromMemory
 {
     param(
         [Parameter(Mandatory)]
         [System.IO.Compression.ZipArchive]$Archive,
         [Parameter(Mandatory)]
-        [string]$Destination
+        [string]$Destination,
+        [string]$SubPath
     )
 
     # Delete existing directory
@@ -78,6 +95,10 @@ function Expand-ArchiveFromMemory
 
     # Remove length=0 to ignore the directory itself
     $entries = $archive.Entries | Where-Object { $_.Length -ne 0 }
+    if ($SubPath)
+    {
+        $entries = $entries | Where-Object { $_.FullName -like "*/$SubPath/*" }
+    }
     if (-not $entries)
     {
         throw "Archive is empty"
@@ -109,6 +130,99 @@ function New-PortOverlay
     Expand-ArchiveFromMemory $archive $portDir
 }
 
+# Creates a copy of a port from a GitHub repository in this overlay,
+# by downloading the repository at a specific commit and extracting a subdirectory.
+function New-PortOverlayFromGitHub
+{
+    param(
+        [Parameter(Mandatory)]
+        [string]$Port,
+        [Parameter(Mandatory)]
+        [string]$Repo,  # as user/repo
+        [Parameter(Mandatory)]
+        [string]$Commit,
+        [Parameter(Mandatory)]
+        [string]$SubPath
+    )
+
+    $archive = Get-GitTreeAsArchive -GitTree $Commit -Repo $Repo
+    $portDir = Join-Path $OverlayRoot $Port
+    Expand-ArchiveFromMemory -Archive $archive -Destination $portDir -SubPath $SubPath
+}
+
+# Expands a portfile.cmake that uses a "commented-option" template format, where the active
+# function call is commented out. Uncomments the specified function block, strips remaining
+# comment lines, and collapses blank lines.
+function Expand-PortfileTemplate
+{
+    param(
+        [Parameter(Mandatory)]
+        [string]$Port,
+        [string]$CommentedFunction = 'vcpkg_from_github'
+    )
+
+    $portFilePath = [System.IO.Path]::Combine($OverlayRoot, $Port, 'portfile.cmake')
+    $lines = Get-Content $portFilePath
+
+    $result = [System.Collections.Generic.List[string]]::new()
+    $inCommentedBlock = $false
+    $prevWasBlank = $false
+
+    foreach ($line in $lines)
+    {
+        if ($line -match "^# $([regex]::Escape($CommentedFunction))\(")
+        {
+            $inCommentedBlock = $true
+            $result.Add("$CommentedFunction(")
+            $prevWasBlank = $false
+            continue
+        }
+
+        if ($inCommentedBlock)
+        {
+            if ($line.TrimEnd() -eq '# )')
+            {
+                $result.Add(')')
+                $inCommentedBlock = $false
+            }
+            else
+            {
+                $uncommented = $line -replace '^# ?', ''
+                # Strip trailing inline hint comments from template lines
+                $uncommented = $uncommented -replace ' # .*$', ''
+                $result.Add($uncommented)
+            }
+            $prevWasBlank = $false
+            continue
+        }
+
+        # Skip comment-only lines (template instructions, disabled options, etc.)
+        if ($line -match '^#') { continue }
+
+        if ($line -eq '')
+        {
+            if (-not $prevWasBlank -and $result.Count -gt 0)
+            {
+                $result.Add('')
+            }
+            $prevWasBlank = $true
+        }
+        else
+        {
+            $result.Add($line)
+            $prevWasBlank = $false
+        }
+    }
+
+    # Remove trailing blank lines
+    while ($result.Count -gt 0 -and $result[$result.Count - 1] -eq '')
+    {
+        $result.RemoveAt($result.Count - 1)
+    }
+
+    $result | Out-File $portFilePath
+}
+
 # Gets a git patch from a GitHub commit
 function Get-GitHubPatch
 {
@@ -120,7 +234,7 @@ function Get-GitHubPatch
     )
 
     $patchUri = "https://github.com/$repo/commit/$commit.patch"
-    $response = Invoke-WebRequest -Uri $patchUri
+    $response = Invoke-WebRequest -Uri $patchUri -UseBasicParsing
     return $response.Content
 }
 
@@ -183,7 +297,7 @@ function Add-PatchToPortFile
 
     # Look for the line that says "PATCHES" and add the new patch before the closing parenthesis
 
-    $portFilePath = Join-Path $OverlayRoot $Port "portfile.cmake"
+    $portFilePath = [System.IO.Path]::Combine($OverlayRoot, $Port, "portfile.cmake")
     $originalPortFile = Get-Content $portFilePath
 
     $modifiedPortFile = @()
@@ -218,7 +332,7 @@ function Remove-PortPatches
 
     # Look for the line that says "PATCHES"
 
-    $portFilePath = Join-Path $OverlayRoot $Port "portfile.cmake"
+    $portFilePath = [System.IO.Path]::Combine($OverlayRoot, $Port, "portfile.cmake")
     $originalPortFile = Get-Content $portFilePath
 
     $modifiedPortFile = @()
@@ -274,6 +388,45 @@ function Add-PatchToPort
     Add-PatchToPortFile -Port $Port -PatchName $PatchName
 }
 
+# Adds a patch from the local patches/ directory to a port.
+# Patches stored in patches/<Port>/ are committed to the repo and survive port regeneration.
+function Add-LocalPatch
+{
+    param(
+        [Parameter(Mandatory)]
+        [string]$Port,
+        [Parameter(Mandatory)]
+        [string]$PatchName
+    )
+
+    Copy-Item ([System.IO.Path]::Combine($OverlayRoot, 'patches', $Port, $PatchName)) (Join-Path $OverlayRoot $Port)
+
+    $portFilePath = [System.IO.Path]::Combine($OverlayRoot, $Port, 'portfile.cmake')
+    $lines = Get-Content $portFilePath
+    $hasPatchesKeyword = $lines | Where-Object { $_ -match '\bPATCHES\b' }
+
+    if ($hasPatchesKeyword)
+    {
+        Add-PatchToPortFile -Port $Port -PatchName $PatchName
+        return
+    }
+
+    # Add PATCHES keyword and the patch name before the closing paren of vcpkg_from_github
+    $result = @()
+    $foundParen = $false
+    foreach ($line in $lines)
+    {
+        if (-not $foundParen -and $line -eq ')')
+        {
+            $result += '    PATCHES'
+            $result += "        $PatchName"
+            $foundParen = $true
+        }
+        $result += $line
+    }
+    $result | Out-File $portFilePath
+}
+
 # Sets the value of an existing function parameter.
 # For example, REF in vcpkg_from_github
 function Set-ParameterInPortFile
@@ -289,7 +442,7 @@ function Set-ParameterInPortFile
         [string]$NewValue
     )
 
-    $portFilePath = Join-Path $OverlayRoot $Port 'portfile.cmake'
+    $portFilePath = [System.IO.Path]::Combine($OverlayRoot, $Port, 'portfile.cmake')
     $originalPortFile = Get-Content $portFilePath
 
     # Explanation for the regex:
@@ -301,6 +454,61 @@ function Set-ParameterInPortFile
 
     $modifiedPortFile = $originalPortFile -replace $regex, $NewValue
     $modifiedPortFile | Out-File $portFilePath
+}
+
+# Sets cmake configure options for a port by expanding the vcpkg_cmake_configure call.
+function Set-CmakeConfigureOptions
+{
+    param(
+        [Parameter(Mandatory)]
+        [string]$Port,
+        [Parameter(Mandatory)]
+        [string[]]$Options
+    )
+
+    $portFilePath = [System.IO.Path]::Combine($OverlayRoot, $Port, 'portfile.cmake')
+    $originalPortFile = Get-Content $portFilePath
+
+    $modifiedPortFile = @()
+    foreach ($line in $originalPortFile)
+    {
+        if ($line -match '^vcpkg_cmake_configure\(SOURCE_PATH')
+        {
+            $modifiedPortFile += 'vcpkg_cmake_configure('
+            $modifiedPortFile += '    SOURCE_PATH "${SOURCE_PATH}"'
+            $modifiedPortFile += '    OPTIONS'
+            foreach ($option in $Options)
+            {
+                $modifiedPortFile += "        $option"
+            }
+            $modifiedPortFile += ')'
+        }
+        else
+        {
+            $modifiedPortFile += $line
+        }
+    }
+
+    $modifiedPortFile | Out-File $portFilePath
+}
+
+# Replaces a <PLACEHOLDER> string in a file within a port directory.
+function Set-PortFilePlaceholder
+{
+    param(
+        [Parameter(Mandatory)]
+        [string]$Port,
+        [Parameter(Mandatory)]
+        [string]$File,
+        [Parameter(Mandatory)]
+        [string]$Placeholder,
+        [Parameter(Mandatory)]
+        [string]$Value
+    )
+
+    $filePath = [System.IO.Path]::Combine($OverlayRoot, $Port, $File)
+    $content = (Get-Content -Raw $filePath) -replace "<$Placeholder>", $Value
+    [System.IO.File]::WriteAllText($filePath, $content, [System.Text.Encoding]::UTF8)
 }
 
 # Updates the source commit used for a port.
@@ -330,19 +538,65 @@ function Update-PortVersion
         [string]$Port
     )
 
-    $portJsonPath = Join-Path $OverlayRoot $Port "vcpkg.json"
+    $portJsonPath = [System.IO.Path]::Combine($OverlayRoot, $Port, "vcpkg.json")
     $portDefinition = Get-Content $portJsonPath | ConvertFrom-Json
     $portDefinition."port-version" += 1
     $portDefinition | ConvertTo-Json -Depth 5 | Out-File $portJsonPath
 }
 
-New-PortOverlay cpprestsdk -Version 2.10.18 -PortVersion 4
-Add-PatchToPort cpprestsdk -PatchRepo 'microsoft/winget-cli' -PatchCommit '888b4ed8f4f7d25cb05a47210e083fe29348163b' -PatchName 'add-server-certificate-validation.patch' -PatchRoot 'src/cpprestsdk/cpprestsdk'
+# Acquire mutex if running from MSBuild (StampFile provided) to serialize parallel project builds
+$_mutex = $null
+if ($StampFile) {
+    $_mutex = [System.Threading.Mutex]::new($false, 'Local\WingetVcpkgPortOverlay')
+    try { $_mutex.WaitOne() | Out-Null } catch [System.Threading.AbandonedMutexException] {}
 
-New-PortOverlay detours -Version 4.0.1 -PortVersion 8
-Update-PortSource detours -RefPattern 'v4.0.1' -Commit '404c153ff390cb14f1787c7feeb4908c6d79b0ab' -SourceHash '1f3f26657927fa153116dce13dbfa3319ea368e6c9017f4999b6ec24d6356c335b3d5326718d3ec707b92832763ffea092088df52596f016d7ca9b8127f7033d'
-Remove-PortPatches detours
+    # Another process may have already rebuilt the overlay while we waited; skip if so.
+    if (Test-Path $StampFile) {
+        $stampTime = (Get-Item $StampFile).LastWriteTime
 
-New-PortOverlay libyaml -Version 0.2.5 -PortVersion 5
-Update-PortSource libyaml -Commit '840b65c40675e2d06bf40405ad3f12dec7f35923' -SourceHash 'de85560312d53a007a2ddf1fe403676bbd34620480b1ba446b8c16bb366524ba7a6ed08f6316dd783bf980d9e26603a9efc82f134eb0235917b3be1d3eb4b302'
-Update-PortVersion libyaml
+        $overlayInputs = @($PSCommandPath)
+        if (Test-Path $OverlayRoot\patches) {
+            $overlayInputs += Get-ChildItem -Path $OverlayRoot\patches -Recurse -File
+        }
+
+        if (-not ($overlayInputs | Where-Object { $_.LastWriteTime -gt $stampTime } | Select-Object -First 1)) {
+            $_mutex.ReleaseMutex()
+            return
+        }
+    }
+}
+
+try {
+    New-PortOverlay cpprestsdk -Version 2.10.19 -PortVersion 5
+    Add-LocalPatch cpprestsdk 'add-server-certificate-validation.patch'
+
+    New-PortOverlay detours -Version 4.0.1 -PortVersion 8
+    Update-PortSource detours -RefPattern 'v4.0.1' -Commit '404c153ff390cb14f1787c7feeb4908c6d79b0ab' -SourceHash '1f3f26657927fa153116dce13dbfa3319ea368e6c9017f4999b6ec24d6356c335b3d5326718d3ec707b92832763ffea092088df52596f016d7ca9b8127f7033d'
+    Remove-PortPatches detours
+
+    New-PortOverlay libyaml -Version 0.2.5 -PortVersion 5
+    Update-PortSource libyaml -Commit '840b65c40675e2d06bf40405ad3f12dec7f35923' -SourceHash 'de85560312d53a007a2ddf1fe403676bbd34620480b1ba446b8c16bb366524ba7a6ed08f6316dd783bf980d9e26603a9efc82f134eb0235917b3be1d3eb4b302'
+    Update-PortVersion libyaml
+
+    # sfs-client is not in the official vcpkg registry.
+    # The port is based on the template from the sfs-client repository.
+    # See: https://github.com/microsoft/sfs-client/tree/main/sfs-client-vcpkg-port/sfs-client
+    $SfsClientCommit = '0e27525d597c730e71646fd0b15bdc8c8503f24d'
+    $SfsClientSha512 = 'd926d7fdbbd120cbcbd9732a3300cccfeed4a90d6b94456d73a70675df3578a91127f7e9f310fe68d18fa34bb997c29c8455e586d81a2ba404cf19193a80ca6e'
+    $SfsClientVersion = '1.1.0'
+
+    New-PortOverlayFromGitHub 'sfs-client' -Repo 'microsoft/sfs-client' -Commit $SfsClientCommit -SubPath 'sfs-client-vcpkg-port/sfs-client'
+    Expand-PortfileTemplate 'sfs-client'
+    Set-PortFilePlaceholder 'sfs-client' 'portfile.cmake' -Placeholder 'commit-id' -Value $SfsClientCommit
+    Set-ParameterInPortFile 'sfs-client' -ParameterName 'SHA512' -CurrentValuePattern '0' -NewValue $SfsClientSha512
+    Set-CmakeConfigureOptions 'sfs-client' -Options @('-DSFS_BUILD_TESTS=OFF', '-DSFS_BUILD_SAMPLES=OFF')
+    Set-PortFilePlaceholder 'sfs-client' 'vcpkg.json' -Placeholder 'VERSION' -Value $SfsClientVersion
+
+    Add-LocalPatch 'sfs-client' 'remove-unconditional-toolchain-override.patch'
+
+    if ($StampFile) {
+        $null = New-Item -ItemType File -Path $StampFile -Force
+    }
+} finally {
+    if ($_mutex) { $_mutex.ReleaseMutex() }
+}

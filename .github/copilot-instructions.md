@@ -157,9 +157,18 @@ void WorkflowTask(Execution::Context& context)
 
 - Review `CONTRIBUTING.md` for workflow
 - File/discuss issues before starting work
-- Specs required for features (stored in `doc/specs/`)
+- Specs required for features (stored in `doc/specs/`); see `.github/instructions/specs.instructions.md` for detailed guidance
 - Follow existing code style (see `stylecop.json`)
 - CI runs on Azure Pipelines (`azure-pipelines.yml`)
+
+## Issues and Pull Requests
+
+- Before filing an issue, search existing open and closed issues for duplicates.
+- Use the GitHub issue forms in `.github/ISSUE_TEMPLATE/`; do not file a blank issue unless a maintainer explicitly asks for one.
+- Bug reports should include the form fields for relevant area, command if applicable, brief description, steps to reproduce, expected behavior, actual behavior, and environment.
+- Feature requests should include the form fields for relevant area, feature or enhancement description, and proposed technical implementation details when known.
+- Keep issue bodies concise and evidence-based. Do not paste large speculative patches into issue bodies; open a pull request or link a branch when code is available.
+- Before opening a pull request, review `CONTRIBUTING.md`, follow the PR template, keep the change focused, and summarize validation performed.
 
 ## Useful Commands
 
@@ -173,3 +182,20 @@ wingetdev features
 # Check sources
 wingetdev source list
 ```
+
+## Localization
+
+### Source of truth
+
+The English resource file `src\AppInstallerCLIPackage\Shared\Strings\en-us\winget.resw` is the only file contributors should edit for string changes. It feeds the Microsoft localization pipeline.
+
+The files under `Localization\Resources\<locale>\` are **automatically synced from Microsoft's internal localization system and must not be edited**. Any manual edits will be overwritten on the next sync.
+
+Every string that could be misunderstood without context should have a `<comment>`.
+
+### Triggering retranslation
+
+- **Changing a string's `<value>`** automatically queues it for retranslation on the next localization sync.
+- **Changing only a `<comment>`** does NOT trigger retranslation. Comments improve future translations but do not fix existing ones.
+
+To fix an existing bad translation, a bug has to be filed internally with the localization team.

@@ -5,8 +5,9 @@ ABORTIFHUNG
 accepteula
 ACCESSDENIED
 ACCESSTOKEN
-acl
+ACL'd
 adjacents
+adminproperties
 adml
 admx
 AFAIK
@@ -25,6 +26,7 @@ apfn
 apicontract
 apiset
 appdata
+APPEXECLINK
 appinstallertest
 applic
 appname
@@ -98,6 +100,7 @@ COMGLB
 commandline
 compressapi
 concurrencysal
+Consolas
 constexpr
 contactsupport
 contentfiles
@@ -138,6 +141,7 @@ devhome
 DFX
 DHAVE
 dic
+digicert
 diskfull
 DISPLAYCATALOG
 DMC
@@ -146,6 +150,7 @@ Dns
 Dobbeleer
 DONOT
 dsc
+dupenv
 dustojnikhummer
 dvinns
 dwgs
@@ -169,6 +174,7 @@ ewgs
 execustom
 EXEHASH
 experimentalfeatures
+XPRESS
 fdw
 fdwgp
 FECAFEB
@@ -188,6 +194,7 @@ FONTHASH
 FORPARSING
 foundfr
 fsanitize
+Fsctl
 FULLMUTEX
 FULLWIDTH
 fundraiser
@@ -202,6 +209,7 @@ GHS
 github
 gitlab
 gity
+Gotchas
 goku
 GRPICONDIR
 GRPICONDIRENTRY
@@ -234,6 +242,7 @@ hybridcrt
 Hyperlink
 IARP
 IAttachment
+ical
 ICONDIR
 ICONDIRENTRY
 ICONIMAGE
@@ -279,12 +288,14 @@ Kaido
 KNOWNFOLDERID
 kool
 ktf
+LASTEXITCODE
 LCID
 learnxinyminutes
 LEBOM
 lhs
 LIBYAML
 liv
+listsort
 liwpx
 localizationpriority
 localsource
@@ -338,6 +349,7 @@ minidump
 MINORVERSION
 missingdependency
 mkgmtime
+mmm
 MMmmbbbb
 MODULEENTRY
 mof
@@ -347,6 +359,7 @@ msdownload
 msft
 msftrubengu
 MSIHASH
+msinewinstance
 MSIXHASH
 MSIXSTRM
 msstore
@@ -388,6 +401,7 @@ nsis
 NTFS
 objbase
 objidl
+octokitnet
 ofile
 oid
 omus
@@ -510,17 +524,21 @@ sddl
 secureobject
 securestring
 seekp
+Segoe
 seof
 servercert
 servercertificate
 setmetadatabymanifestid
 SETTINGCHANGE
 SETTINGMAPPING
+sev
 sfs
 sfsclient
+SGNR
 SHCONTF
 shellapi
 SHGDN
+shortguid
 SHOWNORMAL
 sid
 Sideload
@@ -550,6 +568,7 @@ storeapps
 storeorigin
 STRRET
 stylecop
+SUBCHAN
 subdir
 subkey
 Sudarshan
@@ -558,6 +577,7 @@ swgus
 SYD
 SYG
 systemnotsupported
+tableoutput
 Tagit
 TARG
 taskhostw
@@ -574,6 +594,7 @@ Tlg
 tlhelp
 TLSCAs
 tombstoned
+tombstoning
 Toolhelp
 transitioning
 trimstart
@@ -604,6 +625,7 @@ Unregisters
 unvirtualized
 UParse
 upgradable
+upgradeable
 upgradecode
 URLZONE
 USEDEFAULT
@@ -613,11 +635,16 @@ uswgp
 uwp
 VALUENAMECASE
 vclib
+vcredist
+vcx
 versioned
 VERSIONINFO
+VIWEC
 vns
+vscodeignore
 vsconfig
 vstest
+vswhere
 waitable
 wal
 wcex
@@ -645,7 +672,9 @@ wingetutil
 winreg
 winrtact
 winstring
+wintrust
 WMI
+wmmc
 wnd
 WNDCLASS
 WNDCLASSEX
@@ -659,12 +688,14 @@ wsb
 wsl
 wsv
 wto
+WVT
 wwinmain
 WZDNCRFJ
 xcopy
 Xes
 XFile
 XManifest
+Xms
 XMUGIWARAMODULE
 XName
 XPLATSTR
@@ -672,6 +703,7 @@ XRESOURCEZORO
 xsi
 yamato
 yao
+Zabcdefghijklmnopqrstuvwxyz
 Zanollo
 ZIPHASH
 zoro

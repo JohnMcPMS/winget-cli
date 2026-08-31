@@ -43,6 +43,7 @@ COMMONDATA
 comparand
 conemu
 contoso
+cooldown
 COSTDEFERRED
 cotaskmem
 cpprest
@@ -117,6 +118,7 @@ forcerestart
 gdi
 genai
 HCCE
+HCERTCHAINENGINE
 hcertstore
 HCRYPTMSG
 HGlobal
@@ -179,7 +181,9 @@ Minimatch
 Moq
 motw
 mrm
+msb
 msdata
+msftbot
 MSHCTX
 MSHLFLAGS
 msiexec
@@ -196,6 +200,7 @@ ncacn
 Nelon
 netstandard
 newid
+NNN
 NOCASE
 NOCLOSEPROCESS
 nodiscard
@@ -240,6 +245,7 @@ pinnable
 pinningindex
 pipssource
 Pkcs
+PKI
 portableindex
 powertoys
 pplx
@@ -357,6 +363,8 @@ testsettingname
 TEXTFORMAT
 TEXTINCLUDE
 threadpool
+TOCTOU
+toolsets
 tpl
 TRACELOGGING
 triaged

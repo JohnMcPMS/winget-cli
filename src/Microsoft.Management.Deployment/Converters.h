@@ -82,6 +82,7 @@ namespace winrt::Microsoft::Management::Deployment::implementation
             WINGET_GET_OPERATION_RESULT_STATUS(NoApplicableInstallers, InternalError, NoApplicableInstallers, NoApplicableRepairer);
             break;
         case APPINSTALLER_CLI_ERROR_UPDATE_NOT_APPLICABLE:
+        case APPINSTALLER_CLI_ERROR_UPDATE_INSTALL_TECHNOLOGY_MISMATCH:
         case APPINSTALLER_CLI_ERROR_UPGRADE_VERSION_UNKNOWN:
         case APPINSTALLER_CLI_ERROR_UPGRADE_VERSION_NOT_NEWER:
             WINGET_GET_OPERATION_RESULT_STATUS(NoApplicableUpgrade, InternalError, InternalError, InternalError);
@@ -94,8 +95,10 @@ namespace winrt::Microsoft::Management::Deployment::implementation
         case APPINSTALLER_CLI_ERROR_REPAIR_NOT_APPLICABLE:
         case APPINSTALLER_CLI_ERROR_EXEC_REPAIR_FAILED:
         case APPINSTALLER_CLI_ERROR_REPAIR_NOT_SUPPORTED:
-        case APPINSTALLER_CLI_ERROR_ADMIN_CONTEXT_REPAIR_PROHIBITED:
             WINGET_GET_OPERATION_RESULT_STATUS(InternalError, InternalError, InternalError, RepairError);
+            break;
+        case APPINSTALLER_CLI_ERROR_ADMIN_CONTEXT_ACTION_PROHIBITED:
+            WINGET_GET_OPERATION_RESULT_STATUS(InternalError, UninstallError, InternalError, RepairError);
             break;
         case APPINSTALLER_CLI_ERROR_PACKAGE_AGREEMENTS_NOT_ACCEPTED:
             WINGET_GET_OPERATION_RESULT_STATUS(PackageAgreementsNotAccepted, InternalError, PackageAgreementsNotAccepted, PackageAgreementsNotAccepted);

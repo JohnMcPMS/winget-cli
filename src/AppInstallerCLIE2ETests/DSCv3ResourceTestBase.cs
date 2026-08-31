@@ -55,10 +55,10 @@ namespace AppInstallerCLIE2ETests
         public static void EnsureTestResourcePresence()
         {
             string outputDirectory = Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Microsoft\\WindowsApps");
-            Assert.IsNotEmpty(outputDirectory);
+            Assert.That(outputDirectory, Is.Not.Empty);
 
             var result = TestCommon.RunAICLICommand($"dscv3", $"--manifest -o {outputDirectory}");
-            Assert.AreEqual(0, result.ExitCode);
+            Assert.That(result.ExitCode, Is.Zero);
         }
 
         /// <summary>
@@ -69,10 +69,17 @@ namespace AppInstallerCLIE2ETests
         /// <param name="input">Input for the function; supports null, direct string, or JSON serialization of complex objects.</param>
         /// <param name="timeOut">The maximum time to wait in milliseconds.</param>
         /// <param name="throwOnTimeout">Whether to throw on a timeout or simply return the incomplete result.</param>
+        /// <param name="environmentVariables">Environment variables to set.</param>
         /// <returns>A RunCommandResult containing the process exit code and output and error streams.</returns>
-        protected static TestCommon.RunCommandResult RunDSCv3Command(string resource, string function, object input, int timeOut = 60000, bool throwOnTimeout = true)
+        protected static TestCommon.RunCommandResult RunDSCv3Command(
+            string resource,
+            string function,
+            object input,
+            int timeOut = 60000,
+            bool throwOnTimeout = true,
+            Dictionary<string, string> environmentVariables = null)
         {
-            return TestCommon.RunAICLICommand($"dscv3 {resource}", $"--{function}", ConvertToJSON(input), timeOut, throwOnTimeout);
+            return TestCommon.RunAICLICommand($"dscv3 {resource}", $"--{function}", ConvertToJSON(input), timeOut, throwOnTimeout, environmentVariables);
         }
 
         /// <summary>
@@ -81,8 +88,8 @@ namespace AppInstallerCLIE2ETests
         /// <param name="result">The result of a DSC v3 resource command run.</param>
         protected static void AssertSuccessfulResourceRun(ref TestCommon.RunCommandResult result)
         {
-            Assert.AreEqual(0, result.ExitCode);
-            Assert.IsNotEmpty(result.StdOut);
+            Assert.That(result.ExitCode, Is.Zero);
+            Assert.That(result.StdOut, Is.Not.Empty);
         }
 
         /// <summary>
@@ -104,7 +111,7 @@ namespace AppInstallerCLIE2ETests
         protected static T GetSingleOutputLineAs<T>(string output)
         {
             string[] lines = GetOutputLines(output);
-            Assert.AreEqual(1, lines.Length);
+            Assert.That(lines.Length, Is.EqualTo(1));
 
             return JsonSerializer.Deserialize<T>(lines[0], GetDefaultJsonOptions());
         }
@@ -118,7 +125,7 @@ namespace AppInstallerCLIE2ETests
         protected static (T, List<string>) GetSingleOutputLineAndDiffAs<T>(string output)
         {
             string[] lines = GetOutputLines(output);
-            Assert.AreEqual(2, lines.Length);
+            Assert.That(lines.Length, Is.EqualTo(2));
 
             var options = GetDefaultJsonOptions();
             return (JsonSerializer.Deserialize<T>(lines[0], options), JsonSerializer.Deserialize<List<string>>(lines[1], options));
@@ -151,12 +158,12 @@ namespace AppInstallerCLIE2ETests
         /// <param name="expected">The expected strings.</param>
         protected static void AssertDiffState(List<string> diff, IList<string> expected)
         {
-            Assert.IsNotNull(diff);
-            Assert.AreEqual(expected.Count, diff.Count);
+            Assert.That(diff, Is.Not.Null);
+            Assert.That(diff.Count, Is.EqualTo(expected.Count));
 
             foreach (string item in expected)
             {
-                Assert.Contains(item, diff);
+                Assert.That(diff, Has.Member(item));
             }
         }
 

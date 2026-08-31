@@ -10,6 +10,7 @@ namespace AppInstallerCLIE2ETests
     using System.Collections.Generic;
     using System.IO;
     using System.Linq;
+    using System.Runtime.InteropServices;
     using System.Xml.Linq;
     using AppInstallerCLIE2ETests.Helpers;
     using Microsoft.Win32;
@@ -129,6 +130,16 @@ namespace AppInstallerCLIE2ETests
         public static GroupPolicyHelper EnableProxyCommandLineOptions { get; private set; } = new GroupPolicyHelper("EnableWindowsPackageManagerProxyCommandLineOptions");
 
         /// <summary>
+        /// Gets the Enable Windows Package Manager Configuration processor path policy.
+        /// </summary>
+        public static GroupPolicyHelper EnableConfigurationProcessorPath { get; private set; } = new GroupPolicyHelper("EnableWindowsPackageManagerConfigurationProcessorPath");
+
+        /// <summary>
+        /// Gets the Bypass certificate pinning for Microsoft Store policy.
+        /// </summary>
+        public static GroupPolicyHelper BypassCertificatePinningForMicrosoftStore { get; private set; } = new GroupPolicyHelper("EnableBypassCertificatePinningForMicrosoftStore");
+
+        /// <summary>
         /// Gets the Enable auto update interval policy.
         /// </summary>
         public static GroupPolicyHelper SourceAutoUpdateInterval { get; private set; } = new GroupPolicyHelper("SourceAutoUpdateInterval", "SourceAutoUpdateInterval");
@@ -150,6 +161,7 @@ namespace AppInstallerCLIE2ETests
             EnableWinGetCommandLineInterfaces,
             EnableConfiguration,
             EnableProxyCommandLineOptions,
+            EnableConfigurationProcessorPath,
         };
 
         /// <summary>
@@ -225,6 +237,8 @@ namespace AppInstallerCLIE2ETests
             {
                 key.SetValue(this.ValueName, enabledValue);
             }
+
+            ReloadGroupPolicyIfAvailable();
         }
 
         /// <summary>
@@ -243,6 +257,8 @@ namespace AppInstallerCLIE2ETests
             {
                 key.SetValue(this.ValueName, disabledValue);
             }
+
+            ReloadGroupPolicyIfAvailable();
         }
 
         /// <summary>
@@ -277,6 +293,8 @@ namespace AppInstallerCLIE2ETests
                     }
                 }
             }
+
+            ReloadGroupPolicyIfAvailable();
         }
 
         /// <summary>
@@ -331,6 +349,25 @@ namespace AppInstallerCLIE2ETests
         public void SetEnabledList(IEnumerable<GroupPolicySource> values)
         {
             this.SetEnabledList(values.Select(source => JsonConvert.SerializeObject(source)));
+        }
+
+        [DllImport("WindowsPackageManager.dll", CallingConvention = CallingConvention.StdCall)]
+        private static extern int WindowsPackageManagerTestHook_ReloadGroupPolicy();
+
+        /// <summary>
+        /// Calls the in-process test hook to reload the GroupPolicy singleton from the current registry state.
+        /// Silently ignored if the DLL is not loaded in this process (e.g., out-of-process test scenarios).
+        /// </summary>
+        private static void ReloadGroupPolicyIfAvailable()
+        {
+            try
+            {
+                WindowsPackageManagerTestHook_ReloadGroupPolicy();
+            }
+            catch (Exception)
+            {
+                // The DLL is not loaded in this process (out-of-process scenario); nothing to do.
+            }
         }
 
         /// <summary>

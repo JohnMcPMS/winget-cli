@@ -7,6 +7,7 @@
 namespace AppInstallerCLIE2ETests
 {
     using System.Collections.Generic;
+    using System.IO;
     using System.Text.Json.Serialization;
     using AppInstallerCLIE2ETests.Helpers;
     using NUnit.Framework;
@@ -22,6 +23,7 @@ namespace AppInstallerCLIE2ETests
         private const string DefaultPackageLowVersion = "1.0.0.0";
         private const string DefaultPackageMidVersion = "1.1.0.0";
         private const string DefaultPackageHighVersion = "2.0.0.0";
+        private const string DefaultPackageInstallLocationEnvironmentVariableName = "WINGET_TEST_EXE_INSTALL_LOCATION";
         private const string PackageResource = "package";
         private const string VersionPropertyName = "version";
         private const string UseLatestPropertyName = "useLatest";
@@ -70,9 +72,9 @@ namespace AppInstallerCLIE2ETests
             AssertSuccessfulResourceRun(ref result);
 
             PackageResourceData output = GetSingleOutputLineAs<PackageResourceData>(result.StdOut);
-            Assert.IsNotNull(output);
-            Assert.False(output.Exist);
-            Assert.AreEqual(packageResourceData.Identifier, output.Identifier);
+            Assert.That(output, Is.Not.Null);
+            Assert.That(output.Exist, Is.False);
+            Assert.That(output.Identifier, Is.EqualTo(packageResourceData.Identifier));
         }
 
         /// <summary>
@@ -87,9 +89,9 @@ namespace AppInstallerCLIE2ETests
             AssertSuccessfulResourceRun(ref result);
 
             PackageResourceData output = GetSingleOutputLineAs<PackageResourceData>(result.StdOut);
-            Assert.IsNotNull(output);
-            Assert.False(output.Exist);
-            Assert.AreEqual(packageResourceData.Identifier, output.Identifier);
+            Assert.That(output, Is.Not.Null);
+            Assert.That(output.Exist, Is.False);
+            Assert.That(output.Identifier, Is.EqualTo(packageResourceData.Identifier));
         }
 
         /// <summary>
@@ -99,7 +101,7 @@ namespace AppInstallerCLIE2ETests
         public void Package_Get_Present()
         {
             var setupInstall = TestCommon.RunAICLICommand("install", $"--id {DefaultPackageIdentifier} --version {DefaultPackageLowVersion}");
-            Assert.AreEqual(0, setupInstall.ExitCode);
+            Assert.That(setupInstall.ExitCode, Is.Zero);
 
             PackageResourceData packageResourceData = new PackageResourceData() { Identifier = DefaultPackageIdentifier };
 
@@ -117,7 +119,7 @@ namespace AppInstallerCLIE2ETests
         public void Package_Get_MuchInput()
         {
             var setupInstall = TestCommon.RunAICLICommand("install", $"--id {DefaultPackageIdentifier} --version {DefaultPackageLowVersion}");
-            Assert.AreEqual(0, setupInstall.ExitCode);
+            Assert.That(setupInstall.ExitCode, Is.Zero);
 
             PackageResourceData packageResourceData = new PackageResourceData()
             {
@@ -145,10 +147,10 @@ namespace AppInstallerCLIE2ETests
             AssertSuccessfulResourceRun(ref result);
 
             (PackageResourceData output, List<string> diff) = GetSingleOutputLineAndDiffAs<PackageResourceData>(result.StdOut);
-            Assert.IsNotNull(output);
-            Assert.False(output.Exist);
-            Assert.AreEqual(packageResourceData.Identifier, output.Identifier);
-            Assert.False(output.InDesiredState);
+            Assert.That(output, Is.Not.Null);
+            Assert.That(output.Exist, Is.False);
+            Assert.That(output.Identifier, Is.EqualTo(packageResourceData.Identifier));
+            Assert.That(output.InDesiredState, Is.False);
 
             AssertDiffState(diff, [ ExistPropertyName ]);
         }
@@ -160,7 +162,7 @@ namespace AppInstallerCLIE2ETests
         public void Package_Test_SimplePresent()
         {
             var setupInstall = TestCommon.RunAICLICommand("install", $"--id {DefaultPackageIdentifier} --version {DefaultPackageLowVersion}");
-            Assert.AreEqual(0, setupInstall.ExitCode);
+            Assert.That(setupInstall.ExitCode, Is.Zero);
 
             PackageResourceData packageResourceData = new PackageResourceData() { Identifier = DefaultPackageIdentifier };
 
@@ -169,7 +171,7 @@ namespace AppInstallerCLIE2ETests
 
             (PackageResourceData output, List<string> diff) = GetSingleOutputLineAndDiffAs<PackageResourceData>(result.StdOut);
             AssertExistingPackageResourceData(output, DefaultPackageLowVersion);
-            Assert.True(output.InDesiredState);
+            Assert.That(output.InDesiredState, Is.True);
 
             AssertDiffState(diff, []);
         }
@@ -181,7 +183,7 @@ namespace AppInstallerCLIE2ETests
         public void Package_Test_VersionMatch()
         {
             var setupInstall = TestCommon.RunAICLICommand("install", $"--id {DefaultPackageIdentifier} --version {DefaultPackageLowVersion}");
-            Assert.AreEqual(0, setupInstall.ExitCode);
+            Assert.That(setupInstall.ExitCode, Is.Zero);
 
             PackageResourceData packageResourceData = new PackageResourceData()
             {
@@ -194,7 +196,7 @@ namespace AppInstallerCLIE2ETests
 
             (PackageResourceData output, List<string> diff) = GetSingleOutputLineAndDiffAs<PackageResourceData>(result.StdOut);
             AssertExistingPackageResourceData(output, DefaultPackageLowVersion);
-            Assert.True(output.InDesiredState);
+            Assert.That(output.InDesiredState, Is.True);
 
             AssertDiffState(diff, []);
         }
@@ -206,7 +208,7 @@ namespace AppInstallerCLIE2ETests
         public void Package_Test_VersionMismatch()
         {
             var setupInstall = TestCommon.RunAICLICommand("install", $"--id {DefaultPackageIdentifier} --version {DefaultPackageLowVersion}");
-            Assert.AreEqual(0, setupInstall.ExitCode);
+            Assert.That(setupInstall.ExitCode, Is.Zero);
 
             PackageResourceData packageResourceData = new PackageResourceData()
             {
@@ -219,7 +221,7 @@ namespace AppInstallerCLIE2ETests
 
             (PackageResourceData output, List<string> diff) = GetSingleOutputLineAndDiffAs<PackageResourceData>(result.StdOut);
             AssertExistingPackageResourceData(output, DefaultPackageLowVersion);
-            Assert.False(output.InDesiredState);
+            Assert.That(output.InDesiredState, Is.False);
 
             AssertDiffState(diff, [ VersionPropertyName ]);
         }
@@ -231,7 +233,7 @@ namespace AppInstallerCLIE2ETests
         public void Package_Test_Latest()
         {
             var setupInstall = TestCommon.RunAICLICommand("install", $"--id {DefaultPackageIdentifier}");
-            Assert.AreEqual(0, setupInstall.ExitCode);
+            Assert.That(setupInstall.ExitCode, Is.Zero);
 
             PackageResourceData packageResourceData = new PackageResourceData()
             {
@@ -244,7 +246,7 @@ namespace AppInstallerCLIE2ETests
 
             (PackageResourceData output, List<string> diff) = GetSingleOutputLineAndDiffAs<PackageResourceData>(result.StdOut);
             AssertExistingPackageResourceData(output, DefaultPackageHighVersion);
-            Assert.True(output.InDesiredState);
+            Assert.That(output.InDesiredState, Is.True);
 
             AssertDiffState(diff, []);
         }
@@ -256,7 +258,7 @@ namespace AppInstallerCLIE2ETests
         public void Package_Test_NotLatest()
         {
             var setupInstall = TestCommon.RunAICLICommand("install", $"--id {DefaultPackageIdentifier} --version {DefaultPackageMidVersion}");
-            Assert.AreEqual(0, setupInstall.ExitCode);
+            Assert.That(setupInstall.ExitCode, Is.Zero);
 
             PackageResourceData packageResourceData = new PackageResourceData()
             {
@@ -269,7 +271,7 @@ namespace AppInstallerCLIE2ETests
 
             (PackageResourceData output, List<string> diff) = GetSingleOutputLineAndDiffAs<PackageResourceData>(result.StdOut);
             AssertExistingPackageResourceData(output, DefaultPackageMidVersion);
-            Assert.False(output.InDesiredState);
+            Assert.That(output.InDesiredState, Is.False);
 
             AssertDiffState(diff, [ UseLatestPropertyName ]);
         }
@@ -304,13 +306,59 @@ namespace AppInstallerCLIE2ETests
         }
 
         /// <summary>
+        /// Calls `set` on the `package` resource with `installMode` set to `silent`.
+        /// </summary>
+        [Test]
+        public void Package_Set_SilentInstallMode_UsesSilentAndCustomSwitches()
+        {
+            string installDir = Path.GetTempPath();
+            var environmentVariables = new Dictionary<string, string>();
+            environmentVariables[DefaultPackageInstallLocationEnvironmentVariableName] = installDir;
+            PackageResourceData packageResourceData = new PackageResourceData()
+            {
+                Identifier = DefaultPackageIdentifier,
+                InstallMode = "silent",
+            };
+
+            var result = RunDSCv3Command(PackageResource, SetFunction, packageResourceData, environmentVariables: environmentVariables);
+            AssertSuccessfulResourceRun(ref result);
+
+            Assert.That(TestCommon.VerifyTestExeInstalled(installDir, "/execustom"), Is.True);
+            Assert.That(TestCommon.VerifyTestExeInstalled(installDir, "/exesilent"), Is.True);
+            TestCommon.BestEffortTestExeCleanup(installDir);
+        }
+
+        /// <summary>
+        /// Calls `set` on the `package` resource with `installMode` set to `interactive`.
+        /// </summary>
+        [Test]
+        public void Package_Set_InteractiveInstallMode_UsesInteractiveAndCustomSwitches()
+        {
+            string installDir = Path.GetTempPath();
+            var environmentVariables = new Dictionary<string, string>();
+            environmentVariables[DefaultPackageInstallLocationEnvironmentVariableName] = installDir;
+            PackageResourceData packageResourceData = new PackageResourceData()
+            {
+                Identifier = DefaultPackageIdentifier,
+                InstallMode = "interactive",
+            };
+
+            var result = RunDSCv3Command(PackageResource, SetFunction, packageResourceData, environmentVariables: environmentVariables);
+            AssertSuccessfulResourceRun(ref result);
+
+            Assert.That(TestCommon.VerifyTestExeInstalled(installDir, "/execustom"), Is.True);
+            Assert.That(TestCommon.VerifyTestExeInstalled(installDir, "/exeinteractive"), Is.True);
+            TestCommon.BestEffortTestExeCleanup(installDir);
+        }
+
+        /// <summary>
         /// Calls `set` on the `package` resource to ensure that it is not present.
         /// </summary>
         [Test]
         public void Package_Set_Remove()
         {
             var setupInstall = TestCommon.RunAICLICommand("install", $"--id {DefaultPackageIdentifier}");
-            Assert.AreEqual(0, setupInstall.ExitCode);
+            Assert.That(setupInstall.ExitCode, Is.Zero);
 
             PackageResourceData packageResourceData = new PackageResourceData()
             {
@@ -322,9 +370,9 @@ namespace AppInstallerCLIE2ETests
             AssertSuccessfulResourceRun(ref result);
 
             (PackageResourceData output, List<string> diff) = GetSingleOutputLineAndDiffAs<PackageResourceData>(result.StdOut);
-            Assert.IsNotNull(output);
-            Assert.False(output.Exist);
-            Assert.AreEqual(packageResourceData.Identifier, output.Identifier);
+            Assert.That(output, Is.Not.Null);
+            Assert.That(output.Exist, Is.False);
+            Assert.That(output.Identifier, Is.EqualTo(packageResourceData.Identifier));
 
             AssertDiffState(diff, [ ExistPropertyName ]);
 
@@ -338,9 +386,9 @@ namespace AppInstallerCLIE2ETests
             AssertSuccessfulResourceRun(ref result);
 
             output = GetSingleOutputLineAs<PackageResourceData>(result.StdOut);
-            Assert.IsNotNull(output);
-            Assert.False(output.Exist);
-            Assert.AreEqual(packageResourceDataForGet.Identifier, output.Identifier);
+            Assert.That(output, Is.Not.Null);
+            Assert.That(output.Exist, Is.False);
+            Assert.That(output.Identifier, Is.EqualTo(packageResourceDataForGet.Identifier));
         }
 
         /// <summary>
@@ -350,7 +398,7 @@ namespace AppInstallerCLIE2ETests
         public void Package_Set_Latest()
         {
             var setupInstall = TestCommon.RunAICLICommand("install", $"--id {DefaultPackageIdentifier} --version {DefaultPackageMidVersion}");
-            Assert.AreEqual(0, setupInstall.ExitCode);
+            Assert.That(setupInstall.ExitCode, Is.Zero);
 
             PackageResourceData packageResourceData = new PackageResourceData()
             {
@@ -386,7 +434,7 @@ namespace AppInstallerCLIE2ETests
         public void Package_Set_SpecificVersionUpgrade()
         {
             var setupInstall = TestCommon.RunAICLICommand("install", $"--id {DefaultPackageIdentifier} --version {DefaultPackageLowVersion}");
-            Assert.AreEqual(0, setupInstall.ExitCode);
+            Assert.That(setupInstall.ExitCode, Is.Zero);
 
             PackageResourceData packageResourceData = new PackageResourceData()
             {
@@ -422,7 +470,7 @@ namespace AppInstallerCLIE2ETests
         public void Package_Set_SpecificVersionDowngrade()
         {
             var setupInstall = TestCommon.RunAICLICommand("install", $"--id {DefaultPackageIdentifier}");
-            Assert.AreEqual(0, setupInstall.ExitCode);
+            Assert.That(setupInstall.ExitCode, Is.Zero);
 
             PackageResourceData packageResourceData = new PackageResourceData()
             {
@@ -458,7 +506,7 @@ namespace AppInstallerCLIE2ETests
         public void Package_Export_NoInput()
         {
             var setupInstall = TestCommon.RunAICLICommand("install", $"--id {DefaultPackageIdentifier}");
-            Assert.AreEqual(0, setupInstall.ExitCode);
+            Assert.That(setupInstall.ExitCode, Is.Zero);
 
             var result = RunDSCv3Command(PackageResource, ExportFunction, " ");
             AssertSuccessfulResourceRun(ref result);
@@ -471,12 +519,12 @@ namespace AppInstallerCLIE2ETests
                 if (item.Identifier == DefaultPackageIdentifier)
                 {
                     foundDefaultPackage = true;
-                    Assert.IsNull(item.Version);
+                    Assert.That(item.Version, Is.Null);
                     break;
                 }
             }
 
-            Assert.IsTrue(foundDefaultPackage);
+            Assert.That(foundDefaultPackage, Is.True);
         }
 
         /// <summary>
@@ -486,7 +534,7 @@ namespace AppInstallerCLIE2ETests
         public void Package_Export_RequestVersions()
         {
             var setupInstall = TestCommon.RunAICLICommand("install", $"--id {DefaultPackageIdentifier} --version {DefaultPackageLowVersion}");
-            Assert.AreEqual(0, setupInstall.ExitCode);
+            Assert.That(setupInstall.ExitCode, Is.Zero);
 
             PackageResourceData packageResourceData = new PackageResourceData()
             {
@@ -504,16 +552,16 @@ namespace AppInstallerCLIE2ETests
                 if (item.Identifier == DefaultPackageIdentifier)
                 {
                     foundDefaultPackage = true;
-                    Assert.AreEqual(DefaultPackageLowVersion, item.Version);
+                    Assert.That(item.Version, Is.EqualTo(DefaultPackageLowVersion));
                 }
                 else
                 {
-                    Assert.IsNotNull(item.Version);
-                    Assert.IsNotEmpty(item.Version);
+                    Assert.That(item.Version, Is.Not.Null);
+                    Assert.That(item.Version, Is.Not.Empty);
                 }
             }
 
-            Assert.IsTrue(foundDefaultPackage);
+            Assert.That(foundDefaultPackage, Is.True);
         }
 
         private static void RemoveTestPackage()
@@ -530,20 +578,20 @@ namespace AppInstallerCLIE2ETests
 
         private static void AssertExistingPackageResourceData(PackageResourceData output, string version, bool ignoreLatest = false)
         {
-            Assert.IsNotNull(output);
-            Assert.True(output.Exist);
-            Assert.AreEqual(DefaultPackageIdentifier, output.Identifier);
-            Assert.AreEqual(version, output.Version);
+            Assert.That(output, Is.Not.Null);
+            Assert.That(output.Exist, Is.True);
+            Assert.That(output.Identifier, Is.EqualTo(DefaultPackageIdentifier));
+            Assert.That(output.Version, Is.EqualTo(version));
 
             if (!ignoreLatest)
             {
                 if (version == DefaultPackageHighVersion)
                 {
-                    Assert.True(output.UseLatest);
+                    Assert.That(output.UseLatest, Is.True);
                 }
                 else
                 {
-                    Assert.False(output.UseLatest);
+                    Assert.That(output.UseLatest, Is.False);
                 }
             }
         }

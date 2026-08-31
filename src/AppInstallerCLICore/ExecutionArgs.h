@@ -45,6 +45,7 @@ namespace AppInstaller::CLI::Execution
             InstallerType,
             HashOverride, // Ignore hash mismatches
             SkipDependencies, // Skip dependencies
+            DependenciesOnly, // Install only dependencies, not the target package
             IgnoreLocalArchiveMalwareScan, // Ignore the local malware scan on archive files
             AcceptPackageAgreements, // Accept all license agreements for packages
             Rename, // Renames the file of the executable. Only applies to the portable installerType
@@ -113,6 +114,9 @@ namespace AppInstaller::CLI::Execution
             // List Command
             Upgrade, // Used in List command to only show versions with upgrades
             ListDetails,
+            Sort, // Sort output by field (repeatable: --sort name --sort id)
+            SortAscending, // Sort output in ascending order
+            SortDescending, // Sort output in descending order
 
             // Pin command
             GatedVersion, // Differs from Version in that this supports wildcards

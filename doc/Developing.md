@@ -4,7 +4,7 @@
 
 * Windows 10 1809 (17763) or later
 * [Developer Mode enabled](https://docs.microsoft.com/windows/uwp/get-started/enable-your-device-for-development)
-* [Visual Studio 2022](https://visualstudio.microsoft.com/downloads/)
+* [Visual Studio 2026](https://visualstudio.microsoft.com/downloads/)
   * Or use WinGet to install it ;) (although you may need to adjust the workloads via Tools->Get Tools and Features...)
 * The following workloads:
   * .NET Desktop Development
@@ -19,7 +19,7 @@
 
 * The following extensions:
 
-  * [Microsoft Visual Studio Installer Projects](https://marketplace.visualstudio.com/items?itemName=VisualStudioClient.MicrosoftVisualStudio2022InstallerProjects)
+  * [Microsoft Visual Studio Installer Projects 2022](https://marketplace.visualstudio.com/items?itemName=VisualStudioClient.MicrosoftVisualStudio2022InstallerProjects) (Works with Visual Studio 2026)
 
 ## Building the client
 
@@ -28,7 +28,7 @@
    - For VS Community: `winget configure .config/configuration.winget`
    - For VS Professional: `winget configure .config/configuration.vsProfessional.winget`
    - For VS Enterprise: `winget configure .config/configuration.vsEnterprise.winget`
-3. Run `vcpkg integrate install` from the Developer Command Prompt / Developer PowerShell for VS 2022. This is a one-time setup step until the configuration file in step 2 is updated to work with vcpkg setup.
+3. Run `vcpkg integrate install` from the Developer Command Prompt / Developer PowerShell for VS. This is a one-time setup step until the configuration file in step 2 is updated to work with vcpkg setup.
 
 Open `winget-cli\src\AppInstallerCLI.sln` in Visual Studio and build. We currently only build using the solution; command-line methods of building a VS solution should work as well.
 
@@ -46,3 +46,31 @@ The unit tests are located inside the `AppInstallerCLITests` project. When the s
 
 > [!TIP]
 > If you just want to run a particular test, you can specify the test name as an argument to the executable. For example, `AppInstallerCLITests.exe EnsureSortedErrorList`.
+
+## Localization
+
+The English resource strings are the source of truth and live in:
+
+- `src/AppInstallerCLIPackage/Shared/Strings/en-us/winget.resw`
+- `src/AppInstallerCLIPackage/Shared/Strings/en-us/Resources.resw`
+
+The localized strings under `Localization/Resources/<locale>/` are owned by Microsoft's internal localization team and are fetched automatically. **Do not edit files in `Localization/Resources/`**—any changes will be overwritten.
+
+### Adding or modifying resource strings
+
+When adding a new string or modifying an existing one in the English `.resw` files, always include a `<comment>` element that gives translators enough context to produce a correct translation. This is especially important for:
+
+- **Short or single-word values** (e.g., column headers, labels, status words) where the word has multiple meanings in English. Always clarify which meaning applies and, where relevant, explicitly call out meanings that do **not** apply.
+- **Technical jargon** that may have a different colloquial meaning in other languages.
+- **Strings with placeholders** — document what each `{0}`, `{1}`, etc. represents.
+
+Example of a well-formed comment for a potentially ambiguous word:
+
+```xml
+<data name="SourceListExplicit" xml:space="preserve">
+  <value>Explicit</value>
+  <comment>Column header meaning the source must be directly named to be used. Do NOT translate as "explicit content" or "adult content".</comment>
+</data>
+```
+
+Without such comments, translators may rely on the most common meaning of a word, which can produce incorrect results in UI-visible strings.

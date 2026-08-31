@@ -64,12 +64,18 @@
     <Filter Include="TestData\MultiFileManifestV1_28">
       <UniqueIdentifier>{0e5f9ff4-6f22-46eb-8538-1c560a008f06}</UniqueIdentifier>
     </Filter>
+    <Filter Include="TestData\MultiFileManifestV1_30">
+      <UniqueIdentifier>{06dc4136-685f-4ed2-b54b-565863e95fb2}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="pch.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="TestCommon.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="TestCertificates.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="TestHooks.h">
@@ -99,6 +105,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="main.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="TestCertificates.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="TestCommon.cpp">
@@ -173,6 +182,9 @@
     <ClCompile Include="PackageCollection.cpp">
       <Filter>Source Files\CLI</Filter>
     </ClCompile>
+    <ClCompile Include="PackageTableSortHelper.cpp">
+      <Filter>Source Files\CLI</Filter>
+    </ClCompile>
     <ClCompile Include="PackageTrackingCatalog.cpp">
       <Filter>Source Files\Repository</Filter>
     </ClCompile>
@@ -212,6 +224,9 @@
     <ClCompile Include="Settings.cpp">
       <Filter>Source Files\Common</Filter>
     </ClCompile>
+    <ClCompile Include="SortParametersResolution.cpp">
+      <Filter>Source Files\CLI</Filter>
+    </ClCompile>
     <ClCompile Include="Sources.cpp">
       <Filter>Source Files\Repository</Filter>
     </ClCompile>
@@ -228,6 +243,9 @@
       <Filter>Source Files\Common</Filter>
     </ClCompile>
     <ClCompile Include="Synchronization.cpp">
+      <Filter>Source Files\Common</Filter>
+    </ClCompile>
+    <ClCompile Include="TableOutput.cpp">
       <Filter>Source Files\Common</Filter>
     </ClCompile>
     <ClCompile Include="TestRestRequestHandler.cpp">
@@ -383,6 +401,9 @@
     <ClCompile Include="RestInterface_1_12.cpp">
       <Filter>Source Files\Repository</Filter>
     </ClCompile>
+    <ClCompile Include="RestInterface_1_28.cpp">
+      <Filter>Source Files\Repository</Filter>
+    </ClCompile>
     <ClCompile Include="ManifestComparator.cpp">
       <Filter>Source Files\Common</Filter>
     </ClCompile>
@@ -405,6 +426,21 @@
     <None Include="Run-TestsInPackage.ps1" />
   </ItemGroup>
   <ItemGroup>
+    <CopyFileToFolders Include="TestData\TestRoot.cer">
+      <Filter>TestData</Filter>
+    </CopyFileToFolders>
+    <CopyFileToFolders Include="TestData\TestIntermediate1.cer">
+      <Filter>TestData</Filter>
+    </CopyFileToFolders>
+    <CopyFileToFolders Include="TestData\TestIntermediate2.cer">
+      <Filter>TestData</Filter>
+    </CopyFileToFolders>
+    <CopyFileToFolders Include="TestData\TestLeaf1.cer">
+      <Filter>TestData</Filter>
+    </CopyFileToFolders>
+    <CopyFileToFolders Include="TestData\TestLeaf2.cer">
+      <Filter>TestData</Filter>
+    </CopyFileToFolders>
     <CopyFileToFolders Include="TestData\Manifest-Bad-ApproximateVersionInArpVersion.yaml">
       <Filter>TestData</Filter>
     </CopyFileToFolders>
@@ -486,6 +522,9 @@
     <CopyFileToFolders Include="TestData\Manifest-Bad-InstallerTypePortable-InvalidAppsAndFeatures.yaml">
       <Filter>TestData</Filter>
     </CopyFileToFolders>
+    <CopyFileToFolders Include="TestData\Manifest-Bad-InstallerTypePortable-InvalidCommandAlias.yaml">
+      <Filter>TestData</Filter>
+    </CopyFileToFolders>
     <CopyFileToFolders Include="TestData\Manifest-Bad-InstallerTypePortable-InvalidCommands.yaml">
       <Filter>TestData</Filter>
     </CopyFileToFolders>
@@ -493,6 +532,9 @@
       <Filter>TestData</Filter>
     </CopyFileToFolders>
     <CopyFileToFolders Include="TestData\Manifest-Bad-InstallerTypeZip-DuplicateRelativeFilePath.yaml">
+      <Filter>TestData</Filter>
+    </CopyFileToFolders>
+    <CopyFileToFolders Include="TestData\Manifest-Bad-InstallerTypeZip-InvalidPortableCommandAlias.yaml">
       <Filter>TestData</Filter>
     </CopyFileToFolders>
     <CopyFileToFolders Include="TestData\Manifest-Bad-InstallerTypeZip-InvalidRelativeFilePath.yaml">
@@ -796,6 +838,12 @@
       <Filter>TestData</Filter>
     </CopyFileToFolders>
     <CopyFileToFolders Include="TestData\ImportFile-Good-WithLicenseAgreement.json">
+      <Filter>TestData</Filter>
+    </CopyFileToFolders>
+    <CopyFileToFolders Include="TestData\ImportFile-Good-WithOverrideArgs.json">
+      <Filter>TestData</Filter>
+    </CopyFileToFolders>
+    <CopyFileToFolders Include="TestData\ImportFile-Good-WithCustomSwitches.json">
       <Filter>TestData</Filter>
     </CopyFileToFolders>
     <CopyFileToFolders Include="TestData\ImportFile-Good-Dependencies.json">
@@ -1110,6 +1158,9 @@
     <CopyFileToFolders Include="TestData\Manifest-Good-InstallerTypeZip-PortableExe.yaml">
       <Filter>TestData</Filter>
     </CopyFileToFolders>
+    <CopyFileToFolders Include="TestData\Manifest-Good-InstallerTypeZip-PortableExeUppercase.yaml">
+      <Filter>TestData</Filter>
+    </CopyFileToFolders>
     <CopyFileToFolders Include="TestData\Manifest-Bad-InstallerTypeZip-PortableNotExe.yaml">
       <Filter>TestData</Filter>
     </CopyFileToFolders>
@@ -1131,6 +1182,18 @@
     <CopyFileToFolders Include="TestData\MultiFileManifestV1_28\ManifestV1_28-MultiFile-Version.yaml">
       <Filter>TestData\MultiFileManifestV1_28</Filter>
     </CopyFileToFolders>
+    <CopyFileToFolders Include="TestData\MultiFileManifestV1_30\ManifestV1_30-MultiFile-DefaultLocale.yaml">
+      <Filter>TestData\MultiFileManifestV1_30</Filter>
+    </CopyFileToFolders>
+    <CopyFileToFolders Include="TestData\MultiFileManifestV1_30\ManifestV1_30-MultiFile-Installer.yaml">
+      <Filter>TestData\MultiFileManifestV1_30</Filter>
+    </CopyFileToFolders>
+    <CopyFileToFolders Include="TestData\MultiFileManifestV1_30\ManifestV1_30-MultiFile-Locale.yaml">
+      <Filter>TestData\MultiFileManifestV1_30</Filter>
+    </CopyFileToFolders>
+    <CopyFileToFolders Include="TestData\MultiFileManifestV1_30\ManifestV1_30-MultiFile-Version.yaml">
+      <Filter>TestData\MultiFileManifestV1_30</Filter>
+    </CopyFileToFolders>
     <CopyFileToFolders Include="TestData\Manifest-MSIX-in-AppsAndFeatures.yaml">
       <Filter>TestData</Filter>
     </CopyFileToFolders>
@@ -1141,6 +1204,24 @@
       <Filter>TestData</Filter>
     </CopyFileToFolders>
     <CopyFileToFolders Include="TestData\ManifestV1_28-Singleton.yaml">
+      <Filter>TestData</Filter>
+    </CopyFileToFolders>
+    <CopyFileToFolders Include="TestData\ManifestV1_30-PowerShellDSC.yaml">
+      <Filter>TestData</Filter>
+    </CopyFileToFolders>
+    <CopyFileToFolders Include="TestData\ManifestV1_30-Singleton.yaml">
+      <Filter>TestData</Filter>
+    </CopyFileToFolders>
+    <CopyFileToFolders Include="TestData\Manifest-Bad-InvalidWindowsFeatureName.yaml">
+      <Filter>TestData</Filter>
+    </CopyFileToFolders>
+    <CopyFileToFolders Include="TestData\Manifest-Bad-BlockedMsiProperty.yaml">
+      <Filter>TestData</Filter>
+    </CopyFileToFolders>
+    <CopyFileToFolders Include="TestData\Manifest-Bad-InvalidMsiSwitches.yaml">
+      <Filter>TestData</Filter>
+    </CopyFileToFolders>
+    <CopyFileToFolders Include="TestData\Manifest-Bad-NetworkAddressInSwitches.yaml">
       <Filter>TestData</Filter>
     </CopyFileToFolders>
   </ItemGroup>
