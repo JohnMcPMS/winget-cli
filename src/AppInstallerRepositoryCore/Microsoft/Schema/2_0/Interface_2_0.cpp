@@ -739,6 +739,10 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_0
         }
     }
 
+    void Interface::CreateAdditionalPackagingOutput(const SQLiteIndexContext&)
+    {
+    }
+
     PackageUpdateTrackingTable::RemovalBehavior Interface::GetTrackingRemovalBehavior() const
     {
         return PackageUpdateTrackingTable::RemovalBehavior::Delete;
@@ -1049,6 +1053,9 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_0
                 UpgradeCodeTable::EnsureExists(connection, m_internalInterface->GetMultiPropertyByPrimaryId(connection, versionKey.ManifestId, PackageVersionMultiProperty::UpgradeCode), packageId);
             }
         }
+
+        // Extension point for later schema versions; see the declaration for why it must be here.
+        CreateAdditionalPackagingOutput(context);
 
         // Generate the delta index before dropping the tracking table (which is needed for delta construction).
         // Delta generation is triggered by setting DeltaBaselineIndexPath and DeltaOutputPath on the context.

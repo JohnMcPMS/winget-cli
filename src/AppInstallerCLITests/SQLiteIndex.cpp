@@ -3967,6 +3967,72 @@ TEST_CASE("SQLiteIndex_VersionStringPreserved", "[sqliteindex]")
     REQUIRE(extractedVersion == version);
 }
 
+namespace
+{
+    // Reads the rowid assigned to a package identifier in a prepared 2.0 index.
+    int64_t GetPreparedPackageRowId(const std::filesystem::path& indexPath, std::string_view packageIdentifier)
+    {
+        Connection connection = Connection::Create(indexPath.u8string(), Connection::OpenDisposition::ReadOnly);
+        Statement statement = Statement::Create(connection, "SELECT rowid FROM packages WHERE id = ?");
+        statement.Bind(1, std::string{ packageIdentifier });
+        REQUIRE(statement.Step());
+        return statement.GetColumn<int64_t>(0);
+    }
+}
+
+// The delta index relies on a package receiving the same packages rowid every time the same
+// working index is prepared, even as other packages are added and removed around it.
+TEST_CASE("SQLiteIndex_PrepareForPackaging_RowIdsAreStable", "[sqliteindex][V2_0]")
+{
+    TempFile workingFile{ "rowid_working"s, ".db"s };
+    TempFile firstFile{ "rowid_first"s, ".db"s };
+    TempFile secondFile{ "rowid_second"s, ".db"s };
+
+    ManifestAndPath m1;
+    CreateFakeManifestAndPath(m1, "Publisher1", "1.0");
+    ManifestAndPath m2;
+    CreateFakeManifestAndPath(m2, "Publisher2", "1.0");
+    ManifestAndPath m3;
+    CreateFakeManifestAndPath(m3, "Publisher3", "1.0");
+    ManifestAndPath m4;
+    CreateFakeManifestAndPath(m4, "Publisher4", "1.0");
+
+    {
+        SQLiteIndex index = SQLiteIndex::CreateNew(workingFile, SQLiteVersion{ 2, 0 });
+        index.SetProperty(SQLiteIndex::Property::PackageUpdateTrackingBaseTime, "0");
+        index.AddManifest(m1.Manifest, m1.Path);
+        index.AddManifest(m2.Manifest, m2.Path);
+        index.AddManifest(m3.Manifest, m3.Path);
+    }
+
+    std::filesystem::copy_file(workingFile.GetPath(), firstFile.GetPath(), std::filesystem::copy_options::overwrite_existing);
+
+    {
+        SQLiteIndex prepared = SQLiteIndex::Open(firstFile.GetPath().u8string(), SQLiteStorageBase::OpenDisposition::ReadWrite);
+        prepared.PrepareForPackaging();
+    }
+
+    // Remove the first package and add a new one, which would renumber the survivors without pinning.
+    {
+        SQLiteIndex index = SQLiteIndex::Open(workingFile, SQLiteStorageBase::OpenDisposition::ReadWrite);
+        index.RemoveManifest(m1.Manifest, m1.Path);
+        index.AddManifest(m4.Manifest, m4.Path);
+    }
+
+    std::filesystem::copy_file(workingFile.GetPath(), secondFile.GetPath(), std::filesystem::copy_options::overwrite_existing);
+
+    {
+        SQLiteIndex prepared = SQLiteIndex::Open(secondFile.GetPath().u8string(), SQLiteStorageBase::OpenDisposition::ReadWrite);
+        prepared.PrepareForPackaging();
+    }
+
+    REQUIRE(GetPreparedPackageRowId(firstFile.GetPath(), "Publisher2.Id") == GetPreparedPackageRowId(secondFile.GetPath(), "Publisher2.Id"));
+    REQUIRE(GetPreparedPackageRowId(firstFile.GetPath(), "Publisher3.Id") == GetPreparedPackageRowId(secondFile.GetPath(), "Publisher3.Id"));
+
+    // The added package must not collide with any existing rowid.
+    REQUIRE(GetPreparedPackageRowId(secondFile.GetPath(), "Publisher4.Id") > GetPreparedPackageRowId(secondFile.GetPath(), "Publisher3.Id"));
+}
+
 TEST_CASE("SQLiteIndex_UpdateTracking_V2_1_RemovalDeletesRow", "[sqliteindex][V2_0][updatetracking]")
 {
     TempFile indexFile{ "updatetracking"s, ".db"s };
