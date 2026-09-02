@@ -4,10 +4,12 @@
 """
 analyze.py - Baseline refresh timing optimizer for winget delta indexes.
 
-Reads a results.csv produced by DeltaIndexTestTool and models the total compressed
+Reads a results.csv produced by DeltaIndexTestTool and models the relative compressed
 egress across multiple user updates under different baseline refresh schedules.
-Sweeps all candidate refresh periods and recommends the one that minimizes total
+Sweeps all candidate refresh periods and recommends the one that minimizes the
 expected compressed egress given an assumed user staleness distribution.
+
+All output is relative (percentages); absolute egress volume is never required.
 
 COST MODEL SUMMARY
 ------------------
@@ -23,9 +25,23 @@ For a refresh period of P checkpoints (P * interval_days days):
   weighted_p_baseline = sum over D of W[D] * min(D, period_days) / period_days
                         (expected fraction of downloads that need a new baseline)
                         For "new_client" buckets: p_needs_baseline = 1.0 always.
-  cost_per_download   = cycle_avg_delta + weighted_p_baseline * full_avg
+  cost_per_download   = cycle_avg_delta + weighted_p_baseline * baseline_size
 
-Comparing cost_per_download across periods finds the optimal refresh interval.
+The status quo (no deltas at all) costs `baseline_size` per download, so the
+predicted traffic reduction for a schedule is simply:
+
+  reduction = 1 - cost_per_download / baseline_size
+
+BASELINE SIZE
+-------------
+`baseline_size` is the compressed size of the index a client downloads when it
+must take a fresh baseline. By default it is taken from the *last* checkpoint in
+the CSV (the most current measurement). Because the tool-built index may not match
+what production actually serves, supply the real value with --baseline-mb.
+
+Delta sizes are NOT scaled along with --baseline-mb: delta growth is driven by the
+repository change rate, which holds relatively steady and is measured directly by
+the tool. Only the baseline-download side of the model responds to --baseline-mb.
 
 Key approximation: DeltaOrig growth from baseline 0 is used as a proxy for delta
 growth from any hypothetical baseline (reasonable when repository growth is steady).
@@ -53,13 +69,14 @@ Telemetry-derived JSON example:
 Usage:
     python analyze.py --csv results.csv --distribution weekly
     python analyze.py --csv results.csv --distribution distribution.json
-    python analyze.py --csv results.csv --distribution weekly --egress-cost-per-gb 0.087 --output-chart chart.png
+    python analyze.py --csv results.csv --distribution weekly --baseline-mb 12.4 --output-chart chart.png
 """
 
 import argparse
 import csv
 import json
 import sys
+import textwrap
 from datetime import datetime
 from pathlib import Path
 
@@ -176,7 +193,7 @@ def normalize_buckets(buckets):
     return result
 
 
-def simulate_schedule(checkpoints, period, buckets, interval_days):
+def simulate_schedule(checkpoints, period, buckets, interval_days, baseline_size):
     """
     Simulate a periodic baseline refresh every `period` checkpoints and return
     the expected compressed egress cost per download event.
@@ -196,16 +213,17 @@ def simulate_schedule(checkpoints, period, buckets, interval_days):
                             index predates the current baseline, requiring a full
                             baseline download.
 
-      cost_per_download   = cycle_avg_delta + weighted_p_baseline * full_avg
+      cost_per_download   = cycle_avg_delta + weighted_p_baseline * baseline_size
 
-    Returns cost_per_download (MB).  Multiply by total download count for
-    absolute egress; for schedule comparison the relative values suffice.
+    `baseline_size` is the compressed MB a client pays for a fresh baseline; see
+    the module docstring for how it is chosen.  Delta sizes come from measured
+    repository change rate and are deliberately independent of it.
+
+    Returns cost_per_download (MB).  Only ratios between schedules (and against
+    `baseline_size`, the status quo) are meaningful.
     """
     delta_curve  = [cp["DeltaOrigCompressedMB"] for cp in checkpoints]
-    n            = len(checkpoints)
     period_days  = period * interval_days
-
-    full_avg = sum(cp["FullIndexCompressedMB"] for cp in checkpoints) / n
 
     cycle_deltas    = [delta_curve[min(a, len(delta_curve) - 1)] for a in range(period)]
     cycle_avg_delta = sum(cycle_deltas) / period
@@ -215,17 +233,18 @@ def simulate_schedule(checkpoints, period, buckets, interval_days):
         for b in buckets
     )
 
-    return cycle_avg_delta + weighted_p_baseline * full_avg
+    return cycle_avg_delta + weighted_p_baseline * baseline_size
 
 
-def find_crossover(checkpoints, threshold):
+def find_crossover(checkpoints, threshold, baseline_size):
     """
     Return the index of the first checkpoint where
-    DeltaOrigCompressedMB / FullIndexCompressedMB >= threshold, or None.
+    DeltaOrigCompressedMB / baseline_size >= threshold, or None.
     """
+    if baseline_size <= 0:
+        return None
     for i, cp in enumerate(checkpoints):
-        full = cp["FullIndexCompressedMB"]
-        if full > 0 and cp["DeltaOrigCompressedMB"] / full >= threshold:
+        if cp["DeltaOrigCompressedMB"] / baseline_size >= threshold:
             return i
     return None
 
@@ -253,6 +272,14 @@ def fmt_days(days):
 # ---------------------------------------------------------------------------
 
 def main():
+    # Windows consoles often default to cp1252, which cannot encode the arrows and
+    # dashes used below.  Prefer UTF-8, and degrade to replacement chars if unavailable.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
+
     parser = argparse.ArgumentParser(
         description="Optimize baseline refresh timing for winget delta indexes.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -263,8 +290,10 @@ def main():
     parser.add_argument("--distribution", required=True,
                         help="Staleness distribution: preset name or path to JSON file. "
                              f"Presets: {', '.join(PRESETS)}")
-    parser.add_argument("--egress-cost-per-gb", type=float, default=None, dest="cost_per_gb",
-                        help="Optional egress cost per GB. If omitted, output is in bytes only.")
+    parser.add_argument("--baseline-mb", type=float, default=None, dest="baseline_mb",
+                        help="Compressed size (MB) of the baseline index clients actually download. "
+                             "Defaults to the last checkpoint's FullIndexCompressedMB from the CSV. "
+                             "Delta sizes are not scaled by this value.")
     parser.add_argument("--output-chart", default=None, dest="output_chart",
                         help="Optional path to save a chart image (e.g. chart.png). Requires matplotlib.")
     args = parser.parse_args()
@@ -282,6 +311,15 @@ def main():
     interval_days = compute_interval_days(checkpoints)
     n = len(checkpoints)
 
+    # The size a client pays for a fresh baseline.  The CSV's last checkpoint is
+    # the most current measurement, but production may serve a different index;
+    # --baseline-mb lets telemetry-observed reality drive the model instead.
+    csv_baseline_size = checkpoints[-1]["FullIndexCompressedMB"]
+    baseline_size = args.baseline_mb if args.baseline_mb is not None else csv_baseline_size
+    if baseline_size <= 0:
+        print("Error: baseline size is zero; supply --baseline-mb.", file=sys.stderr)
+        sys.exit(1)
+
     # --- Header -------------------------------------------------------------
     print(f"\n{'='*68}")
     print(f"  Baseline Timing Analysis")
@@ -292,30 +330,33 @@ def main():
     print(f"  Avg interval: {interval_days:.1f} days  "
           f"(total span: {(checkpoints[-1]['Date'] - checkpoints[0]['Date']).days} days)")
     print(f"  Distribution: {description}")
-    if args.cost_per_gb is not None:
-        print(f"  Egress cost:  ${args.cost_per_gb:.4f}/GB")
+    if args.baseline_mb is not None:
+        print(f"  Baseline:     {fmt_mb(baseline_size)}  (supplied; "
+              f"CSV measured {fmt_mb(csv_baseline_size)})")
+    else:
+        print(f"  Baseline:     {fmt_mb(baseline_size)}  (last checkpoint in CSV)")
     print()
 
     # --- Delta growth crossovers -------------------------------------------
-    c50  = find_crossover(checkpoints, 0.50)
-    c100 = find_crossover(checkpoints, 1.00)
+    c50  = find_crossover(checkpoints, 0.50, baseline_size)
+    c100 = find_crossover(checkpoints, 1.00, baseline_size)
     print("  Delta (compressed) growth from baseline:")
     if c50 is not None:
-        print(f"    Exceeds 50%  of full index at checkpoint {c50:>3} "
+        print(f"    Exceeds 50%  of baseline at checkpoint {c50:>3} "
               f"({fmt_days(c50 * interval_days)})")
     else:
-        print("    Never exceeds 50% of full index within measured period")
+        print("    Never exceeds 50% of baseline within measured period")
     if c100 is not None:
-        print(f"    Exceeds 100% of full index at checkpoint {c100:>3} "
+        print(f"    Exceeds 100% of baseline at checkpoint {c100:>3} "
               f"({fmt_days(c100 * interval_days)})")
     else:
-        print("    Never exceeds 100% of full index within measured period")
+        print("    Never exceeds 100% of baseline within measured period")
     print()
 
     # --- Simulate all periods -----------------------------------------------
     results = []
     for period in range(1, n + 1):
-        cost_per_dl = simulate_schedule(checkpoints, period, buckets, interval_days)
+        cost_per_dl = simulate_schedule(checkpoints, period, buckets, interval_days, baseline_size)
         results.append({
             "period":      period,
             "period_days": period * interval_days,
@@ -323,8 +364,10 @@ def main():
         })
 
     optimal       = min(results, key=lambda r: r["total_mb"])
-    always_full   = results[0]    # period == 1
     never_refresh = results[-1]   # period == n
+
+    # Status quo: no deltas at all, every download fetches the whole index.
+    status_quo_mb = baseline_size
 
     # --- Determine which periods to print in the table ----------------------
     # Always show: period 1, optimal, and period n.
@@ -336,59 +379,59 @@ def main():
 
     # --- Print table --------------------------------------------------------
     print(f"--- Schedule Comparison (expected compressed egress per download event) ---")
-    print(f"    (lower = cheaper per update on average; relative comparison across schedules)")
-    col_cost = args.cost_per_gb is not None
-    hdr = f"  {'Period':>6}  {'Interval':>9}  {'MB/Download':>13}"
-    if col_cost:
-        hdr += f"  {'$/Download':>12}"
-    print(hdr)
-    sep = f"  {'-'*6}  {'-'*9}  {'-'*13}" + (f"  {'-'*12}" if col_cost else "")
-    print(sep)
+    print(f"    (lower = cheaper per update on average; % is reduction vs. today's "
+          f"full-index-every-time behavior)")
+    print(f"  {'Period':>6}  {'Interval':>9}  {'MB/Download':>13}  {'vs Status Quo':>14}")
+    print(f"  {'-'*6}  {'-'*9}  {'-'*13}  {'-'*14}")
+
+    print(f"  {'-':>6}  {'-':>9}  {status_quo_mb:>11.2f} MB  "
+          f"{'baseline':>14}  (status quo: full index every download)")
 
     for r in sorted(results, key=lambda r: r["period"]):
         if r["period"] not in show:
             continue
         tag = ""
-        if r["period"] == 1:
-            tag = "  (always full)"
-        elif r["period"] == n:
+        if r["period"] == n:
             tag = "  (never refresh)"
         elif r["period"] == optimal["period"]:
             tag = "  ← optimal"
 
-        line = f"  {r['period']:>6}  {fmt_days(r['period_days']):>9}  {r['total_mb']:>11.2f} MB{tag}"
-        if col_cost:
-            cost = r["total_mb"] / 1024 * args.cost_per_gb
-            line += f"  ${cost:>11.4f}"
-        print(line)
+        reduction = 100.0 * (1.0 - r["total_mb"] / status_quo_mb)
+        print(f"  {r['period']:>6}  {fmt_days(r['period_days']):>9}  "
+              f"{r['total_mb']:>11.2f} MB  {reduction:>13.1f}%{tag}")
 
     print()
 
     # --- Recommendation summary ---------------------------------------------
-    savings_vs_full  = 100.0 * (1.0 - optimal["total_mb"] / always_full["total_mb"])
+    reduction_vs_status_quo = 100.0 * (1.0 - optimal["total_mb"] / status_quo_mb)
     savings_vs_never = (100.0 * (1.0 - optimal["total_mb"] / never_refresh["total_mb"])
                         if never_refresh["total_mb"] > 0 else 0.0)
 
     print(f"  Recommendation: refresh baseline every {optimal['period']} checkpoint(s) "
           f"({fmt_days(optimal['period_days'])})")
     print(f"    {optimal['total_mb']:.2f} MB / download event")
-    print(f"    vs always-full:    {savings_vs_full:+.1f}%")
+    print(f"    Predicted outbound traffic reduction: {reduction_vs_status_quo:.1f}%")
     if optimal["period"] < n:
         print(f"    vs never-refresh:  {savings_vs_never:+.1f}%")
-    if col_cost:
-        opt_cost  = optimal["total_mb"]    / 1024 * args.cost_per_gb
-        full_cost = always_full["total_mb"] / 1024 * args.cost_per_gb
-        print(f"    Cost per download: ${opt_cost:.4f}  (vs ${full_cost:.4f} always-full)")
     print()
 
     # --- Chart --------------------------------------------------------------
     if args.output_chart:
         _write_chart(args.output_chart, checkpoints, optimal, interval_days,
-                     description, always_full, never_refresh)
+                     description, baseline_size)
 
 
-def _write_chart(path, checkpoints, optimal, interval_days, description,
-                 always_full, never_refresh):
+def _mb_precision(ticks):
+    """Decimal places needed so adjacent axis ticks render as distinct labels."""
+    spacing = min((abs(b - a) for a, b in zip(ticks, ticks[1:])), default=1.0)
+    if spacing >= 1.0:
+        return 0
+    if spacing >= 0.1:
+        return 1
+    return 2
+
+
+def _write_chart(path, checkpoints, optimal, interval_days, description, baseline_size):
     try:
         import matplotlib
         matplotlib.use("Agg")
@@ -408,6 +451,8 @@ def _write_chart(path, checkpoints, optimal, interval_days, description,
 
     ax.plot(dates, full_vals,  label="Full index (compressed)",        color="#C0392B", linewidth=2)
     ax.plot(dates, delta_vals, label="Delta from baseline (compressed)", color="#27AE60", linewidth=2)
+    ax.axhline(y=baseline_size, color="#7F8C8D", linestyle=":", linewidth=1.5,
+               label=f"Baseline download size ({baseline_size:.1f} MB)")
 
     # Vertical lines at recommended baseline refresh points
     opt_period = optimal["period"]
@@ -427,9 +472,14 @@ def _write_chart(path, checkpoints, optimal, interval_days, description,
 
     ax.set_xlabel("Date")
     ax.set_ylabel("Compressed Size (MB)")
-    ax.set_title(f"Delta Index Baseline Timing Analysis\nDistribution: {description}")
+    ax.set_title("Delta Index Baseline Timing Analysis\n"
+                 + "\n".join(textwrap.wrap(f"Distribution: {description}", 110)),
+                 fontsize=11)
     ax.legend(loc="upper left")
-    ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f"{x:.0f} MB"))
+    # Whole-MB labels collapse into duplicates when the plotted range is only a few MB,
+    # so pick the precision from the actual tick spacing.
+    ax.yaxis.set_major_formatter(ticker.FuncFormatter(
+        lambda v, _: f"{v:.{_mb_precision(ax.get_yticks())}f} MB"))
     fig.autofmt_xdate()
     plt.tight_layout()
     plt.savefig(path, dpi=150)
