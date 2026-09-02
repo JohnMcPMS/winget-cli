@@ -3,7 +3,10 @@
 #include "pch.h"
 #include "WorkflowCommon.h"
 #include "TestHooks.h"
+#include "AppInstallerRuntime.h"
 #include <AppInstallerFileLogger.h>
+#include <AppInstallerProgress.h>
+#include <winget/MSStore.h>
 #include <AppInstallerStrings.h>
 #include <AppInstallerSynchronization.h>
 #include <Commands/InstallCommand.h>
@@ -15,7 +18,9 @@
 #include <Workflows/ArchiveFlow.h>
 #include <Workflows/DownloadFlow.h>
 #include <Workflows/MsiInstallFlow.h>
+#include <Workflows/PortableFlow.h>
 #include <Workflows/ShellExecuteInstallerHandler.h>
+#include <PortableInstaller.h>
 
 using namespace winrt::Windows::Foundation;
 using namespace TestCommon;
@@ -231,7 +236,7 @@ TEST_CASE("InstallFlow_UnsupportedArguments_Error", "[InstallFlow][workflow]")
     install.Execute(context);
     INFO(installOutput.str());
 
-    // Verify unsupported arguments error message is shown 
+    // Verify unsupported arguments error message is shown
     REQUIRE(context.GetTerminationHR() == APPINSTALLER_CLI_ERROR_UNSUPPORTED_ARGUMENT);
     REQUIRE(!std::filesystem::exists(installResultPath.GetPath()));
     REQUIRE(installOutput.str().find(Resource::LocString(Resource::String::UnsupportedArgument).get()) != std::string::npos);
@@ -590,6 +595,41 @@ TEST_CASE("MSStoreInstallFlowWithTestManifest", "[InstallFlow][workflow]")
     REQUIRE(installResultStr.find("9WZDNCRFJ364") != std::string::npos);
 }
 
+TEST_CASE("MSStoreInstallFlow_MachineScopeProvision", "[InstallFlow][MSStore]")
+{
+    if (!AppInstaller::Runtime::IsRunningAsAdmin() || AppInstaller::Runtime::IsRunningAsSystem())
+    {
+        WARN("Test requires running as admin but not SYSTEM. Skipped.");
+        return;
+    }
+
+    TestHook::SetForceProvisionAfterInstall_Override forceProvisionOverride(true);
+
+    AppInstaller::ProgressCallback progress;
+    AppInstaller::MSStore::MSStoreOperation installOperation(
+        AppInstaller::MSStore::MSStoreOperationType::Install,
+        L"9NVTPZWRC6KQ",
+        AppInstaller::Manifest::ScopeEnum::User,
+        true,
+        false);
+
+    HRESULT hr = installOperation.StartAndWaitForOperation(progress);
+    REQUIRE(SUCCEEDED(hr));
+
+    // Verify the package is now provisioned.
+    winrt::Windows::Management::Deployment::PackageManager packageManager;
+    bool isProvisioned = false;
+    for (auto const& pkg : packageManager.FindProvisionedPackages())
+    {
+        if (pkg.Id().FamilyName() == L"Microsoft.DesiredStateConfiguration_8wekyb3d8bbwe")
+        {
+            isProvisioned = true;
+            break;
+        }
+    }
+    REQUIRE(isProvisioned);
+}
+
 TEST_CASE("MsixInstallFlow_DownloadFlow", "[InstallFlow][workflow]")
 {
     TestCommon::TempFile installResultPath("TestMsixInstalled.txt");
@@ -686,6 +726,52 @@ TEST_CASE("InstallFlow_Portable", "[InstallFlow][workflow]")
     INFO(installOutput.str());
 
     REQUIRE(std::filesystem::exists(portableInstallResultPath.GetPath()));
+}
+
+TEST_CASE("PortableInstallFlow_RejectsEscapingPathsAtPointOfUse", "[InstallFlow][workflow]")
+{
+    TestCommon::TempDirectory targetDirectory("TestPortableInstallRoot", false);
+    TestCommon::TempDirectory extractedDirectory("TestPortableExtractedRoot", true);
+    TestCommon::TempFile installerFile("TestPortableInstaller.exe");
+
+    std::ostringstream installOutput;
+    TestContext context{ installOutput, std::cin };
+    auto previousThreadGlobals = context.SetForCurrentThread();
+
+    ManifestInstaller installer;
+    std::filesystem::path installerPath = installerFile.GetPath();
+
+    SECTION("Command alias")
+    {
+        installer.BaseInstallerType = InstallerTypeEnum::Portable;
+        installer.Commands = { "C:\\escape" };
+    }
+
+    SECTION("Nested installer relative path")
+    {
+        installer.BaseInstallerType = InstallerTypeEnum::Zip;
+        installer.NestedInstallerFiles = { { "C:\\escape", {} } };
+        installerPath = extractedDirectory.GetPath();
+    }
+
+    SECTION("Nested installer command alias")
+    {
+        installer.BaseInstallerType = InstallerTypeEnum::Zip;
+        installer.NestedInstallerFiles = { { "installer.exe", "C:\\escape" } };
+        installerPath = extractedDirectory.GetPath();
+    }
+
+    AppInstaller::CLI::Portable::PortableInstaller portableInstaller{
+        ScopeEnum::User, Architecture::X64, "TestProductCode" };
+    portableInstaller.TargetInstallLocation = targetDirectory.GetPath();
+
+    context.Add<Execution::Data::Installer>(installer);
+    context.Add<Execution::Data::InstallerPath>(installerPath);
+    context.Add<Execution::Data::PortableInstaller>(std::move(portableInstaller));
+
+    PortableInstallImpl(context);
+
+    REQUIRE_TERMINATED_WITH(context, APPINSTALLER_CLI_ERROR_INVALID_MANIFEST);
 }
 
 TEST_CASE("InstallFlow_Portable_SymlinkCreationFail", "[InstallFlow][workflow]")
@@ -933,6 +1019,100 @@ TEST_CASE("ShellExecuteHandlerInstallerArgs", "[InstallFlow][workflow]")
         context << GetInstallerArgs;
         std::string installerArgs = context.Get<Data::InstallerArgs>();
         REQUIRE(installerArgs == "/OverrideEverything"); // Use value specified in override switch
+    }
+}
+
+TEST_CASE("ShellExecuteHandlerInstallerArgs_LogNamingStrategy", "[InstallFlow][workflow]")
+{
+    SECTION("Manifest")
+    {
+        TestUserSettings testSettings;
+        testSettings.Set<Setting::LoggingFileNameStrategy>(LogNameStrategy::Manifest);
+
+        std::ostringstream installOutput;
+        TestContext context{ installOutput, std::cin };
+        auto previousThreadGlobals = context.SetForCurrentThread();
+        auto manifest = YamlParser::CreateFromPath(TestDataFile("InstallerArgTest_Inno_WithSwitches.yaml"));
+        context.Add<Data::Manifest>(manifest);
+        context.Add<Data::Installer>(manifest.Installers.at(0));
+        context << GetInstallerArgs;
+
+        std::string installerArgs = context.Get<Data::InstallerArgs>();
+        REQUIRE(installerArgs.find(manifest.Id) != std::string::npos);
+        REQUIRE(installerArgs.find(manifest.Version) != std::string::npos);
+
+        REQUIRE(context.Contains(Data::LogPath));
+        auto logPath = context.Get<Data::LogPath>();
+        REQUIRE(logPath.filename().u8string().find(manifest.Id) != std::string::npos);
+    }
+
+    SECTION("Timestamp")
+    {
+        TestUserSettings testSettings;
+        testSettings.Set<Setting::LoggingFileNameStrategy>(LogNameStrategy::Timestamp);
+
+        std::ostringstream installOutput;
+        TestContext context{ installOutput, std::cin };
+        auto previousThreadGlobals = context.SetForCurrentThread();
+        auto manifest = YamlParser::CreateFromPath(TestDataFile("InstallerArgTest_Inno_WithSwitches.yaml"));
+        context.Add<Data::Manifest>(manifest);
+        context.Add<Data::Installer>(manifest.Installers.at(0));
+        context << GetInstallerArgs;
+
+        std::string installerArgs = context.Get<Data::InstallerArgs>();
+        REQUIRE(installerArgs.find(manifest.Id) == std::string::npos);
+        REQUIRE(installerArgs.find(manifest.Version) == std::string::npos);
+
+        REQUIRE(context.Contains(Data::LogPath));
+        auto logPath = context.Get<Data::LogPath>();
+        REQUIRE(logPath.extension().u8string() == std::string{ FileLogger::DefaultExt() });
+        REQUIRE(logPath.stem().u8string().find(manifest.Id) == std::string::npos);
+    }
+
+    SECTION("Guid")
+    {
+        TestUserSettings testSettings;
+        testSettings.Set<Setting::LoggingFileNameStrategy>(LogNameStrategy::Guid);
+
+        std::ostringstream installOutput;
+        TestContext context{ installOutput, std::cin };
+        auto previousThreadGlobals = context.SetForCurrentThread();
+        auto manifest = YamlParser::CreateFromPath(TestDataFile("InstallerArgTest_Inno_WithSwitches.yaml"));
+        context.Add<Data::Manifest>(manifest);
+        context.Add<Data::Installer>(manifest.Installers.at(0));
+        context << GetInstallerArgs;
+
+        std::string installerArgs = context.Get<Data::InstallerArgs>();
+        REQUIRE(installerArgs.find(manifest.Id) == std::string::npos);
+
+        REQUIRE(context.Contains(Data::LogPath));
+        auto logPath = context.Get<Data::LogPath>();
+        REQUIRE(logPath.extension().u8string() == std::string{ FileLogger::DefaultExt() });
+        // A GUID string is 36 characters: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+        REQUIRE(logPath.stem().u8string().size() == 36);
+    }
+
+    SECTION("ShortGuid")
+    {
+        TestUserSettings testSettings;
+        testSettings.Set<Setting::LoggingFileNameStrategy>(LogNameStrategy::ShortGuid);
+
+        std::ostringstream installOutput;
+        TestContext context{ installOutput, std::cin };
+        auto previousThreadGlobals = context.SetForCurrentThread();
+        auto manifest = YamlParser::CreateFromPath(TestDataFile("InstallerArgTest_Inno_WithSwitches.yaml"));
+        context.Add<Data::Manifest>(manifest);
+        context.Add<Data::Installer>(manifest.Installers.at(0));
+        context << GetInstallerArgs;
+
+        std::string installerArgs = context.Get<Data::InstallerArgs>();
+        REQUIRE(installerArgs.find(manifest.Id) == std::string::npos);
+
+        REQUIRE(context.Contains(Data::LogPath));
+        auto logPath = context.Get<Data::LogPath>();
+        REQUIRE(logPath.extension().u8string() == std::string{ FileLogger::DefaultExt() });
+        // A short GUID is the first 8 characters of a full GUID
+        REQUIRE(logPath.stem().u8string().size() == 8);
     }
 }
 
@@ -1209,6 +1389,29 @@ TEST_CASE("InstallFlow_InstallMultiple_SearchFailed", "[InstallFlow][workflow][M
     INFO(installOutput.str());
 
     REQUIRE_TERMINATED_WITH(context, APPINSTALLER_CLI_ERROR_NOT_ALL_QUERIES_FOUND_SINGLE);
+}
+
+TEST_CASE("InstallFlow_InstallMultiple_IgnoreUnavailable", "[InstallFlow][workflow][MultiQuery]")
+{
+    TestCommon::TempFile exeInstallResultPath("TestExeInstalled.txt");
+
+    std::ostringstream installOutput;
+    TestContext context{ installOutput, std::cin };
+    auto previousThreadGlobals = context.SetForCurrentThread();
+    OverrideForShellExecute(context);
+    OverrideForOpenSource(context, CreateTestSource({ TSR::TestInstaller_Exe }), true);
+    context.Args.AddArg(Execution::Args::Type::MultiQuery, TSR::TestInstaller_Exe.Query);
+    context.Args.AddArg(Execution::Args::Type::MultiQuery, TSR::TestInstaller_Msix.Query);
+    context.Args.AddArg(Execution::Args::Type::IgnoreUnavailable);
+
+    InstallCommand installCommand({});
+    installCommand.Execute(context);
+    INFO(installOutput.str());
+
+    // Verify the available package was installed despite the missing one,
+    // and the unavailable package was reported as not found.
+    REQUIRE(std::filesystem::exists(exeInstallResultPath.GetPath()));
+    REQUIRE(installOutput.str().find(Resource::LocString(Resource::String::MultiQueryPackageNotFound(LocIndString{ TSR::TestInstaller_Msix.Query })).get()) != std::string::npos);
 }
 
 TEST_CASE("InstallFlow_InstallAcquiresLock", "[InstallFlow][workflow]")

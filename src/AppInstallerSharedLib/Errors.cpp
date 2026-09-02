@@ -212,7 +212,7 @@ namespace AppInstaller
             WINGET_HRESULT_INFO(APPINSTALLER_CLI_ERROR_REPAIR_NOT_APPLICABLE, "Repair operation is not applicable."),
             WINGET_HRESULT_INFO(APPINSTALLER_CLI_ERROR_EXEC_REPAIR_FAILED, "Repair operation failed."),
             WINGET_HRESULT_INFO(APPINSTALLER_CLI_ERROR_REPAIR_NOT_SUPPORTED, "The installer technology in use doesn't support repair."),
-            WINGET_HRESULT_INFO(APPINSTALLER_CLI_ERROR_ADMIN_CONTEXT_REPAIR_PROHIBITED, "Repair operations involving administrator privileges are not permitted on packages installed within the user scope."),
+            WINGET_HRESULT_INFO(APPINSTALLER_CLI_ERROR_ADMIN_CONTEXT_ACTION_PROHIBITED, "The requested operation is not permitted from an administrator context on packages installed within the user scope."),
             WINGET_HRESULT_INFO(APPINSTALLER_CLI_ERROR_SQLITE_CONNECTION_TERMINATED, "The SQLite connection was terminated to prevent corruption."),
             WINGET_HRESULT_INFO(APPINSTALLER_CLI_ERROR_DISPLAYCATALOG_API_FAILED, "Failed to get Microsoft Store package catalog."),
             WINGET_HRESULT_INFO(APPINSTALLER_CLI_ERROR_NO_APPLICABLE_DISPLAYCATALOG_PACKAGE, "No applicable Microsoft Store package found from Microsoft Store package catalog."),
@@ -229,6 +229,7 @@ namespace AppInstaller
             WINGET_HRESULT_INFO(APPINSTALLER_CLI_ERROR_FONT_UNINSTALL_FAILED, "Font uninstall failed. The font may not be in a good state. Try uninstalling after a restart."),
             WINGET_HRESULT_INFO(APPINSTALLER_CLI_ERROR_FONT_VALIDATION_FAILED, "Font validation failed."),
             WINGET_HRESULT_INFO(APPINSTALLER_CLI_ERROR_FONT_ROLLBACK_FAILED, "Font rollback failed. The font may not be in a good state. Try uninstalling after a restart."),
+            WINGET_HRESULT_INFO(APPINSTALLER_CLI_ERROR_UPDATE_INSTALL_TECHNOLOGY_MISMATCH, "An upgrade is available but uses a different install technology than the current installation"),
 
             // Install errors.
             WINGET_HRESULT_INFO(APPINSTALLER_CLI_ERROR_INSTALL_PACKAGE_IN_USE, "Application is currently running. Exit the application then try again."),
@@ -295,6 +296,7 @@ namespace AppInstaller
             WINGET_HRESULT_INFO(WINGET_CONFIG_ERROR_UNIT_SETTING_CONFIG_ROOT, "A unit contains a setting that requires the config root."),
             WINGET_HRESULT_INFO(WINGET_CONFIG_ERROR_UNIT_IMPORT_MODULE_ADMIN, "Loading the module for the configuration unit failed because it requires administrator privileges to run."),
             WINGET_HRESULT_INFO(WINGET_CONFIG_ERROR_NOT_SUPPORTED_BY_PROCESSOR, "Operation is not supported by the configuration processor."),
+            WINGET_HRESULT_INFO(WINGET_CONFIG_ERROR_PROCESSOR_HASH_MISMATCH, "The DSC processor hash provided does not match hash of the target file."),
 
             // Errors without the error bit set
             WINGET_HRESULT_INFO(WINGET_INSTALLED_STATUS_INSTALL_LOCATION_NOT_APPLICABLE, "The install location is not applicable."),

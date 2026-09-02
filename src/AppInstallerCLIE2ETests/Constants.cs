@@ -47,6 +47,9 @@ namespace AppInstallerCLIE2ETests
         public const string TestSourceUrl = @"https://localhost:5001/TestKit";
         public const string TestSourceType = "Microsoft.PreIndexed.Package";
         public const string TestSourceIdentifier = @"WingetE2E.Tests_8wekyb3d8bbwe";
+        public const string RestTestSourceName = @"TestRestSource";
+        public const string RestTestSourceUrl = @"https://localhost:5001/TestKit/TestData/TestRestSource";
+        public const string RestTestSourceType = "Microsoft.Rest";
 
         public const string AICLIPackageFamilyName = "WinGetDevCLI_8wekyb3d8bbwe";
         public const string AICLIPackageName = "WinGetDevCLI";
@@ -276,7 +279,7 @@ namespace AppInstallerCLIE2ETests
 
             public const int ERROR_NO_REPAIR_INFO_FOUND = unchecked((int)0x8A150079);
             public const int ERROR_REPAIR_NOT_SUPPORTED = unchecked((int)0x8A15007C);
-            public const int ERROR_ADMIN_CONTEXT_REPAIR_PROHIBITED = unchecked((int)0x8A15007D);
+            public const int ERROR_ADMIN_CONTEXT_ACTION_PROHIBITED = unchecked((int)0x8A15007D);
 
             public const int ERROR_INSTALLER_ZERO_BYTE_FILE = unchecked((int)0x8A150086);
             public const int ERROR_FONT_INSTALL_FAILED = unchecked((int)0x8A150087);

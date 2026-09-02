@@ -27,6 +27,12 @@ namespace Microsoft.Management.Configuration.UnitTests.Helpers
         public const string DynamicRuntimeHandlerIdentifier = "{73fea39f-6f4a-41c9-ba94-6fd14d633e40}";
 
         /// <summary>
+        /// The DSCv3-specific dynamic runtime factory handler identifier.
+        /// Unlike DynamicRuntimeHandlerIdentifier, this pre-selects the DSCv3 processor engine.
+        /// </summary>
+        public const string DSCv3DynamicRuntimeHandlerIdentifier = "{5f83e564-ca26-41ca-89db-36f5f0517ffd}";
+
+        /// <summary>
         /// Test guid for enabling test mode for the dynamic runtime factory. Forces factory to exclude 'runas' verb and sets current IL to medium.
         /// </summary>
         public const string EnableDynamicFactoryTestMode = "1e62d683-2999-44e7-81f7-6f8f35e8d731";
@@ -40,5 +46,14 @@ namespace Microsoft.Management.Configuration.UnitTests.Helpers
         /// Test guid for forcing units to have a high integrity level during the final routing of unit processor creation.
         /// </summary>
         public const string ForceHighIntegrityLevelUnitsTestGuid = "f698d20f-3584-4f28-bc75-28037e08e651";
+
+        /// <summary>
+        /// Dictionary key for the test-hook-only "found DSC executable path" property on
+        /// <c>DSCv3ConfigurationSetProcessorFactory</c>. Setting this key injects a path as the
+        /// auto-discovered DSC executable, computing its hash and alias flag automatically so that
+        /// the C++ Lookup → C# TryGetValue → bool.ToString() serialization path is exercised.
+        /// Only available when AICLI_DISABLE_TEST_HOOKS is not defined.
+        /// </summary>
+        public const string TestFoundDscExecutablePathPropertyName = "TestFoundDscExecutablePath";
     }
 }

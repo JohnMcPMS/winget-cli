@@ -22,7 +22,7 @@ namespace AppInstaller::CLI
         WINGET_DSC_DEFINE_COMPOSABLE_PROPERTY_FLAGS(SourceProperty, std::string, Source, "source", DscComposablePropertyFlag::CopyToOutput, Resource::String::DscResourcePropertyDescriptionPackageSource);
         WINGET_DSC_DEFINE_COMPOSABLE_PROPERTY(VersionProperty, std::string, Version, "version", Resource::String::DscResourcePropertyDescriptionPackageVersion);
         WINGET_DSC_DEFINE_COMPOSABLE_PROPERTY_ENUM(MatchOptionProperty, std::string, MatchOption, "matchOption", Resource::String::DscResourcePropertyDescriptionPackageMatchOption, ({ "equals", "equalsCaseInsensitive", "startsWithCaseInsensitive", "containsCaseInsensitive" }), "equalsCaseInsensitive");
-        WINGET_DSC_DEFINE_COMPOSABLE_PROPERTY_DEFAULT(UseLatestProperty, bool, UseLatest, "useLatest", Resource::String::DscResourcePropertyDescriptionPackageUseLatest, "false");
+        WINGET_DSC_DEFINE_COMPOSABLE_PROPERTY_DEFAULT(UseLatestProperty, bool, UseLatest, "useLatest", Resource::String::DscResourcePropertyDescriptionPackageUseLatest, false);
         WINGET_DSC_DEFINE_COMPOSABLE_PROPERTY_ENUM(InstallModeProperty, std::string, InstallMode, "installMode", Resource::String::DscResourcePropertyDescriptionPackageInstallMode, ({ "default", "silent", "interactive" }), "silent");
         WINGET_DSC_DEFINE_COMPOSABLE_PROPERTY(AcceptAgreementsProperty, bool, AcceptAgreements, "acceptAgreements", Resource::String::DscResourcePropertyDescriptionAcceptAgreements);
 
@@ -88,6 +88,20 @@ namespace AppInstaller::CLI
                 {
                     SubContext->Args.AddArg(Execution::Args::Type::AcceptSourceAgreements);
                     SubContext->Args.AddArg(Execution::Args::Type::AcceptPackageAgreements);
+                }
+
+                std::string installMode = Utility::ToLower(Input.InstallMode().value_or("default"));
+                if (installMode == "silent")
+                {
+                    SubContext->Args.AddArg(Execution::Args::Type::Silent);
+                }
+                else if (installMode == "interactive")
+                {
+                    SubContext->Args.AddArg(Execution::Args::Type::Interactive);
+                }
+                else if (installMode != "default")
+                {
+                    THROW_HR(E_INVALIDARG);
                 }
             }
 

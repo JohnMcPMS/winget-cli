@@ -1,37 +1,12 @@
-## New in v1.29
+## New in v1.30
 
-# New Feature: Source Priority
+### `--ignore-unavailable` flag for `install`
 
-> [!NOTE]
-> Experimental under `sourcePriority`; defaulted to disabled.
-
-With this feature, one can assign a numerical priority to sources when added or later through the `source edit`
-command. Sources with higher priority are sorted first in the list of sources, which results in them getting put first
-in the results if other things are equal.
-
-> [!TIP]
-> Search result ordering in winget is currently based on these values in this order:
-> 1. Match quality (how well a valid field matches the search request)
-> 2. Match field (which field was matched against the search request)
-> 3. Source order (was always relevant, but with priority you can more easily affect this)
-
-Beyond the ability to slightly affect the result ordering, commands that primarily target available packages
-(largely `install`) will now prefer to use a single result from a source with higher priority rather than prompting for
-disambiguation from the user. Said another way, if multiple sources return results but only one of those sources has
-the highest priority value (and it returned only one result) then that package will be used rather than giving a
-"multiple packages were found" error. This has been applied to both winget CLI and PowerShell module commands.
-
-### REST result match criteria update
-
-Along with the source priority change, the results from REST sources (like `msstore`) now attempt to correctly set the
-match criteria that factor into the result ordering. This will prevent them from being sorted to the top automatically.
-
-## Minor Features
-
-### --no-progress flag
-
-Added a new `--no-progress` command-line flag that disables all progress reporting (progress bars and spinners). This flag is universally available on all commands and takes precedence over the `visual.progressBar` setting. Useful for automation scenarios or when running WinGet in environments where progress output is undesirable.
+Added a new `--ignore-unavailable` flag to the `install` command. When installing multiple packages, this flag allows the operation to continue with the remaining packages instead of failing entirely when one or more packages are not found in the configured sources. This brings the same behavior previously available with `import --ignore-unavailable` to direct multi-package installs.
 
 ## Bug Fixes
 
-<!-- Nothing yet! -->
+* Fixed an issue where `winget search --id <msstoreId>` could fail to return a Microsoft Store package unless `--exact` was also provided.
+* Updated NUnit to v4
+* Fixed a crash (`0x8000ffff`) when using `--disable-interactivity` with the Resume experimental feature enabled during install operations.
+* Fixed relative path handling for rooted paths.

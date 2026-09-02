@@ -214,15 +214,19 @@
   </data>
   <data name="FeaturesDisabled" xml:space="preserve">
     <value>Disabled</value>
+    <comment>Status value in the 'winget features' table. Indicates an experimental feature is turned off. Paired with 'Enabled'.</comment>
   </data>
   <data name="FeaturesEnabled" xml:space="preserve">
     <value>Enabled</value>
+    <comment>Status value in the 'winget features' table. Indicates an experimental feature is active/turned on. Paired with 'Disabled'.</comment>
   </data>
   <data name="FeaturesFeature" xml:space="preserve">
     <value>Feature</value>
+    <comment>Column header in the 'winget features' output table. 'Feature' is noun - an experimental software capability. Do NOT translate as a verb.</comment>
   </data>
   <data name="FeaturesLink" xml:space="preserve">
     <value>Link</value>
+    <comment>Column header in the 'winget features' output table. 'Link' is a noun — a URL pointing to documentation for the feature. Do NOT translate as a verb.</comment>
   </data>
   <data name="FeaturesMessage" xml:space="preserve">
     <value>The following experimental features are in progress.
@@ -231,9 +235,11 @@ They can be configured through the settings file 'winget settings'.</value>
   </data>
   <data name="FeaturesProperty" xml:space="preserve">
     <value>Property</value>
+    <comment>Column header in the 'winget features' output table. 'Property' refers to a named attribute/setting of the feature.</comment>
   </data>
   <data name="FeaturesStatus" xml:space="preserve">
     <value>Status</value>
+    <comment>Column header in the 'winget features' output table. Shows whether an experimental feature is Enabled or Disabled.</comment>
   </data>
   <data name="FileArgumentDescription" xml:space="preserve">
     <value>File to be hashed</value>
@@ -468,12 +474,14 @@ They can be configured through the settings file 'winget settings'.</value>
   </data>
   <data name="SearchMatch" xml:space="preserve">
     <value>Match</value>
+    <comment>Column header in the 'winget search' output table. 'Match' is a noun describing how the result matched the search query (e.g., Exact, Substring). Do NOT translate as a verb.</comment>
   </data>
   <data name="SearchName" xml:space="preserve">
     <value>Name</value>
   </data>
   <data name="SearchSource" xml:space="preserve">
     <value>Source</value>
+    <comment>Column header in the 'winget search' output table. 'Source' refers to the WinGet package repository the result came from (e.g., 'winget', 'msstore'). Not 'source code'.</comment>
   </data>
   <data name="SearchTruncated" xml:space="preserve">
     <value>additional entries truncated due to result limit</value>
@@ -497,6 +505,7 @@ They can be configured through the settings file 'winget settings'.</value>
   </data>
   <data name="ShowChannel" xml:space="preserve">
     <value>Channel</value>
+    <comment>Label in the 'winget show' output. 'Channel' refers to a software release channel (e.g., stable, preview, beta). Not a TV or media channel.</comment>
   </data>
   <data name="ShowCommandLongDescription" xml:space="preserve">
     <value>Shows information on a specific package. By default, the query must case-insensitively match the id, name, or moniker of the package. Other fields can be used by passing their appropriate option.</value>
@@ -514,6 +523,18 @@ They can be configured through the settings file 'winget settings'.</value>
   <data name="SingleCharAfterDashError" xml:space="preserve">
     <value>Only the single character alias can occur after a single -: '{0}'</value>
     <comment>{Locked="{0}"} Error message displayed when the user provides more than a single character command line alias argument after an alias argument specifier '-'. {0} is a placeholder replaced by the user's argument input.</comment>
+  </data>
+  <data name="SortArgumentDescription" xml:space="preserve">
+    <value>Sort results by a property (can be repeated)</value>
+    <comment>Description for the --sort argument used to sort output by field name.</comment>
+  </data>
+  <data name="SortAscendingArgumentDescription" xml:space="preserve">
+    <value>Sort results in ascending order</value>
+    <comment>Description for the --ascending (--asc) flag that sets ascending sort direction for output.</comment>
+  </data>
+  <data name="SortDescendingArgumentDescription" xml:space="preserve">
+    <value>Sort results in descending order</value>
+    <comment>Description for the --descending (--desc) flag that sets descending sort direction for output.</comment>
   </data>
   <data name="SourceAddAlreadyExistsDifferentArg" xml:space="preserve">
     <value>A source with the given name already exists and refers to a different location:</value>
@@ -772,6 +793,7 @@ They can be configured through the settings file 'winget settings'.</value>
   </data>
   <data name="ReportIdentityFound" xml:space="preserve">
     <value>Found</value>
+    <comment>Header label printed before showing details about a located package, e.g. "Found [package name]". This is the past tense of "to find" — the package was successfully found/located.</comment>
   </data>
   <data name="VerifyFileFailedIsDirectory" xml:space="preserve">
     <value>Path is a directory: {0}</value>
@@ -872,7 +894,7 @@ They can be configured through the settings file 'winget settings'.</value>
     <value>Package is already installed: {0}</value>
     <comment>{Locked="{0}"} Message displayed to inform the user that an application package is already installed. {0} is a placeholder replaced by the package identifier or search query.</comment>
   </data>
-  <data name="ImportIgnoreUnavailableArgumentDescription" xml:space="preserve">
+  <data name="IgnoreUnavailableArgumentDescription" xml:space="preserve">
     <value>Ignore unavailable packages</value>
   </data>
   <data name="ExportIncludeVersionsArgumentDescription" xml:space="preserve">
@@ -999,6 +1021,7 @@ Configuration is disabled due to Group Policy.</value>
   </data>
   <data name="ExternalDependencies" xml:space="preserve">
     <value>External</value>
+    <comment>Category label for external package dependencies — packages that this package depends on but are distributed separately. Contrasts with built-in/internal dependencies. This is an adjective modifying the implied noun "dependencies".</comment>
   </data>
   <data name="ImportCommandReportDependencies" xml:space="preserve">
     <value>The packages found in this import have the following dependencies:</value>
@@ -1344,6 +1367,10 @@ Please specify one of them using the --source option to proceed.</value>
   </data>
   <data name="UpgradeDifferentInstallTechnologyInNewerVersions" xml:space="preserve">
     <value>A newer version was found, but the install technology is different from the current version installed. Please uninstall the package and install the newer version.</value>
+  </data>
+  <data name="UpgradeInstallTechnologyMismatchCount" xml:space="preserve">
+    <value>{0} package(s) have upgrades blocked because newer versions use a different install technology than the current installation. Uninstall each package, then install the newer version.</value>
+    <comment>{Locked="{0}"} {0} is the number of packages skipped for this reason during winget upgrade --all.</comment>
   </data>
   <data name="UpgradeDifferentInstallTechnology" xml:space="preserve">
     <value>The install technology of the newer version specified is different from the current version installed. Please uninstall the package and install the newer version.</value>
@@ -2024,6 +2051,12 @@ Please specify one of them using the --source option to proceed.</value>
   <data name="SkipDependenciesArgumentDescription" xml:space="preserve">
     <value>Skips processing package dependencies and Windows features</value>
   </data>
+  <data name="DependenciesOnlyArgumentDescription" xml:space="preserve">
+    <value>Installs only the dependencies of the package</value>
+  </data>
+  <data name="DependenciesOnlyMessage" xml:space="preserve">
+    <value>Installing dependencies only. The package itself will not be installed.</value>
+  </data>
   <data name="DependenciesSkippedMessage" xml:space="preserve">
     <value>Dependencies skipped.</value>
   </data>
@@ -2122,6 +2155,18 @@ Please specify one of them using the --source option to proceed.</value>
   </data>
   <data name="ErrorInputArgumentDescription" xml:space="preserve">
     <value>A value to search within the error information</value>
+  </data>
+  <data name="ErrorOutputFileArgumentDescription" xml:space="preserve">
+    <value>Generate error code Markdown file</value>
+    <comment>Description of an argument that causes a Markdown file to be generated for all winget error codes.</comment>
+  </data>
+  <data name="ErrorOutputFileConflictsWithInput" xml:space="preserve">
+    <value>The --output argument cannot be combined with an input value.</value>
+    <comment>{Locked="--output"}</comment>
+  </data>
+  <data name="ErrorRequiresInputOrOutputFile" xml:space="preserve">
+    <value>An input value or --output must be provided.</value>
+    <comment>{Locked="--output"}</comment>
   </data>
   <data name="ErrorNumberIsTooLarge" xml:space="preserve">
     <value>The given number is too large to be an HRESULT.</value>
@@ -2258,6 +2303,9 @@ Please specify one of them using the --source option to proceed.</value>
   </data>
   <data name="APPINSTALLER_CLI_ERROR_UPDATE_NOT_APPLICABLE" xml:space="preserve">
     <value>No applicable update found</value>
+  </data>
+  <data name="APPINSTALLER_CLI_ERROR_UPDATE_INSTALL_TECHNOLOGY_MISMATCH" xml:space="preserve">
+    <value>An upgrade is available but uses a different install technology than the current installation</value>
   </data>
   <data name="APPINSTALLER_CLI_ERROR_UPDATE_ALL_HAS_FAILURE" xml:space="preserve">
     <value>winget upgrade --all completed with failures</value>
@@ -2842,8 +2890,8 @@ Please specify one of them using the --source option to proceed.</value>
   <data name="NoAdminRepairForUserScopePackage" xml:space="preserve">
     <value>The package installed for user scope cannot be repaired when running with administrator privileges.</value>
   </data>
-  <data name="APPINSTALLER_CLI_ERROR_ADMIN_CONTEXT_REPAIR_PROHIBITED" xml:space="preserve">
-    <value>Repair operations involving administrator privileges are not permitted on packages installed within the user scope.</value>
+  <data name="APPINSTALLER_CLI_ERROR_ADMIN_CONTEXT_ACTION_PROHIBITED" xml:space="preserve">
+    <value>The requested operation is not permitted from an administrator context on packages installed within the user scope.</value>
   </data>
   <data name="RepairFailedWithCode" xml:space="preserve">
     <value>Repair failed with exit code: {0}</value>
@@ -2865,6 +2913,10 @@ Please specify one of them using the --source option to proceed.</value>
   <data name="PolicyEnableProxyCommandLineOptions" xml:space="preserve">
     <value>Enable Windows Package Manager proxy command line options</value>
     <comment>Describes a Group Policy that can enable the use of the --proxy option to set a proxy</comment>
+  </data>
+  <data name="PolicyEnableConfigurationProcessorPath" xml:space="preserve">
+    <value>Enable Windows Package Manager Configuration processor path</value>
+    <comment>Describes a Group Policy that can enable the use of the --processor-path option in configuration commands</comment>
   </data>
   <data name="ProxyArgumentDescription" xml:space="preserve">
     <value>Set a proxy to use for this execution</value>
@@ -2917,7 +2969,7 @@ Please specify one of them using the --source option to proceed.</value>
   </data>
   <data name="SourceListExplicit" xml:space="preserve">
     <value>Explicit</value>
-    <comment>Used as a header in a table that shows the properties of a "source". In this context, "explicit" means that the source needs to be explicitly specified or directly designated to be used, as opposed to being implicitly included.</comment>
+    <comment>Column header in 'winget source list' output. 'Explicit' here is a technical term meaning the source must be directly named/specified to be used—it is NOT automatically included in package discovery. Translate as the equivalent of "requires explicit specification" or "must be directly specified". Do NOT translate as "explicit content", "adult content", "mature content", or any phrase suggesting inappropriate material.</comment>
   </data>
   <data name="SourceTrustLevelArgumentDescription" xml:space="preserve">
     <value>Trust level of the source (none or trusted)</value>
@@ -3193,19 +3245,19 @@ Please specify one of them using the --source option to proceed.</value>
   </data>
   <data name="FontFamily" xml:space="preserve">
     <value>Family</value>
-    <comment>"Family" represents the font family such as 'Arial' or 'Times New Roman'.</comment>
+    <comment>Column header for the font family name, e.g. 'Arial' or 'Times New Roman'. Do NOT translate as a family of people or a surname.</comment>
   </data>
   <data name="FontFaces" xml:space="preserve">
     <value>Faces</value>
-    <comment>"Faces" represents the typeface of the font family such as 'Bold' or 'Italic'</comment>
+    <comment>Column header listing the typefaces within a font family, e.g. 'Bold', 'Italic', 'Bold Italic'. Do NOT translate as human/anatomical faces.</comment>
   </data>
   <data name="FontFamilyNameArgumentDescription" xml:space="preserve">
     <value>Filter results by family name</value>
-    <comment>"Family" represents the font family such as 'Arial' or 'Times New Roman'.</comment>
+    <comment>'Family name' refers to the font family name, e.g. 'Arial' or 'Times New Roman'. Do NOT translate 'family' as a family of people or 'family name' as a surname.</comment>
   </data>
   <data name="FontFace" xml:space="preserve">
     <value>Face</value>
-    <comment>"Face" represents the typeface of a font family such as 'Bold' or 'Italic'</comment>
+    <comment>A single typeface within a font family, e.g. 'Bold' or 'Italic'. Do NOT translate as a human/anatomical face.</comment>
   </data>
   <data name="FontFilePaths" xml:space="preserve">
     <value>Paths</value>
@@ -3238,6 +3290,34 @@ Please specify one of them using the --source option to proceed.</value>
   </data>
   <data name="ConfigurationProcessorPath" xml:space="preserve">
     <value>Specify the path to the configuration processor</value>
+  </data>
+  <data name="ConfigurationProcessorPathAudit" xml:space="preserve">
+    <value>Custom processor path:</value>
+    <comment>Displayed as a warning header when a custom --processor-path argument is provided.</comment>
+  </data>
+  <data name="ConfigurationProcessorPathAuditHash" xml:space="preserve">
+    <value>Hash: {0}</value>
+    <comment>{Locked="{0}"} {0} is the SHA256 hash hex string of the processor executable or its reparse data.</comment>
+  </data>
+  <data name="ConfigurationProcessorPathAuditIsAlias" xml:space="preserve">
+    <value>Type: App execution alias</value>
+    <comment>Indicates the processor path is an app execution alias (MSIX package link).</comment>
+  </data>
+  <data name="ConfigurationProcessorPathAuditPath" xml:space="preserve">
+    <value>Path: {0}</value>
+    <comment>{Locked="{0}"} {0} is the file system path provided by the user.</comment>
+  </data>
+  <data name="ConfigurationProcessorPathAuditSignature" xml:space="preserve">
+    <value>Signed By: {0}</value>
+    <comment>{Locked="{0}"} {0} is the Authenticode signing subject name of the executable.</comment>
+  </data>
+  <data name="ConfigurationProcessorPathAuditUnsigned" xml:space="preserve">
+    <value>Signed By: (unsigned)</value>
+    <comment>Indicates the custom processor executable does not have an Authenticode signature.</comment>
+  </data>
+  <data name="ConfigurationProcessorPathHashVerificationFailed" xml:space="preserve">
+    <value>The integrity check failed for the custom DSC processor path. The path may have been modified.</value>
+    <comment>Error when the server-side hash of the processor path does not match the client-computed hash.</comment>
   </data>
   <data name="DscCommandShortDescription" xml:space="preserve">
     <value>DSC v3 resource commands</value>
@@ -3565,5 +3645,11 @@ An unlocalized JSON fragment will follow on another line.</comment>
   <data name="MultiplePackagesFoundFilteredBySourcePriority" xml:space="preserve">
     <value>Results have been filtered to the highest matched source priority.</value>
     <comment>A warning message to indicate to the user that the results of a search have been filtered by choosing only those matching the highest source priority amongst the results.</comment>
+  </data>
+  <data name="WINGET_CONFIG_ERROR_PROCESSOR_HASH_MISMATCH" xml:space="preserve">
+    <value>The DSC processor hash provided does not match hash of the target file.</value>
+  </data>
+  <data name="NoAdminUninstallForUserScopePackage" xml:space="preserve">
+    <value>The package installed for user scope cannot be uninstalled when running with administrator privileges.</value>
   </data>
 </root>

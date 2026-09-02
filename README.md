@@ -12,7 +12,7 @@ If you are new to the Windows Package Manager, you might want to [Explore the Wi
 ## Installing The Client
 
 > [!NOTE]
-> The client requires Windows 10 1809 (build 17763) or later at this time. Windows Server 2019 is not supported as the Microsoft Store is not available nor are updated dependencies. It may be possible to install on Windows Server 2022, this should be considered experimental (not supported) and requires dependencies to be manually installed as well.
+> The client requires Windows 10 1809 (build 17763), Windows 11, Windows Server 2025, or later at this time. Windows Server 2019 and 2022 can run it experimentally (not supported) by extracting the .msixbundle; see https://github.com/microsoft/winget-cli/issues/4502#issuecomment-4585558561. Due to hard reliances on [IsWow64Process2](https://learn.microsoft.com/en-us/windows/win32/api/wow64apiset/nf-wow64apiset-iswow64process2) and MSIX, it cannot be run on Windows Server Core or on Windows versions earlier than Windows 10 1809.
 
 ### Microsoft Store [Recommended]
 
@@ -42,6 +42,35 @@ The same Microsoft Store package will be made available via our [Releases](https
 ### Troubleshooting
 
 Please read our [troubleshooting guide](/doc/troubleshooting/README.md).
+
+## PowerShell Module
+
+The [Microsoft.WinGet.Client](https://www.powershellgallery.com/packages/Microsoft.WinGet.Client/) PowerShell module provides native cmdlets for interacting with the Windows Package Manager. You can install it from the PowerShell Gallery:
+
+```powershell
+Install-Module -Name Microsoft.WinGet.Client
+```
+
+Example usage:
+
+```powershell
+# Search for a package
+Find-WinGetPackage -Query "Visual Studio Code"
+
+# Install a package
+Install-WinGetPackage -Id Microsoft.VisualStudioCode
+
+# List installed packages
+Get-WinGetPackage
+
+# Update a package
+Update-WinGetPackage -Id Microsoft.VisualStudioCode
+
+# Repair the WinGet package manager installation
+Repair-WinGetPackageManager
+```
+
+For more information, see the [Microsoft.WinGet.Client](https://www.powershellgallery.com/packages/Microsoft.WinGet.Client/) page on the PowerShell Gallery.
 
 ## Administrator Considerations
 

@@ -92,7 +92,9 @@ namespace AppInstaller::CLI
         case Execution::Args::Type::NoUpgrade:
             return { type, "no-upgrade"_liv, ArgTypeCategory::CopyFlagToSubContext };
         case Execution::Args::Type::SkipDependencies:
-            return { type, "skip-dependencies"_liv, ArgTypeCategory::InstallerBehavior | ArgTypeCategory::CopyFlagToSubContext };
+            return { type, "skip-dependencies"_liv, ArgTypeCategory::InstallerBehavior | ArgTypeCategory::CopyFlagToSubContext, ArgTypeExclusiveSet::DependenciesConflict };
+        case Execution::Args::Type::DependenciesOnly:
+            return { type, "dependencies-only"_liv, ArgTypeCategory::InstallerBehavior, ArgTypeExclusiveSet::DependenciesConflict };
         case Execution::Args::Type::AllowReboot:
             return { type, "allow-reboot"_liv, ArgTypeCategory::InstallerBehavior | ArgTypeCategory::CopyFlagToSubContext };
 
@@ -187,6 +189,12 @@ namespace AppInstaller::CLI
             return { type, "upgrade-available"_liv};
         case Execution::Args::Type::ListDetails:
             return { type, "details"_liv };
+        case Execution::Args::Type::Sort:
+            return { type, "sort"_liv };
+        case Execution::Args::Type::SortAscending:
+            return { type, "ascending"_liv, "asc"_liv, ArgTypeCategory::None, ArgTypeExclusiveSet::SortDirection };
+        case Execution::Args::Type::SortDescending:
+            return { type, "descending"_liv, "desc"_liv, ArgTypeCategory::None, ArgTypeExclusiveSet::SortDirection };
 
         // Pin command
         case Execution::Args::Type::GatedVersion:
@@ -408,8 +416,12 @@ namespace AppInstaller::CLI
             return Argument{ type, Resource::String::HelpArgumentDescription, ArgumentType::Flag };
         case Args::Type::SkipDependencies:
             return Argument{ type, Resource::String::SkipDependenciesArgumentDescription, ArgumentType::Flag, false };
+        case Args::Type::DependenciesOnly:
+            return Argument{ type, Resource::String::DependenciesOnlyArgumentDescription, ArgumentType::Flag, false };
         case Args::Type::IgnoreLocalArchiveMalwareScan:
             return Argument{ type, Resource::String::IgnoreLocalArchiveMalwareScanArgumentDescription, ArgumentType::Flag, Settings::TogglePolicy::Policy::LocalArchiveMalwareScanOverride, Settings::BoolAdminSetting::LocalArchiveMalwareScanOverride };
+        case Args::Type::IgnoreUnavailable:
+            return Argument{ type, Resource::String::IgnoreUnavailableArgumentDescription, ArgumentType::Flag };
         case Args::Type::SourceName:
             return Argument{ type, Resource::String::SourceNameArgumentDescription, ArgumentType::Positional, false };
         case Args::Type::SourceArg:
@@ -438,6 +450,8 @@ namespace AppInstaller::CLI
             return Argument{ type, Resource::String::NoProgressArgumentDescription, ArgumentType::Flag, Argument::Visibility::Hidden };
         case Args::Type::VerboseLogs:
             return Argument{ type, Resource::String::VerboseLogsArgumentDescription, ArgumentType::Flag };
+        case Args::Type::DisableInteractivity:
+            return Argument{ type, Resource::String::DisableInteractivityArgumentDescription, ArgumentType::Flag, false };
         case Args::Type::CustomHeader:
             return Argument{ type, Resource::String::HeaderArgumentDescription, ArgumentType::Standard, Argument::Visibility::Help };
         case Args::Type::AcceptSourceAgreements:
@@ -486,6 +500,8 @@ namespace AppInstaller::CLI
             return Argument{ type, Resource::String::ProxyArgumentDescription, ArgumentType::Standard, TogglePolicy::Policy::ProxyCommandLineOptions, BoolAdminSetting::ProxyCommandLineOptions };
         case Args::Type::NoProxy:
             return Argument{ type, Resource::String::NoProxyArgumentDescription, ArgumentType::Flag, TogglePolicy::Policy::ProxyCommandLineOptions, BoolAdminSetting::ProxyCommandLineOptions };
+        case Args::Type::ConfigurationProcessorPath:
+            return Argument{ type, Resource::String::ConfigurationProcessorPath, ArgumentType::Standard, Argument::Visibility::Help, TogglePolicy::Policy::ConfigurationProcessorPath, BoolAdminSetting::ConfigurationProcessorPath };
         case Args::Type::Family:
             return Argument{ type, Resource::String::FontFamilyNameArgumentDescription, ArgumentType::Positional, false };
         case Args::Type::Details:

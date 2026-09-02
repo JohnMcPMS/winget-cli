@@ -7,6 +7,7 @@
 namespace AppInstallerCLIE2ETests.Helpers
 {
     using System;
+    using System.Collections;
     using System.Collections.Generic;
     using System.Diagnostics;
     using System.IO;
@@ -112,8 +113,15 @@ namespace AppInstallerCLIE2ETests.Helpers
         /// <param name="stdIn">Optional std in.</param>
         /// <param name="timeOut">Optional timeout.</param>
         /// <param name="throwOnTimeout">Throw on timeout.</param>
+        /// <param name="environmentVariables">Environment variables to set.</param>
         /// <returns>The result of the command.</returns>
-        public static RunCommandResult RunAICLICommand(string command, string parameters, string stdIn = null, int timeOut = 60000, bool throwOnTimeout = true)
+        public static RunCommandResult RunAICLICommand(
+            string command,
+            string parameters,
+            string stdIn = null,
+            int timeOut = 60000,
+            bool throwOnTimeout = true,
+            Dictionary<string, string> environmentVariables = null)
         {
             string correlationParameter = " --correlation " + Guid.NewGuid().ToString();
 
@@ -126,7 +134,7 @@ namespace AppInstallerCLIE2ETests.Helpers
                 }
             }
 
-            return RunAICLICommandViaDirectProcess(command, parameters + correlationParameter, stdIn, timeOut, throwOnTimeout);
+            return RunAICLICommandViaDirectProcess(command, parameters + correlationParameter, stdIn, timeOut, throwOnTimeout, environmentVariables);
         }
 
         /// <summary>
@@ -384,7 +392,7 @@ namespace AppInstallerCLIE2ETests.Helpers
                 using var winGetRootKey = fontsRegistryKey.OpenSubKey("Microsoft.DesktopAppInstaller_8wekyb3d8bbwe");
                 if (shouldExist)
                 {
-                    Assert.IsNotNull(winGetRootKey);
+                    Assert.That(winGetRootKey, Is.Not.Null);
                 }
                 else
                 {
@@ -394,7 +402,7 @@ namespace AppInstallerCLIE2ETests.Helpers
                 using var packageNameSubkey = winGetRootKey.OpenSubKey(packageName);
                 if (shouldExist)
                 {
-                    Assert.IsNotNull(packageNameSubkey);
+                    Assert.That(packageNameSubkey, Is.Not.Null);
                 }
 
                 if (packageNameSubkey is not null)
@@ -403,11 +411,11 @@ namespace AppInstallerCLIE2ETests.Helpers
 
                     if (shouldExist)
                     {
-                        Assert.IsNotNull(versionSubkey);
+                        Assert.That(versionSubkey, Is.Not.Null);
                     }
                     else
                     {
-                        Assert.IsNull(versionSubkey);
+                        Assert.That(versionSubkey, Is.Null);
                     }
 
                     if (versionSubkey is not null)
@@ -418,16 +426,13 @@ namespace AppInstallerCLIE2ETests.Helpers
                             fileList.Add(versionSubkey.GetValue(valueName).ToString());
                         }
 
-                        Assert.AreEqual(valueNames.Length, fileList.Count);
+                        Assert.That(fileList.Count, Is.EqualTo(valueNames.Length));
                     }
                 }
             }
 
             // Verify each package file we expect to exist actually exists.
-            foreach (var file in fileList)
-            {
-                Assert.IsTrue(File.Exists(file));
-            }
+            Assert.That(fileList, Has.All.Exist);
         }
 
         /// <summary>
@@ -469,22 +474,52 @@ namespace AppInstallerCLIE2ETests.Helpers
             }
 
             bool isAddedToPath;
+            string pathDiagnostics;
             string pathSubKey = scope == Scope.User ? Constants.PathSubKey_User : Constants.PathSubKey_Machine;
             using (RegistryKey environmentRegistryKey = baseKey.OpenSubKey(pathSubKey, true))
             {
                 string pathName = "Path";
                 var currentPathValue = (string)environmentRegistryKey.GetValue(pathName);
+                var rawPathValue = (string)environmentRegistryKey.GetValue(pathName, null, RegistryValueOptions.DoNotExpandEnvironmentNames);
+                var valueKind = environmentRegistryKey.GetValueKind(pathName);
                 var portablePathValue = (installDirectoryAddedToPath ? installDir : symlinkDirectory) + ';';
                 isAddedToPath = currentPathValue.Contains(portablePathValue);
+
+                string symlinkDirContents = Directory.Exists(symlinkDirectory)
+                    ? (Directory.GetFileSystemEntries(symlinkDirectory) is string[] entries && entries.Length > 0
+                        ? string.Join(", ", entries.Select(s => Path.GetFileName(s)))
+                        : "(empty)")
+                    : "(does not exist)";
+
+                pathDiagnostics = $"\n  Registry value kind: {valueKind}" +
+                                  $"\n  Expanded PATH value: {currentPathValue}" +
+                                  $"\n  Raw PATH value:      {rawPathValue}" +
+                                  $"\n  Searching for:       {portablePathValue}" +
+                                  $"\n  Links dir contents:  {symlinkDirContents}";
             }
 
             // Always clean up as best effort.
-            RunAICLICommand("uninstall", $"--product-code {productCode} --force");
+            var cleanupResult = RunAICLICommand("uninstall", $"--product-code {productCode} --force");
 
-            Assert.AreEqual(shouldExist, exeExists, $"Expected portable exe path: {exePath}");
-            Assert.AreEqual(shouldExist && !installDirectoryAddedToPath, symlinkExists, $"Expected portable symlink path: {symlinkPath}");
-            Assert.AreEqual(shouldExist, portableEntryExists, $"Expected {productCode} subkey in path: {uninstallSubKey}");
-            Assert.AreEqual(shouldExist, isAddedToPath, $"Expected path variable: {(installDirectoryAddedToPath ? installDir : symlinkDirectory)}");
+            // If the uninstall cleanup failed (e.g., the exe was still in use), manually remove the symlink
+            // to prevent cascade failures in other parallel tests that check the shared Links directory.
+            if (cleanupResult.ExitCode != 0 && File.Exists(symlinkPath))
+            {
+                TestContext.Out.WriteLine($"WARNING: Cleanup uninstall failed with exit code {cleanupResult.ExitCode}. Manually removing symlink to prevent cascade: {symlinkPath}");
+                try
+                {
+                    File.Delete(symlinkPath);
+                }
+                catch (Exception ex)
+                {
+                    TestContext.Out.WriteLine($"WARNING: Failed to manually remove symlink: {ex.Message}");
+                }
+            }
+
+            Assert.That(exeExists, Is.EqualTo(shouldExist), $"Expected portable exe path: {exePath}");
+            Assert.That(symlinkExists, Is.EqualTo(shouldExist && !installDirectoryAddedToPath), $"Expected portable symlink path: {symlinkPath}");
+            Assert.That(portableEntryExists, Is.EqualTo(shouldExist), $"Expected {productCode} subkey in path: {uninstallSubKey}");
+            Assert.That(isAddedToPath, Is.EqualTo(shouldExist), $"Expected path variable: {(installDirectoryAddedToPath ? installDir : symlinkDirectory)}{pathDiagnostics}");
         }
 
         /// <summary>
@@ -637,9 +672,9 @@ namespace AppInstallerCLIE2ETests.Helpers
             string installerDownloadPath = Path.Combine(downloadDir, expectedFileName + installerExtension);
             string manifestDownloadPath = Path.Combine(downloadDir, expectedFileName + ".yaml");
 
-            Assert.IsTrue(Directory.Exists(downloadDir), $"Download directory does not exist: {downloadDir}");
-            Assert.IsTrue(File.Exists(installerDownloadPath), $"Installer file does not exist: {installerDownloadPath}");
-            Assert.IsTrue(File.Exists(manifestDownloadPath), $"Manifest file does not exist: {manifestDownloadPath}");
+            Assert.That(downloadDir, Does.Exist, $"Download directory does not exist: {downloadDir}");
+            Assert.That(installerDownloadPath, Does.Exist, $"Installer file does not exist: {installerDownloadPath}");
+            Assert.That(manifestDownloadPath, Does.Exist, $"Manifest file does not exist: {manifestDownloadPath}");
 
             if (cleanup)
             {
@@ -1032,7 +1067,7 @@ namespace AppInstallerCLIE2ETests.Helpers
             foreach (FileInfo file in files)
             {
                 string temppath = Path.Combine(destDirName, file.Name);
-                file.CopyTo(temppath, false);
+                file.CopyTo(temppath, true);
             }
 
             foreach (DirectoryInfo subdir in dirs)
@@ -1073,7 +1108,7 @@ namespace AppInstallerCLIE2ETests.Helpers
         public static string GetConfigurationInstanceIdentifierFor(string name)
         {
             var result = TestCommon.RunAICLICommand("configure list", string.Empty);
-            Assert.AreEqual(0, result.ExitCode);
+            Assert.That(result.ExitCode, Is.Zero);
 
             string[] lines = result.StdOut.Split('\n', StringSplitOptions.RemoveEmptyEntries);
 
@@ -1084,9 +1119,9 @@ namespace AppInstallerCLIE2ETests.Helpers
                     // Find the first GUID in the output
                     int left = line.IndexOf('{');
                     int right = line.IndexOfAny(new char[] { '}', '…' });
-                    Assert.AreNotEqual(-1, left);
-                    Assert.AreNotEqual(-1, right);
-                    Assert.LessOrEqual(right - left, 38);
+                    Assert.That(left, Is.Not.EqualTo(-1));
+                    Assert.That(right, Is.Not.EqualTo(-1));
+                    Assert.That(right - left, Is.LessThanOrEqualTo(38));
 
                     return line.Substring(left, right - left);
                 }
@@ -1159,15 +1194,25 @@ namespace AppInstallerCLIE2ETests.Helpers
         /// <param name="stdIn">Optional std in.</param>
         /// <param name="timeOut">Optional timeout.</param>
         /// <param name="throwOnTimeout">Throw on timeout.</param>
+        /// <param name="environmentVariables">Environment variables to set.</param>
         /// <returns>The result of the command.</returns>
-        public static RunCommandResult RunProcess(string executablePath, string command, string parameters, string stdIn, int timeOut, bool throwOnTimeout)
+        public static RunCommandResult RunProcess(
+            string executablePath,
+            string command,
+            string parameters,
+            string stdIn,
+            int timeOut,
+            bool throwOnTimeout,
+            Dictionary<string, string> environmentVariables)
         {
             string inputMsg =
                     "Exe path: " + executablePath +
                     " Command: " + command +
                     " Parameters: " + parameters +
                     (string.IsNullOrEmpty(stdIn) ? string.Empty : " StdIn: " + stdIn) +
-                    " Timeout: " + timeOut;
+                    " Timeout: " + timeOut +
+                    (environmentVariables == null ? string.Empty :
+                        " Env: " + string.Join(", ", environmentVariables.Select(item => $"{item.Key}={item.Value}")));
 
             TestContext.Out.WriteLine($"Starting command run. {inputMsg}");
 
@@ -1201,6 +1246,14 @@ namespace AppInstallerCLIE2ETests.Helpers
             if (!string.IsNullOrEmpty(stdIn))
             {
                 p.StartInfo.RedirectStandardInput = true;
+            }
+
+            if (environmentVariables != null)
+            {
+                foreach (var item in environmentVariables)
+                {
+                    p.StartInfo.EnvironmentVariables[item.Key] = item.Value;
+                }
             }
 
             p.Start();
@@ -1251,10 +1304,17 @@ namespace AppInstallerCLIE2ETests.Helpers
         /// <param name="stdIn">Optional std in.</param>
         /// <param name="timeOut">Optional timeout.</param>
         /// <param name="throwOnTimeout">Throw on timeout.</param>
+        /// <param name="environmentVariables">Environment variables to set.</param>
         /// <returns>The result of the command.</returns>
-        private static RunCommandResult RunAICLICommandViaDirectProcess(string command, string parameters, string stdIn, int timeOut, bool throwOnTimeout)
+        private static RunCommandResult RunAICLICommandViaDirectProcess(
+            string command,
+            string parameters,
+            string stdIn,
+            int timeOut,
+            bool throwOnTimeout,
+            Dictionary<string, string> environmentVariables)
         {
-            return RunProcess(TestSetup.Parameters.AICLIPath, command, parameters, stdIn, timeOut, throwOnTimeout);
+            return RunProcess(TestSetup.Parameters.AICLIPath, command, parameters, stdIn, timeOut, throwOnTimeout, environmentVariables);
         }
 
         /// <summary>

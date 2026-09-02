@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <map>
 #include <optional>
+#include <string_view>
 #include <vector>
 #include <shtypes.h>
 
@@ -20,8 +21,8 @@ namespace AppInstaller::Filesystem
     // Checks if the file system at path support reparse points
     bool SupportsReparsePoints(const std::filesystem::path& path);
 
-    // Checks if the canonical form of the path points to a location outside of the provided base path.
-    bool PathEscapesBaseDirectory(const std::filesystem::path& target, const std::filesystem::path& base);
+    // Checks if a relative paths points to a location outside of the base path.
+    bool PathEscapesBaseDirectory(std::string_view relativePath);
 
     // Renames the file to a new path.
     void RenameFile(const std::filesystem::path& from, const std::filesystem::path& to);
@@ -92,7 +93,7 @@ namespace AppInstaller::Filesystem
         // Shorthand for setting Owner and giving them ACEPermissions::All
         void SetOwner(ACEPrincipal owner);
 
-        // Determines if the ACL should be applied.
+        // Determines if the ACL needs to be applied.
         bool ShouldApplyACL() const;
 
         // Applies the ACL unconditionally.
@@ -148,4 +149,7 @@ namespace AppInstaller::Filesystem
 
     // Modifies the given files to only include those that exceed the limits that are provided.
     void FilterToFilesExceedingLimits(std::vector<FileInfo>& files, const FileLimits& limits);
+
+    // Writes the given string to the file handle, handling partial writes.
+    void WriteStringToFile(HANDLE fileHandle, std::string_view content);
 }

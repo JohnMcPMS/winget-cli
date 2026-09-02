@@ -27,6 +27,28 @@ namespace AppInstaller::Filesystem
             TRUSTEE_TYPE TrusteeType;
         };
 
+        constexpr BYTE s_InheritableAceFlags = CONTAINER_INHERIT_ACE | OBJECT_INHERIT_ACE;
+
+        struct PrincipalPermissions
+        {
+            DWORD DirectAccessMask = 0;
+            DWORD ObjectChildAccessMask = 0;
+            DWORD ContainerChildAccessMask = 0;
+
+            bool operator==(const PrincipalPermissions& other) const
+            {
+                return DirectAccessMask == other.DirectAccessMask &&
+                    ObjectChildAccessMask == other.ObjectChildAccessMask &&
+                    ContainerChildAccessMask == other.ContainerChildAccessMask;
+            }
+        };
+
+        struct ExpectedACE
+        {
+            ACEPrincipal Principal;
+            PSID SID;
+        };
+
         DWORD AccessPermissionsFrom(ACEPermissions permissions)
         {
             DWORD result = 0;
@@ -54,6 +76,220 @@ namespace AppInstaller::Filesystem
             }
 
             return result;
+        }
+
+        DWORD NormalizeAccessMask(DWORD accessMask)
+        {
+            GENERIC_MAPPING genericMapping
+            {
+                FILE_GENERIC_READ,
+                FILE_GENERIC_WRITE,
+                FILE_GENERIC_EXECUTE,
+                FILE_ALL_ACCESS,
+            };
+
+            MapGenericMask(&accessMask, &genericMapping);
+            return accessMask;
+        }
+
+        std::map<ACEPrincipal, PrincipalPermissions> GetExpectedPermissions(
+            const PathDetails& details,
+            const ACEDetails(&aceDetails)[3],
+            const std::optional<ACEPrincipal>& principalToIgnore,
+            PSID& expectedOwnerSID)
+        {
+            std::map<ACEPrincipal, PrincipalPermissions> result;
+
+            for (const auto& ace : aceDetails)
+            {
+                if (principalToIgnore && principalToIgnore.value() == ace.Principal)
+                {
+                    continue;
+                }
+
+                if (details.Owner && details.Owner.value() == ace.Principal)
+                {
+                    expectedOwnerSID = ace.SID;
+                }
+
+                auto itr = details.ACL.find(ace.Principal);
+                if (itr != details.ACL.end())
+                {
+                    DWORD normalizedAccessMask = NormalizeAccessMask(AccessPermissionsFrom(itr->second));
+                    result.emplace(ace.Principal, PrincipalPermissions
+                    {
+                        normalizedAccessMask,
+                        normalizedAccessMask,
+                        normalizedAccessMask,
+                    });
+                }
+            }
+
+            return result;
+        }
+
+        std::optional<std::map<ACEPrincipal, PrincipalPermissions>> GetActualPermissions(
+            PACL acl,
+            const std::vector<ExpectedACE>& expectedAces)
+        {
+            constexpr BYTE s_AllowedAceFlags = OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE | INHERIT_ONLY_ACE;
+
+            ACL_SIZE_INFORMATION sizeInformation{};
+            THROW_IF_WIN32_BOOL_FALSE(GetAclInformation(acl, &sizeInformation, sizeof(sizeInformation), AclSizeInformation));
+
+            std::map<ACEPrincipal, PrincipalPermissions> result;
+
+            for (DWORD i = 0; i < sizeInformation.AceCount; ++i)
+            {
+                void* ace = nullptr;
+                THROW_IF_WIN32_BOOL_FALSE(GetAce(acl, i, &ace));
+
+                const ACE_HEADER* aceHeader = static_cast<ACE_HEADER*>(ace);
+                if (aceHeader->AceType != ACCESS_ALLOWED_ACE_TYPE || (aceHeader->AceFlags & ~s_AllowedAceFlags) != 0)
+                {
+                    return std::nullopt;
+                }
+
+                const ACCESS_ALLOWED_ACE* accessAllowedAce = static_cast<ACCESS_ALLOWED_ACE*>(ace);
+                PSID sid = reinterpret_cast<PSID>(const_cast<DWORD*>(&accessAllowedAce->SidStart));
+                auto expectedAceItr = std::find_if(expectedAces.begin(), expectedAces.end(),
+                    [&](const auto& expectedAce)
+                    {
+                        return EqualSid(expectedAce.SID, sid);
+                    });
+                if (expectedAceItr == expectedAces.end())
+                {
+                    return std::nullopt;
+                }
+
+                if (WI_IsFlagSet(aceHeader->AceFlags, INHERIT_ONLY_ACE) &&
+                    (aceHeader->AceFlags & (OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE)) == 0)
+                {
+                    return std::nullopt;
+                }
+
+                PrincipalPermissions& principalPermissions = result[expectedAceItr->Principal];
+                DWORD normalizedAccessMask = NormalizeAccessMask(accessAllowedAce->Mask);
+
+                if (!WI_IsFlagSet(aceHeader->AceFlags, INHERIT_ONLY_ACE))
+                {
+                    principalPermissions.DirectAccessMask |= normalizedAccessMask;
+                }
+
+                if (WI_IsFlagSet(aceHeader->AceFlags, OBJECT_INHERIT_ACE))
+                {
+                    principalPermissions.ObjectChildAccessMask |= normalizedAccessMask;
+                }
+
+                if (WI_IsFlagSet(aceHeader->AceFlags, CONTAINER_INHERIT_ACE))
+                {
+                    principalPermissions.ContainerChildAccessMask |= normalizedAccessMask;
+                }
+            }
+
+            return result;
+        }
+
+        std::optional<ACEPrincipal> GetPrincipalToIgnore(const PathDetails& details, const TOKEN_USER* userToken, PSID systemSID)
+        {
+            bool hasCurrentUser = details.ACL.count(ACEPrincipal::CurrentUser) != 0;
+            bool hasSystem = details.ACL.count(ACEPrincipal::System) != 0;
+
+            if ((hasCurrentUser && hasSystem) &&
+                IsRunningAsSystem() &&
+                (!details.Owner || (details.Owner.value() != ACEPrincipal::CurrentUser && details.Owner.value() != ACEPrincipal::System)))
+            {
+                THROW_HR(HRESULT_FROM_WIN32(ERROR_INVALID_STATE));
+            }
+
+            if (hasCurrentUser && hasSystem && EqualSid(userToken->User.Sid, systemSID))
+            {
+                return (details.Owner.value() == ACEPrincipal::CurrentUser ? ACEPrincipal::System : ACEPrincipal::CurrentUser);
+            }
+
+            return std::nullopt;
+        }
+
+        bool PathHasExpectedOwnerAndACLs(const PathDetails& details)
+        {
+            auto userToken = wil::get_token_information<TOKEN_USER>();
+            auto adminSID = wil::make_static_sid(SECURITY_NT_AUTHORITY, SECURITY_BUILTIN_DOMAIN_RID, DOMAIN_ALIAS_RID_ADMINS);
+            auto systemSID = wil::make_static_sid(SECURITY_NT_AUTHORITY, SECURITY_LOCAL_SYSTEM_RID);
+            auto principalToIgnore = GetPrincipalToIgnore(details, userToken.get(), systemSID.get());
+
+            ACEDetails aceDetails[] =
+            {
+                { ACEPrincipal::CurrentUser, userToken->User.Sid, TRUSTEE_IS_USER },
+                { ACEPrincipal::Admins, adminSID.get(), TRUSTEE_IS_WELL_KNOWN_GROUP },
+                { ACEPrincipal::System, systemSID.get(), TRUSTEE_IS_USER },
+            };
+
+            PSID expectedOwnerSID = nullptr;
+            std::map<ACEPrincipal, PrincipalPermissions> expectedPermissions = GetExpectedPermissions(details, aceDetails, principalToIgnore, expectedOwnerSID);
+
+            SECURITY_INFORMATION securityInformation = DACL_SECURITY_INFORMATION;
+            PSID ownerSID = nullptr;
+
+            if (details.Owner)
+            {
+                securityInformation |= OWNER_SECURITY_INFORMATION;
+                ownerSID = expectedOwnerSID;
+            }
+
+            std::wstring path = details.Path.wstring();
+            wil::unique_hlocal_security_descriptor securityDescriptor;
+            PSID actualOwnerSID = nullptr;
+            DWORD result = GetNamedSecurityInfoW(
+                &path[0],
+                SE_FILE_OBJECT,
+                securityInformation,
+                details.Owner ? &actualOwnerSID : nullptr,
+                nullptr,
+                nullptr,
+                nullptr,
+                &securityDescriptor);
+
+            if (result != ERROR_SUCCESS)
+            {
+                return false;
+            }
+
+            SECURITY_DESCRIPTOR_CONTROL control = 0;
+            DWORD revision = 0;
+            if (!GetSecurityDescriptorControl(securityDescriptor.get(), &control, &revision) || !WI_IsFlagSet(control, SE_DACL_PROTECTED))
+            {
+                return false;
+            }
+
+            BOOL daclPresent = FALSE;
+            BOOL daclDefaulted = FALSE;
+            PACL currentDacl = nullptr;
+            if (!GetSecurityDescriptorDacl(securityDescriptor.get(), &daclPresent, &currentDacl, &daclDefaulted) || !daclPresent || !currentDacl)
+            {
+                return false;
+            }
+
+            if (ownerSID && (!actualOwnerSID || !EqualSid(actualOwnerSID, ownerSID)))
+            {
+                return false;
+            }
+
+            std::vector<ExpectedACE> expectedAces;
+            for (const auto& ace : aceDetails)
+            {
+                if (principalToIgnore && principalToIgnore.value() == ace.Principal)
+                {
+                    continue;
+                }
+
+                if (details.ACL.count(ace.Principal) != 0)
+                {
+                    expectedAces.push_back({ ace.Principal, ace.SID });
+                }
+            }
+
+            auto actualPermissions = GetActualPermissions(currentDacl, expectedAces);
+            return actualPermissions && actualPermissions.value() == expectedPermissions;
         }
 
         // Gets the path to the appdata root.
@@ -134,12 +370,27 @@ namespace AppInstaller::Filesystem
         return (GetVolumeInformationFlags(path) & FILE_SUPPORTS_REPARSE_POINTS) != 0;
     }
 
-    bool PathEscapesBaseDirectory(const std::filesystem::path& target, const std::filesystem::path& base)
+    bool PathEscapesBaseDirectory(std::string_view relativePath)
     {
-        const auto& targetPath = std::filesystem::weakly_canonical(target);
-        const auto& basePath = std::filesystem::weakly_canonical(base);
-        auto [a, b] = std::mismatch(targetPath.begin(), targetPath.end(), basePath.begin(), basePath.end());
-        return (b != basePath.end());
+        std::filesystem::path path{ relativePath };
+
+        // Reject any path that has a root component. This covers absolute paths (e.g. "C:\foo"),
+        // drive-relative paths (e.g. "C:foo") and root-relative paths (e.g. "\foo").
+        if (path.has_root_path())
+        {
+            return true;
+        }
+
+        // Resolve any "." and ".." components lexically (i.e. without touching the filesystem).
+        auto resolvedPath = path.lexically_normal();
+
+        // If the normalized path still begins with "..", it points to a parent of the base directory.
+        if (!resolvedPath.empty() && *resolvedPath.begin() == "..")
+        {
+            return true;
+        }
+
+        return false;
     }
 
     // Complicated rename algorithm due to somewhat arbitrary failures.
@@ -241,8 +492,21 @@ namespace AppInstaller::Filesystem
 
     bool VerifySymlink(const std::filesystem::path& symlink, const std::filesystem::path& target)
     {
-        const std::filesystem::path& symlinkTargetPath = std::filesystem::weakly_canonical(symlink);
-        return symlinkTargetPath == std::filesystem::weakly_canonical(target);
+        // Use read_symlink to get the symlink's recorded target without traversing the filesystem
+        // chain. weakly_canonical would follow the symlink, which is blocked by
+        // ProcessRedirectionTrustPolicy (inherited from the MSIX packaged process context on
+        // newer Windows builds) when the symlink was created by a non-elevated process.
+        const std::filesystem::path symlinkTarget = std::filesystem::read_symlink(symlink);
+
+        // If the recorded target is relative, resolve it against the symlink's parent directory.
+        const std::filesystem::path resolvedTarget = symlinkTarget.is_absolute() ?
+            symlinkTarget : (symlink.parent_path() / symlinkTarget);
+
+        // Windows paths are case-insensitive. Use lexically_normal to resolve . and .. without
+        // filesystem access, then compare case-insensitively.
+        return Utility::ICUCaseInsensitiveEquals(
+            resolvedTarget.lexically_normal().u8string(),
+            target.lexically_normal().u8string());
     }
 
     void AppendExtension(std::filesystem::path& target, const std::string& value)
@@ -340,24 +604,24 @@ namespace AppInstaller::Filesystem
 
     bool PathDetails::ShouldApplyACL() const
     {
-        // Could be expanded to actually check the current owner/ACL on the path, but isn't worth it currently
-        return !ACL.empty();
+        if (ACL.empty())
+        {
+            return false;
+        }
+
+        try
+        {
+            return !anon::PathHasExpectedOwnerAndACLs(*this);
+        }
+        catch (...)
+        {
+            LOG_CAUGHT_EXCEPTION_MSG("Failed to inspect ACL state; reapplying ACLs to preserve security");
+            return true;
+        }
     }
 
     void PathDetails::ApplyACL() const
     {
-        bool hasCurrentUser = ACL.count(ACEPrincipal::CurrentUser) != 0;
-        bool hasSystem = ACL.count(ACEPrincipal::System) != 0;
-
-        // Configuring permissions for both CurrentUser and SYSTEM while not having owner set as one of them is not valid because
-        // below we use only the owner permissions in the case of running as SYSTEM.
-        if ((hasCurrentUser && hasSystem) &&
-            IsRunningAsSystem() &&
-            (!Owner || (Owner.value() != ACEPrincipal::CurrentUser && Owner.value() != ACEPrincipal::System)))
-        {
-            THROW_HR(HRESULT_FROM_WIN32(ERROR_INVALID_STATE));
-        }
-
         auto userToken = wil::get_token_information<TOKEN_USER>();
         auto adminSID = wil::make_static_sid(SECURITY_NT_AUTHORITY, SECURITY_BUILTIN_DOMAIN_RID, DOMAIN_ALIAS_RID_ADMINS);
         auto systemSID = wil::make_static_sid(SECURITY_NT_AUTHORITY, SECURITY_LOCAL_SYSTEM_RID);
@@ -375,11 +639,7 @@ namespace AppInstaller::Filesystem
 
         // If the current user is SYSTEM, we want to take either the owner or the only configured set of permissions.
         // The check above should prevent us from getting into situations outside of the ones below.
-        std::optional<ACEPrincipal> principalToIgnore;
-        if (hasCurrentUser && hasSystem && EqualSid(userToken->User.Sid, systemSID.get()))
-        {
-            principalToIgnore = (Owner.value() == ACEPrincipal::CurrentUser ? ACEPrincipal::System : ACEPrincipal::CurrentUser);
-        }
+        std::optional<ACEPrincipal> principalToIgnore = anon::GetPrincipalToIgnore(*this, userToken.get(), systemSID.get());
 
         for (const auto& ace : aceDetails)
         {
@@ -401,7 +661,7 @@ namespace AppInstaller::Filesystem
 
                 entry.grfAccessPermissions = anon::AccessPermissionsFrom(itr->second);
                 entry.grfAccessMode = SET_ACCESS;
-                entry.grfInheritance = CONTAINER_INHERIT_ACE | OBJECT_INHERIT_ACE;
+                entry.grfInheritance = anon::s_InheritableAceFlags;
 
                 entry.Trustee.pMultipleTrustee = nullptr;
                 entry.Trustee.MultipleTrusteeOperation = NO_MULTIPLE_TRUSTEE;
@@ -564,5 +824,21 @@ namespace AppInstaller::Filesystem
         }
 
         files.resize(i);
+    }
+
+    void WriteStringToFile(HANDLE fileHandle, std::string_view content)
+    {
+        size_t totalBytesWritten = 0;
+        while (totalBytesWritten < content.size())
+        {
+            DWORD bytesWritten = 0;
+            THROW_LAST_ERROR_IF(!WriteFile(
+                fileHandle,
+                content.data() + totalBytesWritten,
+                static_cast<DWORD>(content.size() - totalBytesWritten),
+                &bytesWritten,
+                nullptr));
+            totalBytesWritten += bytesWritten;
+        }
     }
 }

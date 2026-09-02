@@ -12,23 +12,69 @@ using namespace TestCommon;
 
 TEST_CASE("PathEscapesDirectory", "[filesystem]")
 {
-    TestCommon::TempDirectory tempDirectory("TempDirectory");
-    const std::filesystem::path& basePath = tempDirectory.GetPath();
+    SECTION("Simple relative paths stay within the base directory")
+    {
+        REQUIRE_FALSE(PathEscapesBaseDirectory("target.exe"));
+        REQUIRE_FALSE(PathEscapesBaseDirectory("test\\target.exe"));
+        REQUIRE_FALSE(PathEscapesBaseDirectory("test/subdir/target.exe"));
+    }
 
-    std::string badRelativePath = "../../target.exe";
-    std::string badRelativePath2 = "test/../../target.exe";
-    std::string goodRelativePath = "target.exe";
-    std::string goodRelativePath2 = "test/../test1/target.exe";
+    SECTION("Relative paths whose '..' components resolve back inside do not escape")
+    {
+        REQUIRE_FALSE(PathEscapesBaseDirectory("test/../test1/target.exe"));
+        REQUIRE_FALSE(PathEscapesBaseDirectory("./target.exe"));
+        REQUIRE_FALSE(PathEscapesBaseDirectory("a/b/../../c.exe"));
+    }
 
-    std::filesystem::path badPath = basePath / badRelativePath;
-    std::filesystem::path badPath2 = basePath / badRelativePath2;
-    std::filesystem::path goodPath = basePath / goodRelativePath;
-    std::filesystem::path goodPath2 = basePath / goodRelativePath2;
+    SECTION("Paths that resolve to the base directory itself do not escape")
+    {
+        REQUIRE_FALSE(PathEscapesBaseDirectory("."));
+        REQUIRE_FALSE(PathEscapesBaseDirectory("test/.."));
+    }
 
-    REQUIRE(PathEscapesBaseDirectory(badPath, basePath));
-    REQUIRE(PathEscapesBaseDirectory(badPath2, basePath));
-    REQUIRE_FALSE(PathEscapesBaseDirectory(goodPath, basePath));
-    REQUIRE_FALSE(PathEscapesBaseDirectory(goodPath2, basePath));
+    SECTION("An empty path refers to the base directory itself and does not escape")
+    {
+        REQUIRE_FALSE(PathEscapesBaseDirectory(""));
+    }
+
+    SECTION("Relative paths that traverse above the base directory escape")
+    {
+        REQUIRE(PathEscapesBaseDirectory("../../target.exe"));
+        REQUIRE(PathEscapesBaseDirectory("test/../../target.exe"));
+        REQUIRE(PathEscapesBaseDirectory("../target.exe"));
+        REQUIRE(PathEscapesBaseDirectory(".."));
+        REQUIRE(PathEscapesBaseDirectory("a/../../b.exe"));
+
+        // Mixed separators are still normalized correctly.
+        REQUIRE(PathEscapesBaseDirectory("test\\../..\\target.exe"));
+    }
+
+    SECTION("Absolute paths escape the base directory")
+    {
+        REQUIRE(PathEscapesBaseDirectory("C:\\Windows\\target.exe"));
+        REQUIRE(PathEscapesBaseDirectory("C:/Windows/target.exe"));
+    }
+
+    SECTION("UNC paths in their various forms escape the base directory")
+    {
+        REQUIRE(PathEscapesBaseDirectory("\\\\server\\share\\target.exe"));
+        REQUIRE(PathEscapesBaseDirectory("//server/share/target.exe"));
+
+        // Extended-length prefix.
+        REQUIRE(PathEscapesBaseDirectory("\\\\?\\C:\\target.exe"));
+    }
+
+    SECTION("Root-relative paths (no drive) resolve to the root of the base directory's drive")
+    {
+        REQUIRE(PathEscapesBaseDirectory("\\Windows\\target.exe"));
+        REQUIRE(PathEscapesBaseDirectory("/Windows/target.exe"));
+    }
+
+    SECTION("Drive-relative paths resolve against the current directory of the given drive")
+    {
+        REQUIRE(PathEscapesBaseDirectory("C:target.exe"));
+        REQUIRE(PathEscapesBaseDirectory("C:"));
+    }
 }
 
 TEST_CASE("VerifySymlink", "[filesystem]")
@@ -49,6 +95,10 @@ TEST_CASE("VerifySymlink", "[filesystem]")
     REQUIRE(VerifySymlink(symlinkPath, testFilePath));
     REQUIRE_FALSE(VerifySymlink(symlinkPath, "badPath"));
 
+    // Verify case-insensitive comparison works (Windows paths are case-insensitive).
+    std::filesystem::path testFilePathUpperCase = basePath / "TESTFILE.TXT";
+    REQUIRE(VerifySymlink(symlinkPath, testFilePathUpperCase));
+
     std::filesystem::remove(testFilePath);
 
     // Ensure that symlink existence does not check the target
@@ -67,11 +117,30 @@ TEST_CASE("VerifyIsSameVolume", "[filesystem]")
     std::filesystem::path path3 = L"localPath\\test\\folder";
     std::filesystem::path path4 = L"test\\folder";
     std::filesystem::path path5 = L"D:\\test\\folder";
-    std::filesystem::path path6 = L"F:\\test\\folder";
+	// path 6 dynamically generated below to be a nonexistent drive letter
     std::filesystem::path path7 = L"d:\\randomFolder";
-    std::filesystem::path path8 = L"f:\\randomFolder";
+	// path 8 dynamically generated below to be a nonexistent drive letter with different case than path 6
     std::filesystem::path path9 = L"a";
     std::filesystem::path path10 = L"b";
+
+    // Dynamically find a drive letter that is not mounted on this machine so that
+    // GetVolumePathNameW will fail for it, making IsSameVolume return false.
+    // This avoids environment-dependent failures when drive letters like F:\ are mounted.
+    wchar_t nonExistentDriveLetter = L'\0';
+    const DWORD driveMask = GetLogicalDrives();
+    for (wchar_t c = L'Z'; c >= L'A'; c--)
+    {
+        if (!(driveMask & (1 << (c - L'A'))))
+        {
+            nonExistentDriveLetter = c;
+            break;
+        }
+    }
+
+    REQUIRE(nonExistentDriveLetter != L'\0');
+
+    std::filesystem::path path6 = std::wstring(1, nonExistentDriveLetter) + L":\\test\\folder";
+    std::filesystem::path path8 = std::wstring(1, towlower(nonExistentDriveLetter)) + L":\\randomFolder";
 
     REQUIRE(IsSameVolume(path1, path2));
     if (IsSameVolume(path5, path5))
@@ -82,12 +151,12 @@ TEST_CASE("VerifyIsSameVolume", "[filesystem]")
     REQUIRE(IsSameVolume(path9, path10));
 
     REQUIRE_FALSE(IsSameVolume(path1, path5));
-    REQUIRE_FALSE(IsSameVolume(path1, path6));
     REQUIRE_FALSE(IsSameVolume(path2, path5));
+    REQUIRE_FALSE(IsSameVolume(path1, path6));
     REQUIRE_FALSE(IsSameVolume(path2, path6));
     REQUIRE_FALSE(IsSameVolume(path3, path6));
-    REQUIRE_FALSE(IsSameVolume(path5, path6));
     REQUIRE_FALSE(IsSameVolume(path4, path6));
+    REQUIRE_FALSE(IsSameVolume(path5, path6));
     REQUIRE_FALSE(IsSameVolume(path6, path8));
 }
 
@@ -222,6 +291,56 @@ TEST_CASE("PathTree_VisitIf_Correct", "[filesystem][pathtree]")
     auto if_input = [](const std::pair<bool, bool>& p) { return p.second; };
 
     pathTree.VisitIf(L"C:", check_input, if_input);
+}
+
+TEST_CASE("WriteStringToFile", "[filesystem]")
+{
+    SECTION("Basic content")
+    {
+        TestCommon::TempDirectory tempDirectory{ "WriteStringToFile" };
+        auto tempFile = tempDirectory.CreateTempFile("output", ".txt");
+        wil::unique_hfile fileHandle{ CreateFileW(tempFile.GetPath().c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr) };
+        REQUIRE(fileHandle);
+
+        std::string content = "Hello, WinGet!";
+        REQUIRE_NOTHROW(WriteStringToFile(fileHandle.get(), content));
+        fileHandle.reset();
+
+        std::ifstream readBack{ tempFile.GetPath() };
+        std::string result{ std::istreambuf_iterator<char>(readBack), std::istreambuf_iterator<char>() };
+        REQUIRE(result == content);
+    }
+
+    SECTION("Empty content")
+    {
+        TestCommon::TempDirectory tempDirectory{ "WriteStringToFile" };
+        auto tempFile = tempDirectory.CreateTempFile("empty", ".txt");
+        wil::unique_hfile fileHandle{ CreateFileW(tempFile.GetPath().c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr) };
+        REQUIRE(fileHandle);
+
+        REQUIRE_NOTHROW(WriteStringToFile(fileHandle.get(), ""));
+        fileHandle.reset();
+
+        std::ifstream readBack{ tempFile.GetPath() };
+        std::string result{ std::istreambuf_iterator<char>(readBack), std::istreambuf_iterator<char>() };
+        REQUIRE(result.empty());
+    }
+
+    SECTION("Large content")
+    {
+        TestCommon::TempDirectory tempDirectory{ "WriteStringToFile" };
+        auto tempFile = tempDirectory.CreateTempFile("large", ".txt");
+        wil::unique_hfile fileHandle{ CreateFileW(tempFile.GetPath().c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr) };
+        REQUIRE(fileHandle);
+
+        std::string content(1 << 20, 'x'); // 1 MiB of 'x'
+        REQUIRE_NOTHROW(WriteStringToFile(fileHandle.get(), content));
+        fileHandle.reset();
+
+        std::ifstream readBack{ tempFile.GetPath() };
+        std::string result{ std::istreambuf_iterator<char>(readBack), std::istreambuf_iterator<char>() };
+        REQUIRE(result == content);
+    }
 }
 
 TEST_CASE("GetFileInfoFor", "[filesystem]")

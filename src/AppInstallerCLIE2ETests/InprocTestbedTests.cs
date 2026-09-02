@@ -212,8 +212,8 @@ namespace AppInstallerCLIE2ETests
                 builtParameters += $"-no-term ";
             }
 
-            var result = TestCommon.RunProcess(this.InprocTestbedPath, this.TargetPackageInformation, builtParameters, null, timeout, true);
-            Assert.AreEqual(0, result.ExitCode);
+            var result = TestCommon.RunProcess(this.InprocTestbedPath, this.TargetPackageInformation, builtParameters, null, timeout, true, null);
+            Assert.That(result.ExitCode, Is.Zero);
         }
 
         /// <summary>

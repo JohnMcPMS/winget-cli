@@ -304,6 +304,9 @@ namespace AppInstaller::Utility
     // Converts the given string view into a bool.
     std::optional<bool> TryConvertStringToBool(const std::string_view& value);
 
+    // Converts the given wide string view into a bool.
+    std::optional<bool> TryConvertStringToBool(const std::wstring_view& value);
+
     // Converts the given string view into an int32.
     std::optional<int32_t> TryConvertStringToInt32(const std::string_view& value);
 
@@ -326,4 +329,7 @@ namespace AppInstaller::Utility
 
     // Generates a random alpha numeric string.
     std::string GetRandomString(size_t size = 8);
+
+    // Checks whether a given string is a valid potential Windows feature name.
+    bool IsValidWindowsFeaturePattern(std::string_view value);
 }
