@@ -730,6 +730,209 @@ TEST_CASE("SQLBuilder_InsertValueBinding", "[sqlbuilder]")
     }
 }
 
+TEST_CASE("SQLBuilder_AssignValueNull", "[sqlbuilder]")
+{
+    Connection connection = Connection::Create(SQLITE_MEMORY_DB_CONNECTION_TARGET, Connection::OpenDisposition::Create);
+
+    CreateSimpleTestTable(connection);
+    InsertIntoSimpleTestTable(connection, 1, "value");
+
+    {
+        INFO("Equals(nullptr) remains blocked as a filter");
+        Builder::StatementBuilder builder;
+        REQUIRE_THROWS_HR(builder.Select(s_firstColumn).From(s_tableName).Where(s_secondColumn).Equals(nullptr), E_NOTIMPL);
+    }
+
+    {
+        INFO("AssignValue(nullptr) assigns NULL in an update");
+        Builder::StatementBuilder update;
+        update.Update(s_tableName).Set().Column(s_secondColumn).AssignValue(nullptr).Where(s_firstColumn).Equals(1);
+        update.Execute(connection);
+    }
+
+    {
+        INFO("The value is now NULL");
+        Builder::StatementBuilder select;
+        select.Select({ s_firstColumn, s_secondColumn }).From(s_tableName);
+
+        Statement statement = select.Prepare(connection);
+        REQUIRE(statement.Step());
+        REQUIRE(statement.GetColumn<int>(0) == 1);
+        REQUIRE(statement.GetColumnIsNull(1));
+        REQUIRE(!statement.Step());
+    }
+}
+
+TEST_CASE("SQLBuilder_CreateTempView", "[sqlbuilder]")
+{
+    Connection connection = Connection::Create(SQLITE_MEMORY_DB_CONNECTION_TARGET, Connection::OpenDisposition::Create);
+
+    CreateSimpleTestTable(connection);
+    InsertIntoSimpleTestTable(connection, 1, "one");
+    InsertIntoSimpleTestTable(connection, 2, "two");
+
+    constexpr std::string_view viewName = "simpleview";
+
+    {
+        // Note that SQLite prohibits bound parameters in a view definition, so the
+        // statement that defines a view must be structural only.
+        INFO("Create a view over the table");
+        Builder::StatementBuilder createView;
+        createView.CreateTempView(viewName).Select({ s_firstColumn, s_secondColumn }).From(s_tableName).OrderBy(s_firstColumn);
+        createView.Execute(connection);
+    }
+
+    {
+        INFO("The view returns the underlying rows");
+        Builder::StatementBuilder select;
+        select.Select({ s_firstColumn, s_secondColumn }).From(viewName);
+
+        Statement statement = select.Prepare(connection);
+        REQUIRE(statement.Step());
+        REQUIRE(statement.GetColumn<int>(0) == 1);
+        REQUIRE(statement.GetColumn<std::string>(1) == "one");
+        REQUIRE(statement.Step());
+        REQUIRE(statement.GetColumn<int>(0) == 2);
+        REQUIRE(statement.GetColumn<std::string>(1) == "two");
+        REQUIRE(!statement.Step());
+    }
+
+    {
+        INFO("A filter can still be applied when reading the view");
+        Builder::StatementBuilder select;
+        select.Select(s_secondColumn).From(viewName).Where(s_firstColumn).Equals(2);
+
+        Statement statement = select.Prepare(connection);
+        REQUIRE(statement.Step());
+        REQUIRE(statement.GetColumn<std::string>(0) == "two");
+        REQUIRE(!statement.Step());
+    }
+}
+
+TEST_CASE("SQLBuilder_UnionAll", "[sqlbuilder]")
+{
+    Connection connection = Connection::Create(SQLITE_MEMORY_DB_CONNECTION_TARGET, Connection::OpenDisposition::Create);
+
+    CreateSimpleTestTable(connection);
+    InsertIntoSimpleTestTable(connection, 1, "one");
+    InsertIntoSimpleTestTable(connection, 2, "two");
+
+    Builder::StatementBuilder select;
+    select.Select(s_firstColumn).From(s_tableName).Where(s_firstColumn).Equals(1).
+        UnionAll().
+        Select(s_firstColumn).From(s_tableName).Where(s_firstColumn).Equals(2);
+
+    Statement statement = select.Prepare(connection);
+
+    REQUIRE(statement.Step());
+    REQUIRE(statement.GetColumn<int>(0) == 1);
+    REQUIRE(statement.Step());
+    REQUIRE(statement.GetColumn<int>(0) == 2);
+    REQUIRE(!statement.Step());
+}
+
+TEST_CASE("SQLBuilder_NotExists", "[sqlbuilder]")
+{
+    Connection connection = Connection::Create(SQLITE_MEMORY_DB_CONNECTION_TARGET, Connection::OpenDisposition::Create);
+
+    constexpr std::string_view otherTable = "othertest";
+
+    CreateSimpleTestTable(connection);
+    InsertIntoSimpleTestTable(connection, 1, "one");
+    InsertIntoSimpleTestTable(connection, 2, "two");
+
+    {
+        Builder::StatementBuilder createTable;
+        createTable.CreateTable(otherTable).Columns({ Builder::ColumnBuilder(s_firstColumn, Builder::Type::Int) });
+        createTable.Execute(connection);
+
+        Builder::StatementBuilder insert;
+        insert.InsertInto(otherTable).Columns(s_firstColumn).Values(2);
+        insert.Execute(connection);
+    }
+
+    // Select rows from the simple table that have no matching row in the other table.
+    Builder::StatementBuilder select;
+    select.Select(Builder::QualifiedColumn{ s_tableName, s_firstColumn }).From(s_tableName).
+        Where().NotExists().BeginParenthetical().
+            Select(Builder::QualifiedColumn{ otherTable, s_firstColumn }).From(otherTable).
+            Where(Builder::QualifiedColumn{ otherTable, s_firstColumn }).Equals(Builder::QualifiedColumn{ s_tableName, s_firstColumn }).
+        EndParenthetical();
+
+    Statement statement = select.Prepare(connection);
+
+    REQUIRE(statement.Step());
+    REQUIRE(statement.GetColumn<int>(0) == 1);
+    REQUIRE(!statement.Step());
+}
+
+TEST_CASE("SQLBuilder_AttachAndTempView", "[sqlbuilder]")
+{
+    TestCommon::TempFile baselineFile{ "repolibtest_baseline"s, ".db"s };
+    INFO("Using temporary file named: " << baselineFile.GetPath());
+
+    {
+        INFO("Create the database that will be attached");
+        Connection baseline = Connection::Create(baselineFile, Connection::OpenDisposition::Create);
+        CreateSimpleTestTable(baseline);
+        InsertIntoSimpleTestTable(baseline, 1, "baseline");
+    }
+
+    Connection connection = Connection::Create(SQLITE_MEMORY_DB_CONNECTION_TARGET, Connection::OpenDisposition::Create);
+
+    constexpr std::string_view baselineAlias = "baseline";
+    constexpr std::string_view deltaTable = "deltatest";
+
+    {
+        INFO("Create a local table with a distinct row");
+        Builder::StatementBuilder createTable;
+        createTable.CreateTable(deltaTable).Columns({
+            Builder::ColumnBuilder(s_firstColumn, Builder::Type::Int),
+            Builder::ColumnBuilder(s_secondColumn, Builder::Type::Text),
+            });
+        createTable.Execute(connection);
+
+        Builder::StatementBuilder insert;
+        insert.InsertInto(deltaTable).Columns({ s_firstColumn, s_secondColumn }).Values(2, "delta");
+        insert.Execute(connection);
+    }
+
+    {
+        INFO("Attach the baseline database");
+        Builder::StatementBuilder attach;
+        attach.Attach(baselineFile.GetPath().u8string(), baselineAlias);
+        attach.Execute(connection);
+    }
+
+    {
+        INFO("A temp view can span the local and attached databases");
+        Builder::StatementBuilder createView;
+        createView.CreateTempView(s_tableName).
+            Select({ s_firstColumn, s_secondColumn }).From(deltaTable).
+            UnionAll().
+            Select({ s_firstColumn, s_secondColumn }).From(Builder::QualifiedTable{ baselineAlias, s_tableName });
+        createView.Execute(connection);
+    }
+
+    {
+        INFO("Reading the view returns the merged rows");
+        Builder::StatementBuilder select;
+        select.Select({ s_firstColumn, s_secondColumn }).From(s_tableName).OrderBy(s_firstColumn);
+
+        Statement statement = select.Prepare(connection);
+
+        REQUIRE(statement.Step());
+        REQUIRE(statement.GetColumn<int>(0) == 1);
+        REQUIRE(statement.GetColumn<std::string>(1) == "baseline");
+
+        REQUIRE(statement.Step());
+        REQUIRE(statement.GetColumn<int>(0) == 2);
+        REQUIRE(statement.GetColumn<std::string>(1) == "delta");
+
+        REQUIRE(!statement.Step());
+    }
+}
+
 TEST_CASE("SQLiteWrapperTransactionRollback", "[sqlitewrapper]")
 {
     Connection connection = Connection::Create(SQLITE_MEMORY_DB_CONNECTION_TARGET, Connection::OpenDisposition::Create);

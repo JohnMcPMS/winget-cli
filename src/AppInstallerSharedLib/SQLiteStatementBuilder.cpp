@@ -324,6 +324,12 @@ namespace AppInstaller::SQLite::Builder
         return *this;
     }
 
+    StatementBuilder& StatementBuilder::Where()
+    {
+        m_stream << " WHERE";
+        return *this;
+    }
+
     StatementBuilder& StatementBuilder::WhereValueContainsEmbeddedNullCharacter(std::string_view column)
     {
         OutputColumns(m_stream, " WHERE instr(", column);
@@ -348,8 +354,15 @@ namespace AppInstaller::SQLite::Builder
     {
         // This is almost certainly not what you want.
         // In SQL, value = NULL is always false.
-        // Use StatementBuilder::IsNull instead.
+        // Use StatementBuilder::IsNull instead, or StatementBuilder::AssignValue
+        // to assign NULL in the set portion of an update statement.
         THROW_HR(E_NOTIMPL);
+    }
+
+    StatementBuilder& StatementBuilder::AssignValue(std::nullptr_t)
+    {
+        m_stream << " = NULL";
+        return *this;
     }
 
     StatementBuilder& StatementBuilder::Equals()
@@ -417,6 +430,18 @@ namespace AppInstaller::SQLite::Builder
         m_stream << ')';
 
         m_bindIndex += static_cast<int>(count);
+        return *this;
+    }
+
+    StatementBuilder& StatementBuilder::Exists()
+    {
+        m_stream << " EXISTS";
+        return *this;
+    }
+
+    StatementBuilder& StatementBuilder::NotExists()
+    {
+        m_stream << " NOT EXISTS";
         return *this;
     }
 
@@ -776,6 +801,26 @@ namespace AppInstaller::SQLite::Builder
         return *this;
     }
 
+    StatementBuilder& StatementBuilder::CreateTempView(std::string_view view)
+    {
+        OutputOperationAndTable(m_stream, "CREATE TEMP VIEW", view);
+        m_stream << " AS ";
+        return *this;
+    }
+
+    StatementBuilder& StatementBuilder::CreateTempView(std::initializer_list<std::string_view> view)
+    {
+        OutputOperationAndTable(m_stream, "CREATE TEMP VIEW", view);
+        m_stream << " AS ";
+        return *this;
+    }
+
+    StatementBuilder& StatementBuilder::UnionAll()
+    {
+        m_stream << " UNION ALL ";
+        return *this;
+    }
+
     StatementBuilder& StatementBuilder::CreateIndex(std::string_view table)
     {
         OutputOperationAndTable(m_stream, "CREATE INDEX", table);
@@ -906,6 +951,14 @@ namespace AppInstaller::SQLite::Builder
     StatementBuilder& StatementBuilder::Vacuum()
     {
         m_stream << "VACUUM";
+        return *this;
+    }
+
+    StatementBuilder& StatementBuilder::Attach(const std::string& path, std::string_view alias)
+    {
+        m_stream << "ATTACH DATABASE ?";
+        AddBindFunctor(m_bindIndex++, path);
+        OutputOperationAndTable(m_stream, " AS", alias);
         return *this;
     }
 
