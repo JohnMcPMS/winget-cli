@@ -23,7 +23,7 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_0
         return s_PUTT_Table_Name;
     }
 
-    void PackageUpdateTrackingTable::Create(SQLite::Connection& connection)
+    void PackageUpdateTrackingTable::Create(SQLite::Connection& connection, RemovalBehavior removals)
     {
         using namespace Builder;
 
@@ -35,7 +35,11 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_0
         builder.Column(ColumnBuilder(s_PUTT_WriteTime, Type::Int64).NotNull());
         builder.Column(ColumnBuilder(s_PUTT_Manifest, Type::Blob));
         builder.Column(ColumnBuilder(s_PUTT_Hash, Type::Blob));
-        builder.Column(ColumnBuilder(s_PUTT_IsRemoved, Type::Int64).Default(0).NotNull());
+
+        if (removals == RemovalBehavior::Record)
+        {
+            builder.Column(ColumnBuilder(s_PUTT_IsRemoved, Type::Int64).NotNull().Default(0));
+        }
 
         builder.EndColumns();
 
@@ -46,11 +50,11 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_0
         indexBuilder.Execute(connection);
     }
 
-    void PackageUpdateTrackingTable::EnsureExists(SQLite::Connection& connection)
+    void PackageUpdateTrackingTable::EnsureExists(SQLite::Connection& connection, RemovalBehavior removals)
     {
         if (!Exists(connection))
         {
-            Create(connection);
+            Create(connection, removals);
         }
     }
 
@@ -73,11 +77,11 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_0
         return statement.GetColumn<int64_t>(0) != 0;
     }
 
-    void PackageUpdateTrackingTable::Update(SQLite::Connection& connection, const ISQLiteIndex* internalIndex, const std::string& packageIdentifier, bool ensureTable)
+    void PackageUpdateTrackingTable::Update(SQLite::Connection& connection, const ISQLiteIndex* internalIndex, const std::string& packageIdentifier, RemovalBehavior removals, bool ensureTable)
     {
         if (ensureTable)
         {
-            EnsureExists(connection);
+            EnsureExists(connection, removals);
         }
 
         SearchRequest request;
@@ -86,26 +90,39 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_0
 
         if (result.Matches.empty())
         {
-            // Mark the package as removed rather than deleting the row; clear the data columns.
-            int64_t currentTime = Utility::GetCurrentUnixEpoch();
-
-            Builder::StatementBuilder updateBuilder;
-            updateBuilder.Update(s_PUTT_Table_Name).Set().
-                Column(s_PUTT_WriteTime).Equals(currentTime).
-                Column(s_PUTT_Manifest).Equals(nullptr).
-                Column(s_PUTT_Hash).Equals(nullptr).
-                Column(s_PUTT_IsRemoved).Equals(1).
-                Where(s_PUTT_Package).LikeWithEscape(packageIdentifier);
-            updateBuilder.Execute(connection);
-
-            if (connection.GetChanges() == 0)
+            if (removals == RemovalBehavior::Delete)
             {
-                // Package was never tracked (added and removed before any tracking checkpoint); record its removal.
-                Builder::StatementBuilder insertBuilder;
-                insertBuilder.InsertInto(s_PUTT_Table_Name).
-                    Columns({ s_PUTT_Package, s_PUTT_WriteTime, s_PUTT_IsRemoved }).
-                    Values(packageIdentifier, currentTime, 1);
-                insertBuilder.Execute(connection);
+                // Remove any existing package update row
+                Builder::StatementBuilder deleteBuilder;
+                deleteBuilder.DeleteFrom(s_PUTT_Table_Name).Where(s_PUTT_Package).LikeWithEscape(packageIdentifier);
+
+                deleteBuilder.Execute(connection);
+            }
+            else
+            {
+                // Mark the package as removed rather than deleting the row, clearing the data columns.
+                int64_t currentTime = Utility::GetCurrentUnixEpoch();
+
+                Builder::StatementBuilder updateBuilder;
+                updateBuilder.Update(s_PUTT_Table_Name).Set().
+                    Column(s_PUTT_WriteTime).Equals(currentTime).
+                    Column(s_PUTT_Manifest).AssignValue(nullptr).
+                    Column(s_PUTT_Hash).AssignValue(nullptr).
+                    Column(s_PUTT_IsRemoved).Equals(1).
+                    Where(s_PUTT_Package).LikeWithEscape(packageIdentifier);
+                updateBuilder.Execute(connection);
+
+                if (connection.GetChanges() == 0)
+                {
+                    // The package was added and removed without an intervening tracking checkpoint,
+                    // so there is no row to mark. Record the removal so that a delta built against an
+                    // older baseline still learns that the package is gone.
+                    Builder::StatementBuilder insertBuilder;
+                    insertBuilder.InsertInto(s_PUTT_Table_Name).
+                        Columns({ s_PUTT_Package, s_PUTT_WriteTime, s_PUTT_IsRemoved }).
+                        Values(packageIdentifier, currentTime, 1);
+                    insertBuilder.Execute(connection);
+                }
             }
         }
         else
@@ -139,14 +156,19 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_0
             int64_t currentTime = Utility::GetCurrentUnixEpoch();
 
             // First attempt to update the row and then insert it if no modification occurred.
-            // Also clears is_removed in case this package was previously removed and is being re-added.
             Builder::StatementBuilder updateBuilder;
             updateBuilder.Update(s_PUTT_Table_Name).Set().
                 Column(s_PUTT_WriteTime).Equals(currentTime).
                 Column(s_PUTT_Manifest).Equals(compressedManifest).
-                Column(s_PUTT_Hash).Equals(manifestHash).
-                Column(s_PUTT_IsRemoved).Equals(0).
-                Where(s_PUTT_Package).LikeWithEscape(packageIdentifier);
+                Column(s_PUTT_Hash).Equals(manifestHash);
+
+            if (removals == RemovalBehavior::Record)
+            {
+                // Clear the flag in case this package was previously removed and is now being re-added.
+                updateBuilder.Column(s_PUTT_IsRemoved).Equals(0);
+            }
+
+            updateBuilder.Where(s_PUTT_Package).LikeWithEscape(packageIdentifier);
 
             updateBuilder.Execute(connection);
 
@@ -162,43 +184,13 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_0
         }
     }
 
-    bool PackageUpdateTrackingTable::CheckConsistency(const SQLite::Connection& connection, ISQLiteIndex* internalIndex, bool log)
+    bool PackageUpdateTrackingTable::CheckConsistency(const SQLite::Connection& connection, ISQLiteIndex* internalIndex, RemovalBehavior removals, bool log)
     {
         bool result = true;
 
-        // Ensure that all non-removed data in the update table matches the internal index
-        for (const PackageData& packageData : GetUpdatesSince(connection, 0))
+        // Ensure that all data in the update table matches the internal index
+        for (const PackageData& packageData : GetUpdatesSince(connection, 0, removals))
         {
-            if (packageData.IsRemoved)
-            {
-                // Removed packages should not be in the internal index
-                SearchRequest request;
-                request.Inclusions.emplace_back(PackageMatchField::Id, MatchType::CaseInsensitive, packageData.PackageIdentifier);
-                if (!internalIndex->Search(connection, request).Matches.empty())
-                {
-                    if (!log)
-                    {
-                        return false;
-                    }
-                    result = false;
-                    AICLI_LOG(Repo, Info, << "  [INVALID] value [" << s_PUTT_Package << "] in table [" << s_PUTT_Table_Name <<
-                        "] at row [" << packageData.RowID << "]; package [" << packageData.PackageIdentifier << "] is marked removed but still exists in the internal index");
-                }
-                continue;
-            }
-
-            if (packageData.Manifest.empty())
-            {
-                if (!log)
-                {
-                    return false;
-                }
-                result = false;
-                AICLI_LOG(Repo, Info, << "  [INVALID] value [" << s_PUTT_Manifest << "] in table [" << s_PUTT_Table_Name <<
-                    "] at row [" << packageData.RowID << "]; manifest blob is empty for non-removed package");
-                continue;
-            }
-
             auto manifestHash = Utility::SHA256::ComputeHash(packageData.Manifest);
             if (!Utility::SHA256::AreEqual(packageData.Hash, manifestHash))
             {
@@ -228,11 +220,33 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_0
             }
         }
 
-        // Ensure that all packages in the internal index are present in the update table (as non-removed)
+        // Any package recorded as removed must no longer be in the internal index
+        for (const std::string& packageIdentifier : GetRemovalsSince(connection, 0, removals))
+        {
+            SearchRequest request;
+            request.Inclusions.emplace_back(PackageMatchField::Id, MatchType::CaseInsensitive, packageIdentifier);
+
+            if (!internalIndex->Search(connection, request).Matches.empty())
+            {
+                if (!log)
+                {
+                    return false;
+                }
+
+                result = false;
+                AICLI_LOG(Repo, Info, << "  [INVALID] value [" << s_PUTT_Package << "] in table [" << s_PUTT_Table_Name <<
+                    "]; the package [" << packageIdentifier << "] is marked as removed but is present in the internal index");
+            }
+        }
+
+        // Ensure that all packages in the internal index are present in the update table
         Builder::StatementBuilder builder;
-        builder.Select(Builder::RowCount).From(s_PUTT_Table_Name).
-            Where(s_PUTT_Package).Like(Builder::Unbound).Escape(EscapeCharForLike).
-            And(s_PUTT_IsRemoved).Equals(0);
+        builder.Select(Builder::RowCount).From(s_PUTT_Table_Name).Where(s_PUTT_Package).Like(Builder::Unbound).Escape(EscapeCharForLike);
+
+        if (removals == RemovalBehavior::Record)
+        {
+            builder.And(s_PUTT_IsRemoved).Equals(0);
+        }
 
         Statement select = builder.Prepare(connection);
 
@@ -262,11 +276,18 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_0
         return result;
     }
 
-    std::vector<PackageUpdateTrackingTable::PackageData> PackageUpdateTrackingTable::GetUpdatesSince(const SQLite::Connection& connection, int64_t updateBaseTime)
+    std::vector<PackageUpdateTrackingTable::PackageData> PackageUpdateTrackingTable::GetUpdatesSince(const SQLite::Connection& connection, int64_t updateBaseTime, RemovalBehavior removals)
     {
         Builder::StatementBuilder builder;
-        builder.Select({ RowIDName, s_PUTT_Package, s_PUTT_WriteTime, s_PUTT_Manifest, s_PUTT_Hash, s_PUTT_IsRemoved }).
+        builder.Select({ RowIDName, s_PUTT_Package, s_PUTT_WriteTime, s_PUTT_Manifest, s_PUTT_Hash }).
             From(s_PUTT_Table_Name).Where(s_PUTT_WriteTime).IsGreaterThanOrEqualTo(updateBaseTime);
+
+        if (removals == RemovalBehavior::Record)
+        {
+            // Removals are reported separately, so that this remains the set of packages that
+            // have data to write out, exactly as it is when removals delete their row.
+            builder.And(s_PUTT_IsRemoved).Equals(0);
+        }
 
         Statement select = builder.Prepare(connection);
 
@@ -278,15 +299,35 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_0
             item.RowID = select.GetColumn<rowid_t>(0);
             item.PackageIdentifier = select.GetColumn<std::string>(1);
             item.WriteTime = select.GetColumn<int64_t>(2);
-            item.IsRemoved = (select.GetColumn<int64_t>(5) != 0);
-
-            if (!item.IsRemoved)
-            {
-                item.Manifest = select.GetColumn<blob_t>(3);
-                item.Hash = select.GetColumn<blob_t>(4);
-            }
+            item.Manifest = select.GetColumn<blob_t>(3);
+            item.Hash = select.GetColumn<blob_t>(4);
 
             result.emplace_back(std::move(item));
+        }
+
+        return result;
+    }
+
+    std::vector<std::string> PackageUpdateTrackingTable::GetRemovalsSince(const SQLite::Connection& connection, int64_t updateBaseTime, RemovalBehavior removals)
+    {
+        std::vector<std::string> result;
+
+        if (removals == RemovalBehavior::Delete)
+        {
+            // Removals delete their row, so there is nothing to report.
+            return result;
+        }
+
+        Builder::StatementBuilder builder;
+        builder.Select(s_PUTT_Package).From(s_PUTT_Table_Name).
+            Where(s_PUTT_WriteTime).IsGreaterThanOrEqualTo(updateBaseTime).
+            And(s_PUTT_IsRemoved).Equals(1);
+
+        Statement select = builder.Prepare(connection);
+
+        while (select.Step())
+        {
+            result.emplace_back(select.GetColumn<std::string>(0));
         }
 
         return result;
@@ -295,9 +336,7 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_0
     SQLite::blob_t PackageUpdateTrackingTable::GetDataHash(const SQLite::Connection& connection, const std::string& packageIdentifier)
     {
         Builder::StatementBuilder builder;
-        builder.Select(s_PUTT_Hash).From(s_PUTT_Table_Name).
-            Where(s_PUTT_Package).LikeWithEscape(packageIdentifier).
-            And(s_PUTT_IsRemoved).Equals(0);
+        builder.Select(s_PUTT_Hash).From(s_PUTT_Table_Name).Where(s_PUTT_Package).LikeWithEscape(packageIdentifier);
 
         Statement select = builder.Prepare(connection);
 
@@ -306,25 +345,17 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_0
         return select.GetColumn<SQLite::blob_t>(0);
     }
 
-    void PackageUpdateTrackingTable::EnsureIsRemovedColumn(SQLite::Connection& connection)
+    void PackageUpdateTrackingTable::AddIsRemovedColumn(SQLite::Connection& connection)
     {
-        // Use PRAGMA table_info to check whether is_removed already exists.
-        SQLite::Statement info = SQLite::Statement::Create(connection, "PRAGMA table_info(update_tracking)");
-        bool hasColumn = false;
-        while (info.Step())
+        // The table is created on demand, so an index that has never had a manifest written
+        // to it will not have one yet. It will be created with the column when it is needed.
+        if (!Exists(connection))
         {
-            if (info.GetColumn<std::string>(1) == std::string{ s_PUTT_IsRemoved })
-            {
-                hasColumn = true;
-                break;
-            }
+            return;
         }
 
-        if (!hasColumn)
-        {
-            SQLite::Statement alter = SQLite::Statement::Create(connection,
-                "ALTER TABLE update_tracking ADD COLUMN is_removed INTEGER NOT NULL DEFAULT 0");
-            alter.Execute();
-        }
+        Builder::StatementBuilder builder;
+        builder.AlterTable(s_PUTT_Table_Name).Add(Builder::ColumnBuilder(s_PUTT_IsRemoved, Builder::Type::Int64).NotNull().Default(0));
+        builder.Execute(connection);
     }
 }

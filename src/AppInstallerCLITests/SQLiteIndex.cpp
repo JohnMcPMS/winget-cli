@@ -3585,7 +3585,7 @@ TEST_CASE("SQLiteIndex_MigrateTo_Data", "[sqliteindex][V2_0]")
         REQUIRE(index.GetVersion() == SQLiteVersion{ 2, 0 });
 
         Connection connection = Connection::Create(tempFile, Connection::OpenDisposition::ReadWrite);
-        auto updateData = Schema::V2_0::PackageUpdateTrackingTable::GetUpdatesSince(connection, 0);
+        auto updateData = Schema::V2_0::PackageUpdateTrackingTable::GetUpdatesSince(connection, 0, Schema::V2_0::PackageUpdateTrackingTable::RemovalBehavior::Delete);
 
         REQUIRE(updateData.size() == 3);
         REQUIRE(std::count_if(updateData.begin(), updateData.end(), [&](const auto& x) { return x.PackageIdentifier == packageId1; }) == 1);
@@ -3965,6 +3965,130 @@ TEST_CASE("SQLiteIndex_VersionStringPreserved", "[sqliteindex]")
     std::string extractedVersion = GetPropertyStringById(index, results.Matches[0].first, PackageVersionProperty::Version);
 
     REQUIRE(extractedVersion == version);
+}
+
+TEST_CASE("SQLiteIndex_UpdateTracking_V2_1_RemovalDeletesRow", "[sqliteindex][V2_0][updatetracking]")
+{
+    TempFile indexFile{ "updatetracking"s, ".db"s };
+
+    ManifestAndPath m1;
+    CreateFakeManifestAndPath(m1, "Publisher1", "1.0");
+    ManifestAndPath m2;
+    CreateFakeManifestAndPath(m2, "Publisher2", "1.0");
+
+    {
+        SQLiteIndex index = SQLiteIndex::CreateNew(indexFile, SQLiteVersion{ 2, 1 });
+        index.SetProperty(SQLiteIndex::Property::PackageUpdateTrackingBaseTime, "0");
+        index.AddManifest(m1.Manifest, m1.Path);
+        index.AddManifest(m2.Manifest, m2.Path);
+        index.RemoveManifest(m2.Manifest, m2.Path);
+        REQUIRE(index.CheckConsistency(true));
+    }
+
+    Connection connection = Connection::Create(indexFile, Connection::OpenDisposition::ReadWrite);
+    using Tracking = Schema::V2_0::PackageUpdateTrackingTable;
+
+    // 2.0 deletes the row, so the removed package leaves no trace at all.
+    auto updates = Tracking::GetUpdatesSince(connection, 0, Tracking::RemovalBehavior::Delete);
+    REQUIRE(updates.size() == 1);
+    REQUIRE(updates[0].PackageIdentifier == "Publisher1.Id");
+
+    // Read with Record to check on the Delete
+    REQUIRE(Tracking::GetRemovalsSince(connection, 0, Tracking::RemovalBehavior::Record).empty());
+}
+
+TEST_CASE("SQLiteIndex_UpdateTracking_V2_1_RemovalIsRecorded", "[sqliteindex][V2_1][updatetracking]")
+{
+    TempFile indexFile{ "updatetracking"s, ".db"s };
+
+    ManifestAndPath m1;
+    CreateFakeManifestAndPath(m1, "Publisher1", "1.0");
+    ManifestAndPath m2;
+    CreateFakeManifestAndPath(m2, "Publisher2", "1.0");
+
+    {
+        SQLiteIndex index = SQLiteIndex::CreateNew(indexFile, SQLiteVersion{ 2, 1 });
+        index.SetProperty(SQLiteIndex::Property::PackageUpdateTrackingBaseTime, "0");
+        index.AddManifest(m1.Manifest, m1.Path);
+        index.AddManifest(m2.Manifest, m2.Path);
+        index.RemoveManifest(m2.Manifest, m2.Path);
+        REQUIRE(index.CheckConsistency(true));
+    }
+
+    Connection connection = Connection::Create(indexFile, Connection::OpenDisposition::ReadWrite);
+    using Tracking = Schema::V2_0::PackageUpdateTrackingTable;
+
+    // The removal must not appear as an update; that would change what the version data
+    // manifest export writes out, which is 2.0 behavior that 2.1 preserves exactly.
+    auto updates = Tracking::GetUpdatesSince(connection, 0, Tracking::RemovalBehavior::Record);
+    REQUIRE(updates.size() == 1);
+    REQUIRE(updates[0].PackageIdentifier == "Publisher1.Id");
+
+    auto removals = Tracking::GetRemovalsSince(connection, 0, Tracking::RemovalBehavior::Record);
+    REQUIRE(removals.size() == 1);
+    REQUIRE(removals[0] == "Publisher2.Id");
+}
+
+TEST_CASE("SQLiteIndex_UpdateTracking_V2_1_ReAddClearsRemoval", "[sqliteindex][V2_1][updatetracking]")
+{
+    TempFile indexFile{ "updatetracking"s, ".db"s };
+
+    ManifestAndPath m1;
+    CreateFakeManifestAndPath(m1, "Publisher1", "1.0");
+    ManifestAndPath m2;
+    CreateFakeManifestAndPath(m2, "Publisher2", "1.0");
+
+    {
+        SQLiteIndex index = SQLiteIndex::CreateNew(indexFile, SQLiteVersion{ 2, 1 });
+        index.SetProperty(SQLiteIndex::Property::PackageUpdateTrackingBaseTime, "0");
+        index.AddManifest(m1.Manifest, m1.Path);
+        index.AddManifest(m2.Manifest, m2.Path);
+        index.RemoveManifest(m2.Manifest, m2.Path);
+        index.AddManifest(m2.Manifest, m2.Path);
+        REQUIRE(index.CheckConsistency(true));
+    }
+
+    Connection connection = Connection::Create(indexFile, Connection::OpenDisposition::ReadWrite);
+    using Tracking = Schema::V2_0::PackageUpdateTrackingTable;
+
+    auto updates = Tracking::GetUpdatesSince(connection, 0, Tracking::RemovalBehavior::Record);
+    REQUIRE(updates.size() == 2);
+
+    REQUIRE(Tracking::GetRemovalsSince(connection, 0, Tracking::RemovalBehavior::Record).empty());
+}
+
+TEST_CASE("SQLiteIndex_UpdateTracking_V2_1_MigrateFrom_2_0", "[sqliteindex][V2_1][updatetracking]")
+{
+    TempFile indexFile{ "updatetracking"s, ".db"s };
+
+    ManifestAndPath m1;
+    CreateFakeManifestAndPath(m1, "Publisher1", "1.0");
+    ManifestAndPath m2;
+    CreateFakeManifestAndPath(m2, "Publisher2", "1.0");
+
+    {
+        SQLiteIndex index = SQLiteIndex::CreateNew(indexFile, SQLiteVersion{ 2, 0 });
+        index.SetProperty(SQLiteIndex::Property::PackageUpdateTrackingBaseTime, "0");
+        index.AddManifest(m1.Manifest, m1.Path);
+        index.AddManifest(m2.Manifest, m2.Path);
+    }
+
+    {
+        SQLiteIndex index = SQLiteIndex::Open(indexFile, SQLiteStorageBase::OpenDisposition::ReadWrite);
+        REQUIRE(index.MigrateTo(SQLiteVersion{ 2, 1 }));
+        REQUIRE(index.GetVersion() == SQLiteVersion{ 2, 1 });
+
+        // Removals recorded after migration require the column added by the migration.
+        index.RemoveManifest(m2.Manifest, m2.Path);
+        REQUIRE(index.CheckConsistency(true));
+    }
+
+    Connection connection = Connection::Create(indexFile, Connection::OpenDisposition::ReadWrite);
+    using Tracking = Schema::V2_0::PackageUpdateTrackingTable;
+
+    auto removals = Tracking::GetRemovalsSince(connection, 0, Tracking::RemovalBehavior::Record);
+    REQUIRE(removals.size() == 1);
+    REQUIRE(removals[0] == "Publisher2.Id");
 }
 
 TEST_CASE("SQLiteIndex_Delta_AddedPackage", "[sqliteindex][V2_1][delta]")

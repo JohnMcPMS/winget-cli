@@ -19,16 +19,25 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_1
 
         auto currentVersion = current->GetVersion();
 
+        SQLite::Savepoint savepoint = SQLite::Savepoint::Create(connection, "migrate_from_v2_1");
+
+        // Attempt a migration to 2.0 first, which will only return true if it actually performed a migration
+        bool v2result = V2_0::Interface::MigrateFrom(connection, current);
+
         // Migration from 2.0 → 2.1: add the is_removed column to update_tracking.
-        if (currentVersion.MajorVersion == 2 && currentVersion.MinorVersion == 0)
+        if (v2result || (currentVersion.MajorVersion == 2 && currentVersion.MinorVersion == 0))
         {
-            SQLite::Savepoint savepoint = SQLite::Savepoint::Create(connection, "migrate_from_v2_1");
-            V2_0::PackageUpdateTrackingTable::EnsureIsRemovedColumn(connection);
+            V2_0::PackageUpdateTrackingTable::AddIsRemovedColumn(connection);
             savepoint.Commit();
             return true;
         }
 
-        // Fall through to V2_0 migration (handles 1.7 → 2.0 → 2.1 via two-step upgrade).
-        return V2_0::Interface::MigrateFrom(connection, current);
+        savepoint.Rollback(true);
+        return false;
+    }
+
+    V2_0::PackageUpdateTrackingTable::RemovalBehavior Interface::GetTrackingRemovalBehavior() const
+    {
+        return V2_0::PackageUpdateTrackingTable::RemovalBehavior::Record;
     }
 }

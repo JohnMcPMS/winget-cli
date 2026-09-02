@@ -437,7 +437,10 @@ namespace AppInstaller::SQLite::Builder
         StatementBuilder& AlterTable(std::initializer_list<std::string_view> table);
 
         // Complete an alter table statement by adding a column.
+        // The SubBuilder form allows for constraints such as `not null` and a default value;
+        // SQLite requires a non-null default when adding a column declared as not null.
         StatementBuilder& Add(std::string_view column, Type type);
+        StatementBuilder& Add(const details::SubBuilder& column);
 
         // Begin a table deletion statement.
         // The initializer_list form enables the table name to be constructed from multiple parts.

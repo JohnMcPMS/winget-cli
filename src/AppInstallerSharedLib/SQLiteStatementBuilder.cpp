@@ -765,6 +765,12 @@ namespace AppInstaller::SQLite::Builder
         return *this;
     }
 
+    StatementBuilder& StatementBuilder::Add(const details::SubBuilder& column)
+    {
+        m_stream << " ADD " << column;
+        return *this;
+    }
+
     StatementBuilder& StatementBuilder::DropTable(std::string_view table)
     {
         OutputOperationAndTable(m_stream, "DROP TABLE", table);

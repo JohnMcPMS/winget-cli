@@ -410,7 +410,7 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_0
     {
         EnsureInternalInterface(connection, true);
         SQLite::rowid_t manifestId = m_internalInterface->AddManifest(connection, manifest, relativePath);
-        PackageUpdateTrackingTable::Update(connection, m_internalInterface.get(), m_internalInterface->GetPropertyByPrimaryId(connection, manifestId, PackageVersionProperty::Id).value());
+        PackageUpdateTrackingTable::Update(connection, m_internalInterface.get(), m_internalInterface->GetPropertyByPrimaryId(connection, manifestId, PackageVersionProperty::Id).value(), GetTrackingRemovalBehavior());
         return manifestId;
     }
 
@@ -420,7 +420,7 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_0
         std::pair<bool, SQLite::rowid_t> result = m_internalInterface->UpdateManifest(connection, manifest, relativePath);
         if (result.first)
         {
-            PackageUpdateTrackingTable::Update(connection, m_internalInterface.get(), m_internalInterface->GetPropertyByPrimaryId(connection, result.second, PackageVersionProperty::Id).value());
+            PackageUpdateTrackingTable::Update(connection, m_internalInterface.get(), m_internalInterface->GetPropertyByPrimaryId(connection, result.second, PackageVersionProperty::Id).value(), GetTrackingRemovalBehavior());
         }
         return result;
     }
@@ -446,7 +446,7 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_0
         m_internalInterface->RemoveManifestById(connection, manifestId);
         if (identifier)
         {
-            PackageUpdateTrackingTable::Update(connection, m_internalInterface.get(), identifier.value());
+            PackageUpdateTrackingTable::Update(connection, m_internalInterface.get(), identifier.value(), GetTrackingRemovalBehavior());
         }
     }
 
@@ -477,7 +477,7 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_0
         if (m_internalInterface)
         {
             AICLI_CHECK_CONSISTENCY(m_internalInterface->CheckConsistency(connection, log));
-            AICLI_CHECK_CONSISTENCY(PackageUpdateTrackingTable::CheckConsistency(connection, m_internalInterface.get(), log));
+            AICLI_CHECK_CONSISTENCY(PackageUpdateTrackingTable::CheckConsistency(connection, m_internalInterface.get(), GetTrackingRemovalBehavior(), log));
 
             return result;
         }
@@ -701,14 +701,14 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_0
         SQLite::Savepoint savepoint = SQLite::Savepoint::Create(connection, "migrate_from_v2_0");
 
         // We only need to insert all of the existing packages into the update tracking table.
-        PackageUpdateTrackingTable::EnsureExists(connection);
+        PackageUpdateTrackingTable::EnsureExists(connection, GetTrackingRemovalBehavior());
         SearchResult allPackages = current->Search(connection, {});
 
         for (const auto& packageMatch : allPackages.Matches)
         {
             std::vector<ISQLiteIndex::VersionKey> versionKeys = current->GetVersionKeysById(connection, packageMatch.first);
             ISQLiteIndex::VersionKey& latestVersionKey = versionKeys[0];
-            PackageUpdateTrackingTable::Update(connection, current, current->GetPropertyByPrimaryId(connection, latestVersionKey.ManifestId, PackageVersionProperty::Id).value(), false);
+            PackageUpdateTrackingTable::Update(connection, current, current->GetPropertyByPrimaryId(connection, latestVersionKey.ManifestId, PackageVersionProperty::Id).value(), GetTrackingRemovalBehavior(), false);
         }
 
         savepoint.Commit();
@@ -737,6 +737,11 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_0
         default:
             THROW_WIN32(ERROR_NOT_SUPPORTED);
         }
+    }
+
+    PackageUpdateTrackingTable::RemovalBehavior Interface::GetTrackingRemovalBehavior() const
+    {
+        return PackageUpdateTrackingTable::RemovalBehavior::Delete;
     }
 
     std::unique_ptr<SearchResultsTable> Interface::CreateSearchResultsTable(const SQLite::Connection& connection) const
@@ -954,16 +959,11 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_0
         THROW_WIN32_IF(ERROR_INVALID_STATE, baseOutputDirectory.empty() || baseOutputDirectory.is_relative());
 
         // TEMP
-        PackageUpdateTrackingTable::EnsureExists(connection);
+        PackageUpdateTrackingTable::EnsureExists(connection, GetTrackingRemovalBehavior());
 
         // Output all of the changed package version manifests since the base time to the target location
-        for (const auto& packageData : PackageUpdateTrackingTable::GetUpdatesSince(connection, updateBaseTime))
+        for (const auto& packageData : PackageUpdateTrackingTable::GetUpdatesSince(connection, updateBaseTime, GetTrackingRemovalBehavior()))
         {
-            if (packageData.IsRemoved)
-            {
-                continue;
-            }
-
             std::filesystem::path packageDirectory = baseOutputDirectory /
                 Manifest::PackageVersionDataManifest::GetRelativeDirectoryPath(packageData.PackageIdentifier, Utility::SHA256::ConvertToString(packageData.Hash));
 
@@ -1072,7 +1072,8 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_0
                 deltaUpdateBaseTime = std::stoll(deltaUpdateBaseTimeString.value());
             }
 
-            auto changedPackages = PackageUpdateTrackingTable::GetUpdatesSince(connection, deltaUpdateBaseTime);
+            auto changedPackages = PackageUpdateTrackingTable::GetUpdatesSince(connection, deltaUpdateBaseTime, GetTrackingRemovalBehavior());
+            auto removedPackages = PackageUpdateTrackingTable::GetRemovalsSince(connection, deltaUpdateBaseTime, GetTrackingRemovalBehavior());
 
             SQLite::Connection deltaConn = SQLite::Connection::Create(
                 deltaOutputPath.u8string(), SQLite::Connection::OpenDisposition::Create);
@@ -1090,27 +1091,29 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_0
 
             SQLite::Savepoint deltaSavepoint = SQLite::Savepoint::Create(deltaConn, "delta_build");
 
+            for (const auto& packageIdentifier : removedPackages)
+            {
+                SQLite::rowid_t packageRowid = anon::GetBaselinePackageRowid(baselineConn, packageIdentifier);
+
+                if (packageRowid == 0)
+                {
+                    // Package was added and removed within the same tracking window; skip.
+                    continue;
+                }
+
+                AICLI_LOG(Repo, Verbose, << "Delta: recording removal of [" << packageIdentifier << "] (rowid=" << packageRowid << ")");
+
+                std::string sql = "INSERT OR REPLACE INTO delta_packages (rowid, id, name, latest_version, is_removed) VALUES (?, ?, '', '', 1)";
+                SQLite::Statement stmt = SQLite::Statement::Create(deltaConn, sql);
+                stmt.Bind(1, packageRowid);
+                stmt.Bind(2, packageIdentifier);
+                stmt.Execute();
+            }
+
             for (const auto& pkg : changedPackages)
             {
                 SQLite::rowid_t packageRowid = anon::GetBaselinePackageRowid(baselineConn, pkg.PackageIdentifier);
 
-                if (pkg.IsRemoved)
-                {
-                    if (packageRowid == 0)
-                    {
-                        // Package was added and removed within the same tracking window; skip.
-                        continue;
-                    }
-
-                    AICLI_LOG(Repo, Verbose, << "Delta: recording removal of [" << pkg.PackageIdentifier << "] (rowid=" << packageRowid << ")");
-
-                    std::string sql = "INSERT OR REPLACE INTO delta_packages (rowid, id, name, latest_version, is_removed) VALUES (?, ?, '', '', 1)";
-                    SQLite::Statement stmt = SQLite::Statement::Create(deltaConn, sql);
-                    stmt.Bind(1, packageRowid);
-                    stmt.Bind(2, pkg.PackageIdentifier);
-                    stmt.Execute();
-                }
-                else
                 {
                     bool isNewPackage = (packageRowid == 0);
                     if (isNewPackage)
@@ -1170,11 +1173,11 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_0
                     anon::ProcessDeltaOneToManyTable(deltaConn, connection, baselineConn,
                         "commands2", "command", packageRowid, nextNewCommandsRowid);
                 }
-
-                deltaSavepoint.Commit();
-
-                AICLI_LOG(Repo, Info, << "Delta index generation complete");
             }
+
+            deltaSavepoint.Commit();
+
+            AICLI_LOG(Repo, Info, << "Delta index generation complete");
         }
 
         PackagesTable::PrepareForPackaging<

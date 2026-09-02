@@ -763,6 +763,37 @@ TEST_CASE("SQLBuilder_AssignValueNull", "[sqlbuilder]")
     }
 }
 
+TEST_CASE("SQLBuilder_AddColumnWithConstraints", "[sqlbuilder]")
+{
+    Connection connection = Connection::Create(SQLITE_MEMORY_DB_CONNECTION_TARGET, Connection::OpenDisposition::Create);
+
+    CreateSimpleTestTable(connection);
+    InsertIntoSimpleTestTable(connection, 1, "one");
+
+    constexpr std::string_view addedColumn = "added";
+
+    {
+        // SQLite requires a non-null default when adding a column declared as not null,
+        // so the plain Add(column, type) form cannot express this.
+        INFO("Add a not null column with a default");
+        Builder::StatementBuilder alter;
+        alter.AlterTable(s_tableName).Add(Builder::ColumnBuilder(addedColumn, Builder::Type::Int64).NotNull().Default(0));
+        alter.Execute(connection);
+    }
+
+    {
+        INFO("The existing row receives the default rather than null");
+        Builder::StatementBuilder select;
+        select.Select(addedColumn).From(s_tableName);
+
+        Statement statement = select.Prepare(connection);
+        REQUIRE(statement.Step());
+        REQUIRE(!statement.GetColumnIsNull(0));
+        REQUIRE(statement.GetColumn<int64_t>(0) == 0);
+        REQUIRE(!statement.Step());
+    }
+}
+
 TEST_CASE("SQLBuilder_CreateTempView", "[sqlbuilder]")
 {
     Connection connection = Connection::Create(SQLITE_MEMORY_DB_CONNECTION_TARGET, Connection::OpenDisposition::Create);

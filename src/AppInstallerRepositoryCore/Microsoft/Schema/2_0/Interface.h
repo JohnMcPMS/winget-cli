@@ -4,6 +4,7 @@
 #include "Microsoft/Schema/ISQLiteIndex.h"
 #include "Microsoft/Schema/2_0/SearchResultsTable.h"
 #include "Microsoft/Schema/2_0/OneToManyTableWithMap.h"
+#include "Microsoft/Schema/2_0/PackageUpdateTrackingTable.h"
 
 #include <memory>
 #include <vector>
@@ -62,6 +63,11 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_0
         void SetupDeltaReadMode(SQLite::Connection& connection, const std::filesystem::path& baselinePath);
 
     protected:
+        // Determines how the removal of a package is recorded in the update tracking table.
+        // Version 2.0 deletes the row; later versions may record the removal instead so that
+        // a delta index can express it.
+        virtual PackageUpdateTrackingTable::RemovalBehavior GetTrackingRemovalBehavior() const;
+
         // Creates the search results table.
         virtual std::unique_ptr<SearchResultsTable> CreateSearchResultsTable(const SQLite::Connection& connection) const;
 

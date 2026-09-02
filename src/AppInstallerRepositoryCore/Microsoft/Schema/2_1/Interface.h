@@ -17,5 +17,10 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_1
 
         // Version 2.0
         bool MigrateFrom(SQLite::Connection& connection, const ISQLiteIndex* current) override;
+
+    protected:
+        // Records removals in the update tracking table rather than deleting the row,
+        // so that delta generation can see which packages have gone away.
+        V2_0::PackageUpdateTrackingTable::RemovalBehavior GetTrackingRemovalBehavior() const override;
     };
 }
