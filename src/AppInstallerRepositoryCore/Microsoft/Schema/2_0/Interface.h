@@ -56,11 +56,6 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_0
         bool MigrateFrom(SQLite::Connection& connection, const ISQLiteIndex* current) override;
         void SetProperty(SQLite::Connection& connection, Property property, const std::string& value) override;
 
-        // Sets up this index to act as a composed (delta + baseline) read-only view.
-        // Attaches the baseline database and creates TEMP VIEWs that union delta + baseline data.
-        // Must be called before any read operations on a delta index.
-        void SetupDeltaReadMode(SQLite::Connection& connection, const std::filesystem::path& baselinePath);
-
     protected:
         // Determines how the removal of a package is recorded in the update tracking table.
         // Version 2.0 deletes the row; later versions may record the removal instead so that
@@ -106,7 +101,9 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_0
         // If EnsureInternalInterface has been called.
         mutable bool m_internalInterfaceChecked = false;
 
-        // Set to true after SetupDeltaReadMode; prevents EnsureInternalInterface from creating the V1.7 interface.
+        // Set when the tables that this interface reads are the merged views over a delta and its
+        // baseline rather than tables of this database. Version 2.0 cannot produce that state
+        // itself; a derived version sets this when it establishes the views.
         mutable bool m_isDeltaReadMode = false;
 
         // Interface to the data before PrepareForPackaging is called.

@@ -964,6 +964,76 @@ TEST_CASE("SQLBuilder_AttachAndTempView", "[sqlbuilder]")
     }
 }
 
+TEST_CASE("SQLBuilder_ViewWithTombstoneSuppression", "[sqlbuilder]")
+{
+    Connection connection = Connection::Create(SQLITE_MEMORY_DB_CONNECTION_TARGET, Connection::OpenDisposition::Create);
+
+    constexpr std::string_view valueTombstoneTable = "valuetombstone";
+    constexpr std::string_view ownerTombstoneTable = "ownertombstone";
+    constexpr std::string_view removedColumn = "is_removed";
+    constexpr std::string_view valueAlias = "v";
+    constexpr std::string_view ownerAlias = "o";
+    constexpr std::string_view viewName = "survivors";
+
+    CreateSimpleTestTable(connection);
+    InsertIntoSimpleTestTable(connection, 1, "kept");
+    InsertIntoSimpleTestTable(connection, 2, "value removed");
+    InsertIntoSimpleTestTable(connection, 3, "owner removed");
+
+    auto createTombstoneTable = [&](std::string_view tableName, int suppressedValue)
+        {
+            Builder::StatementBuilder createTable;
+            createTable.CreateTable(tableName).Columns({
+                Builder::ColumnBuilder(s_firstColumn, Builder::Type::Int),
+                Builder::ColumnBuilder(removedColumn, Builder::Type::Int),
+                });
+            createTable.Execute(connection);
+
+            Builder::StatementBuilder insertSuppressed;
+            insertSuppressed.InsertInto(tableName).Columns({ s_firstColumn, removedColumn }).Values(suppressedValue, 1);
+            insertSuppressed.Execute(connection);
+
+            // Row 1 is named by both tables without being removed by either, which is what
+            // distinguishes a test of the removal flag from a test of mere presence.
+            Builder::StatementBuilder insertMentioned;
+            insertMentioned.InsertInto(tableName).Columns({ s_firstColumn, removedColumn }).Values(1, 0);
+            insertMentioned.Execute(connection);
+        };
+
+    createTombstoneTable(valueTombstoneTable, 2);
+    createTombstoneTable(ownerTombstoneTable, 3);
+
+    {
+        INFO("A view cannot contain bound parameters, so its comparisons have to be literals");
+        Builder::StatementBuilder createView;
+        createView.CreateTempView(viewName).
+            Select({ s_firstColumn, s_secondColumn }).From(s_tableName).
+            Where().NotExists().BeginParenthetical().
+                Select(s_firstColumn).From(valueTombstoneTable).As(valueAlias).
+                Where(Builder::QualifiedColumn{ valueAlias, s_firstColumn }).Equals(Builder::QualifiedColumn{ s_tableName, s_firstColumn }).
+                And(Builder::QualifiedColumn{ valueAlias, removedColumn }).EqualsLiteral(1).
+            EndParenthetical().
+            And().NotExists().BeginParenthetical().
+                Select(s_firstColumn).From(ownerTombstoneTable).As(ownerAlias).
+                Where(Builder::QualifiedColumn{ ownerAlias, s_firstColumn }).Equals(Builder::QualifiedColumn{ s_tableName, s_firstColumn }).
+                And(Builder::QualifiedColumn{ ownerAlias, removedColumn }).EqualsLiteral(1).
+            EndParenthetical();
+        createView.Execute(connection);
+    }
+
+    INFO("Only the row that neither tombstone removes survives");
+    Builder::StatementBuilder select;
+    select.Select({ s_firstColumn, s_secondColumn }).From(viewName).OrderBy(s_firstColumn);
+
+    Statement statement = select.Prepare(connection);
+
+    REQUIRE(statement.Step());
+    REQUIRE(statement.GetColumn<int>(0) == 1);
+    REQUIRE(statement.GetColumn<std::string>(1) == "kept");
+
+    REQUIRE(!statement.Step());
+}
+
 TEST_CASE("SQLiteWrapperTransactionRollback", "[sqlitewrapper]")
 {
     Connection connection = Connection::Create(SQLITE_MEMORY_DB_CONNECTION_TARGET, Connection::OpenDisposition::Create);

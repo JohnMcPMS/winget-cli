@@ -292,6 +292,11 @@ namespace AppInstaller::SQLite::Builder
         // `value = NULL` is always false when used as a filter. Use IsNull for filtering.
         StatementBuilder& AssignValue(std::nullptr_t);
 
+        // Compares the current column against the value written directly into the statement
+        // rather than bound to it. A view definition cannot contain bound parameters, so a
+        // comparison within one has to be expressed this way.
+        StatementBuilder& EqualsLiteral(int64_t value);
+
         template <typename ValueType>
         StatementBuilder& IsGreaterThan(const ValueType& value)
         {
@@ -333,6 +338,10 @@ namespace AppInstaller::SQLite::Builder
         StatementBuilder& And(std::string_view column);
         StatementBuilder& And(const QualifiedColumn& column);
         StatementBuilder& Or(const QualifiedColumn& column);
+
+        // Continues a filter clause with a condition that is not introduced by a column,
+        // such as a further `not exists` subquery.
+        StatementBuilder& And();
 
         // Begin a join clause.
         // The initializer_list form enables the table name to be constructed from multiple parts.

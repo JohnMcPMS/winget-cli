@@ -4,6 +4,7 @@
 #include "Interface.h"
 #include "Microsoft/Schema/2_0/PackageUpdateTrackingTable.h"
 #include "Microsoft/Schema/2_1/DeltaGeneration.h"
+#include "Microsoft/Schema/2_1/DeltaViews.h"
 
 #include <winget/SQLiteMetadataTable.h>
 #include <AppInstallerDateTime.h>
@@ -38,6 +39,17 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_1
 
         savepoint.Rollback(true);
         return false;
+    }
+
+    void Interface::SetupDeltaReadMode(SQLite::Connection& connection, const std::string& baselinePath)
+    {
+        Delta::SetupReadMode(connection, baselinePath);
+
+        // The merged data is presented through views rather than tables, so the checks that the
+        // base makes to decide whether this index has been packaged cannot see it. Record that the
+        // question is already settled: a delta is only ever read, and only in its packaged form.
+        m_isDeltaReadMode = true;
+        m_internalInterfaceChecked = true;
     }
 
     void Interface::CreateAdditionalPackagingOutput(const SQLiteIndexContext& context)

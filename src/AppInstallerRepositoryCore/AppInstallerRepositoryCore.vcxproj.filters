@@ -528,6 +528,9 @@
     <ClInclude Include="Microsoft\Schema\2_1\DeltaTables.h">
       <Filter>Microsoft\Schema\2_1</Filter>
     </ClInclude>
+    <ClInclude Include="Microsoft\Schema\2_1\DeltaViews.h">
+      <Filter>Microsoft\Schema\2_1</Filter>
+    </ClInclude>
     <ClInclude Include="Microsoft\Schema\2_1\Interface.h">
       <Filter>Microsoft\Schema\2_1</Filter>
     </ClInclude>
@@ -828,6 +831,9 @@
       <Filter>Microsoft\Schema\2_1</Filter>
     </ClCompile>
     <ClCompile Include="Microsoft\Schema\2_1\DeltaTables.cpp">
+      <Filter>Microsoft\Schema\2_1</Filter>
+    </ClCompile>
+    <ClCompile Include="Microsoft\Schema\2_1\DeltaViews.cpp">
       <Filter>Microsoft\Schema\2_1</Filter>
     </ClCompile>
     <ClCompile Include="Microsoft\Schema\2_1\Interface_2_1.cpp">

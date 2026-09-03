@@ -24,6 +24,7 @@
 #include <Microsoft/Schema/1_4/DependenciesTable.h>
 #include <Microsoft/Schema/2_0/Interface.h>
 #include <Microsoft/Schema/2_0/PackageUpdateTrackingTable.h>
+#include <Microsoft/Schema/2_1/DeltaViews.h>
 
 #include <chrono>
 #include <thread>
@@ -4313,6 +4314,82 @@ TEST_CASE("SQLiteIndex_Delta_NoChanges_EmptyDelta", "[sqliteindex][V2_1][delta]"
         REQUIRE(countStmt.Step());
         REQUIRE(countStmt.GetColumn<int64_t>(0) == 0);
     }
+}
+
+// Reads a package's tags through the merged delta views. This is the shape that the 2.0 search
+// path reads in: the map table governs which values a package has, and the value table holds the
+// strings themselves.
+std::set<std::string> GetTagsThroughDeltaViews(Connection& connection, std::string_view packageId)
+{
+    std::set<std::string> result;
+
+    Statement statement = Statement::Create(connection,
+        "SELECT [t].[tag] FROM [tags2] AS [t] "
+        "JOIN [tags2_map] AS [m] ON [m].[tag] = [t].[rowid] "
+        "JOIN [packages] AS [p] ON [p].[rowid] = [m].[package] "
+        "WHERE [p].[id] = ?");
+    statement.Bind(1, std::string{ packageId });
+
+    while (statement.Step())
+    {
+        result.insert(statement.GetColumn<std::string>(0));
+    }
+
+    return result;
+}
+
+TEST_CASE("SQLiteIndex_Delta_MergedViews_AssociationsAreSuppressedPerRow", "[sqliteindex][V2_1][delta]")
+{
+    TempFile workingFile{ "delta_working"s, ".db"s };
+    TempFile baselineFile{ "delta_baseline"s, ".db"s };
+    TempFile deltaFile{ "delta_output"s, ".db"s };
+
+    ManifestAndPath m1;
+    CreateFakeManifestAndPath(m1, "Publisher1", "1.0");
+    ManifestAndPath m2;
+    CreateFakeManifestAndPath(m2, "Publisher2", "1.0");
+
+    // Both packages start out with the tags that a fake manifest carries: t1 and t2.
+    {
+        SQLiteIndex index = SQLiteIndex::CreateNew(workingFile, SQLiteVersion{ 2, 1 });
+        index.SetProperty(SQLiteIndex::Property::PackageUpdateTrackingBaseTime, "0");
+        index.AddManifest(m1.Manifest, m1.Path);
+        index.AddManifest(m2.Manifest, m2.Path);
+
+        std::filesystem::copy_file(workingFile.GetPath(), baselineFile.GetPath(), std::filesystem::copy_options::overwrite_existing);
+        SQLiteIndex prepared = SQLiteIndex::Open(baselineFile.GetPath().u8string(), SQLiteStorageBase::OpenDisposition::ReadWrite);
+        prepared.PrepareForPackaging();
+    }
+
+    // Publisher1 trades t2 for t3, keeping t1. Publisher2 goes away entirely.
+    {
+        SQLiteIndex index = SQLiteIndex::Open(workingFile, SQLiteStorageBase::OpenDisposition::ReadWrite);
+        index.SetProperty(SQLiteIndex::Property::PackageUpdateTrackingBaseTime, "");
+
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+
+        m1.Manifest.DefaultLocalization.Add<Localization::Tags>({ "t1", "t3" });
+        REQUIRE(index.UpdateManifest(m1.Manifest, m1.Path));
+
+        index.RemoveManifest(m2.Manifest, m2.Path);
+
+        index.SetProperty(SQLiteIndex::Property::DeltaBaselineIndexPath, baselineFile.GetPath().u8string());
+        index.SetProperty(SQLiteIndex::Property::DeltaOutputPath, deltaFile.GetPath().u8string());
+        index.PrepareForPackaging();
+    }
+
+    REQUIRE(std::filesystem::exists(deltaFile.GetPath()));
+
+    Connection deltaConnection = Connection::Create(deltaFile.GetPath().u8string(), Connection::OpenDisposition::ReadOnly);
+    Schema::V2_1::Delta::SetupReadMode(deltaConnection, baselineFile.GetPath());
+
+    // The delta records only what changed about Publisher1, so it never mentions t1 at all.
+    // Suppressing the baseline at the level of the package would therefore lose it.
+    REQUIRE(GetTagsThroughDeltaViews(deltaConnection, "Publisher1.Id") == std::set<std::string>{ "t1", "t3" });
+
+    // A removed package gets no per-association removal rows, so the only thing that can suppress
+    // its associations is the removal recorded against the package itself.
+    REQUIRE(GetTagsThroughDeltaViews(deltaConnection, "Publisher2.Id").empty());
 }
 
 TEST_CASE("SQLiteIndex_Delta_OpenWithBaseline_Search", "[sqliteindex][V2_1][delta]")

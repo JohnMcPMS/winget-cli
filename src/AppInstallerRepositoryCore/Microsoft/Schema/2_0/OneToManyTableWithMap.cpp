@@ -23,6 +23,13 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_0
             return s_OneToManyTableWithMap_MapTable_PrimaryName;
         }
 
+        std::string OneToManyTableGetMapTableName(std::string_view tableName)
+        {
+            std::string result{ tableName };
+            result += s_OneToManyTableWithMap_MapTable_Suffix;
+            return result;
+        }
+
         namespace anon
         {
             // Create the mapping table insert statement for multiple use.

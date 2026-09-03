@@ -365,6 +365,12 @@ namespace AppInstaller::SQLite::Builder
         return *this;
     }
 
+    StatementBuilder& StatementBuilder::EqualsLiteral(int64_t value)
+    {
+        m_stream << " = " << value;
+        return *this;
+    }
+
     StatementBuilder& StatementBuilder::Equals()
     {
         m_stream << " =";
@@ -466,6 +472,12 @@ namespace AppInstaller::SQLite::Builder
     StatementBuilder& StatementBuilder::Or(const QualifiedColumn& column)
     {
         OutputColumns(m_stream, " OR ", column);
+        return *this;
+    }
+
+    StatementBuilder& StatementBuilder::And()
+    {
+        m_stream << " AND";
         return *this;
     }
 
