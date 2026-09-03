@@ -4060,7 +4060,7 @@ TEST_CASE("SQLiteIndex_UpdateTracking_V2_0_RemovalDeletesRow", "[sqliteindex][V2
     REQUIRE(updates[0].PackageIdentifier == "Publisher1.Id");
 
     // Read with Record to check on the Delete
-    REQUIRE(Tracking::GetRemovalsSince(connection, 0, Tracking::RemovalBehavior::Record).empty());
+    REQUIRE(Tracking::GetRemovalsSince(connection, 0, Tracking::RemovalBehavior::Delete).empty());
 }
 
 TEST_CASE("SQLiteIndex_UpdateTracking_V2_1_RemovalIsRecorded", "[sqliteindex][V2_1][updatetracking]")
