@@ -4314,6 +4314,12 @@ TEST_CASE("SQLiteIndex_Delta_NoChanges_EmptyDelta", "[sqliteindex][V2_1][delta]"
         REQUIRE(countStmt.Step());
         REQUIRE(countStmt.GetColumn<int64_t>(0) == 0);
     }
+
+    // The delta ships as plain tables, just as a prepared 2.0 index does. Its indexes serve only
+    // generation, and the merged views probe nothing but primary keys.
+    Statement indexStmt = Statement::Create(deltaConn, "SELECT COUNT(*) FROM [sqlite_master] WHERE [type] = 'index'");
+    REQUIRE(indexStmt.Step());
+    REQUIRE(indexStmt.GetColumn<int64_t>(0) == 0);
 }
 
 // Reads a package's tags through the merged delta views. This is the shape that the 2.0 search
@@ -4381,7 +4387,7 @@ TEST_CASE("SQLiteIndex_Delta_MergedViews_AssociationsAreSuppressedPerRow", "[sql
     REQUIRE(std::filesystem::exists(deltaFile.GetPath()));
 
     Connection deltaConnection = Connection::Create(deltaFile.GetPath().u8string(), Connection::OpenDisposition::ReadOnly);
-    Schema::V2_1::Delta::SetupReadMode(deltaConnection, baselineFile.GetPath());
+    Schema::V2_1::Delta::SetupReadMode(deltaConnection, baselineFile.GetPath().u8string());
 
     // The delta records only what changed about Publisher1, so it never mentions t1 at all.
     // Suppressing the baseline at the level of the package would therefore lose it.

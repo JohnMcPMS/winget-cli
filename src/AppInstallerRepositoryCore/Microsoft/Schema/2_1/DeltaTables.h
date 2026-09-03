@@ -35,4 +35,8 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_1::Delta
 
     // Creates the full set of delta tables in the given database.
     void CreateTables(SQLite::Connection& connection);
+
+    // Drops the indexes that only generation needs, leaving the delta in the form that ships.
+    // Must be called outside of a transaction, as it vacuums to reclaim the freed pages.
+    void PrepareTablesForPackaging(SQLite::Connection& connection);
 }

@@ -358,6 +358,9 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_1::Delta
 
         savepoint.Commit();
 
+        // Outside the savepoint, since this vacuums.
+        PrepareTablesForPackaging(deltaConnection);
+
         AICLI_LOG(Repo, Info, << "Delta index generation complete");
     }
 }

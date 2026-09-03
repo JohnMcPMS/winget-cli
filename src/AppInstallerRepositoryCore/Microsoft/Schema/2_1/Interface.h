@@ -30,9 +30,5 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_1
         // Records the baseline time for this index, and generates a delta index against a previous
         // baseline when the caller has supplied the paths to do so.
         void CreateAdditionalPackagingOutput(const SQLiteIndexContext& context) override;
-
-        // Records removals in the update tracking table rather than deleting the row,
-        // so that delta generation can see which packages have gone away.
-        V2_0::PackageUpdateTrackingTable::RemovalBehavior GetTrackingRemovalBehavior() const override;
     };
 }

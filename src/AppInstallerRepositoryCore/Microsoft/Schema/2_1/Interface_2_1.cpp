@@ -11,7 +11,12 @@
 
 namespace AppInstaller::Repository::Microsoft::Schema::V2_1
 {
-    Interface::Interface(Utility::NormalizationVersion normVersion) : V2_0::Interface(normVersion) {}
+    Interface::Interface(Utility::NormalizationVersion normVersion) : V2_0::Interface(normVersion)
+    {
+        // Removals are recorded rather than deleted, so that delta generation can see which
+        // packages have gone away. This is the difference that 2.1 exists for.
+        m_trackingRemovalBehavior = V2_0::PackageUpdateTrackingTable::RemovalBehavior::Record;
+    }
 
     SQLite::Version Interface::GetVersion() const
     {
@@ -84,8 +89,8 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_1
             baselineTime = std::stoll(baselineTimeString.value());
         }
 
-        auto changedPackages = V2_0::PackageUpdateTrackingTable::GetUpdatesSince(connection, baselineTime, GetTrackingRemovalBehavior());
-        auto removedPackages = V2_0::PackageUpdateTrackingTable::GetRemovalsSince(connection, baselineTime, GetTrackingRemovalBehavior());
+        auto changedPackages = V2_0::PackageUpdateTrackingTable::GetUpdatesSince(connection, baselineTime, m_trackingRemovalBehavior);
+        auto removedPackages = V2_0::PackageUpdateTrackingTable::GetRemovalsSince(connection, baselineTime, m_trackingRemovalBehavior);
 
         Delta::Generate(
             connection,
@@ -94,10 +99,5 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_1
             GetVersion(),
             changedPackages,
             removedPackages);
-    }
-
-    V2_0::PackageUpdateTrackingTable::RemovalBehavior Interface::GetTrackingRemovalBehavior() const
-    {
-        return V2_0::PackageUpdateTrackingTable::RemovalBehavior::Record;
     }
 }

@@ -107,7 +107,7 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_0
     {
         EnsureInternalInterface(connection, true);
         SQLite::rowid_t manifestId = m_internalInterface->AddManifest(connection, manifest, relativePath);
-        PackageUpdateTrackingTable::Update(connection, m_internalInterface.get(), m_internalInterface->GetPropertyByPrimaryId(connection, manifestId, PackageVersionProperty::Id).value(), GetTrackingRemovalBehavior());
+        PackageUpdateTrackingTable::Update(connection, m_internalInterface.get(), m_internalInterface->GetPropertyByPrimaryId(connection, manifestId, PackageVersionProperty::Id).value(), m_trackingRemovalBehavior);
         return manifestId;
     }
 
@@ -117,7 +117,7 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_0
         std::pair<bool, SQLite::rowid_t> result = m_internalInterface->UpdateManifest(connection, manifest, relativePath);
         if (result.first)
         {
-            PackageUpdateTrackingTable::Update(connection, m_internalInterface.get(), m_internalInterface->GetPropertyByPrimaryId(connection, result.second, PackageVersionProperty::Id).value(), GetTrackingRemovalBehavior());
+            PackageUpdateTrackingTable::Update(connection, m_internalInterface.get(), m_internalInterface->GetPropertyByPrimaryId(connection, result.second, PackageVersionProperty::Id).value(), m_trackingRemovalBehavior);
         }
         return result;
     }
@@ -143,7 +143,7 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_0
         m_internalInterface->RemoveManifestById(connection, manifestId);
         if (identifier)
         {
-            PackageUpdateTrackingTable::Update(connection, m_internalInterface.get(), identifier.value(), GetTrackingRemovalBehavior());
+            PackageUpdateTrackingTable::Update(connection, m_internalInterface.get(), identifier.value(), m_trackingRemovalBehavior);
         }
     }
 
@@ -174,7 +174,7 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_0
         if (m_internalInterface)
         {
             AICLI_CHECK_CONSISTENCY(m_internalInterface->CheckConsistency(connection, log));
-            AICLI_CHECK_CONSISTENCY(PackageUpdateTrackingTable::CheckConsistency(connection, m_internalInterface.get(), GetTrackingRemovalBehavior(), log));
+            AICLI_CHECK_CONSISTENCY(PackageUpdateTrackingTable::CheckConsistency(connection, m_internalInterface.get(), m_trackingRemovalBehavior, log));
 
             return result;
         }
@@ -398,14 +398,14 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_0
         SQLite::Savepoint savepoint = SQLite::Savepoint::Create(connection, "migrate_from_v2_0");
 
         // We only need to insert all of the existing packages into the update tracking table.
-        PackageUpdateTrackingTable::EnsureExists(connection, GetTrackingRemovalBehavior());
+        PackageUpdateTrackingTable::EnsureExists(connection, m_trackingRemovalBehavior);
         SearchResult allPackages = current->Search(connection, {});
 
         for (const auto& packageMatch : allPackages.Matches)
         {
             std::vector<ISQLiteIndex::VersionKey> versionKeys = current->GetVersionKeysById(connection, packageMatch.first);
             ISQLiteIndex::VersionKey& latestVersionKey = versionKeys[0];
-            PackageUpdateTrackingTable::Update(connection, current, current->GetPropertyByPrimaryId(connection, latestVersionKey.ManifestId, PackageVersionProperty::Id).value(), GetTrackingRemovalBehavior(), false);
+            PackageUpdateTrackingTable::Update(connection, current, current->GetPropertyByPrimaryId(connection, latestVersionKey.ManifestId, PackageVersionProperty::Id).value(), m_trackingRemovalBehavior, false);
         }
 
         savepoint.Commit();
@@ -438,11 +438,6 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_0
 
     void Interface::CreateAdditionalPackagingOutput(const SQLiteIndexContext&)
     {
-    }
-
-    PackageUpdateTrackingTable::RemovalBehavior Interface::GetTrackingRemovalBehavior() const
-    {
-        return PackageUpdateTrackingTable::RemovalBehavior::Delete;
     }
 
     std::unique_ptr<SearchResultsTable> Interface::CreateSearchResultsTable(const SQLite::Connection& connection) const
@@ -655,10 +650,10 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_0
         THROW_WIN32_IF(ERROR_INVALID_STATE, baseOutputDirectory.empty() || baseOutputDirectory.is_relative());
 
         // TEMP
-        PackageUpdateTrackingTable::EnsureExists(connection, GetTrackingRemovalBehavior());
+        PackageUpdateTrackingTable::EnsureExists(connection, m_trackingRemovalBehavior);
 
         // Output all of the changed package version manifests since the base time to the target location
-        for (const auto& packageData : PackageUpdateTrackingTable::GetUpdatesSince(connection, updateBaseTime, GetTrackingRemovalBehavior()))
+        for (const auto& packageData : PackageUpdateTrackingTable::GetUpdatesSince(connection, updateBaseTime, m_trackingRemovalBehavior))
         {
             std::filesystem::path packageDirectory = baseOutputDirectory /
                 Manifest::PackageVersionDataManifest::GetRelativeDirectoryPath(packageData.PackageIdentifier, Utility::SHA256::ConvertToString(packageData.Hash));
