@@ -3,6 +3,7 @@
 #include "pch.h"
 #include "Microsoft/Schema/2_1/DeltaGeneration.h"
 #include "Microsoft/Schema/2_1/DeltaTables.h"
+#include "Microsoft/Schema/2_1/Interface.h"
 
 #include "Microsoft/Schema/2_0/PackagesTable.h"
 #include "Microsoft/Schema/2_0/OneToManyTableWithMap.h"
@@ -10,6 +11,7 @@
 
 #include <winget/SQLiteStatementBuilder.h>
 #include <winget/SQLiteStorageBase.h>
+#include <winget/SQLiteMetadataTable.h>
 
 #include <algorithm>
 #include <map>
@@ -305,10 +307,18 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_1::Delta
         AICLI_LOG(Repo, Info, << "Generating delta index at [" << deltaOutputPath << "] for " << changedPackages.size() <<
             " changed and " << removedPackages.size() << " removed packages");
 
+        // A delta is only meaningful alongside the exact baseline it was computed from, so the
+        // baseline has to be one that was designated as such and can therefore be named.
+        std::optional<std::string> baselineIdentifier =
+            SQLite::MetadataTable::TryGetNamedValue<std::string>(baselineConnection, s_MetadataValueName_BaselineIdentifier);
+        THROW_HR_IF(APPINSTALLER_CLI_ERROR_INDEX_INTEGRITY_COMPROMISED, !baselineIdentifier || baselineIdentifier->empty());
+
         DeltaDatabase deltaDatabase{ deltaOutputPath, version };
         SQLite::Connection& deltaConnection = deltaDatabase.GetConnection();
 
         SQLite::Savepoint savepoint = SQLite::Savepoint::Create(deltaConnection, "delta_generate_v2_1");
+
+        SQLite::MetadataTable::SetNamedValue(deltaConnection, s_MetadataValueName_DeltaBaselineIdentifier, baselineIdentifier.value());
 
         std::map<std::string_view, SQLite::rowid_t> nextValueRowIds;
 

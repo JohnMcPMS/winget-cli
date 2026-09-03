@@ -8,6 +8,7 @@
 #include <Microsoft/SQLiteIndex.h>
 #include <winget/Manifest.h>
 #include <AppInstallerStrings.h>
+#include <AppInstallerErrors.h>
 #include <winget/SQLiteMetadataTable.h>
 #include <winget/PackageVersionDataManifest.h>
 
@@ -4176,6 +4177,7 @@ TEST_CASE("SQLiteIndex_Delta_AddedPackage", "[sqliteindex][V2_1][delta]")
         std::filesystem::copy_file(workingFile.GetPath(), baselineFile.GetPath(), std::filesystem::copy_options::overwrite_existing);
         SQLiteIndex prepared = SQLiteIndex::Open(baselineFile.GetPath().u8string(), SQLiteStorageBase::OpenDisposition::ReadWrite);
         prepared.PrepareForPackaging();
+        prepared.MarkAsBaseline();
     }
 
     // Add a new package to the working index and generate a delta
@@ -4230,6 +4232,7 @@ TEST_CASE("SQLiteIndex_Delta_RemovedPackage", "[sqliteindex][V2_1][delta]")
         std::filesystem::copy_file(workingFile.GetPath(), baselineFile.GetPath(), std::filesystem::copy_options::overwrite_existing);
         SQLiteIndex prepared = SQLiteIndex::Open(baselineFile.GetPath().u8string(), SQLiteStorageBase::OpenDisposition::ReadWrite);
         prepared.PrepareForPackaging();
+        prepared.MarkAsBaseline();
     }
 
     // Remove Publisher2 from the working index and generate a delta
@@ -4278,6 +4281,7 @@ TEST_CASE("SQLiteIndex_Delta_NoChanges_EmptyDelta", "[sqliteindex][V2_1][delta]"
         std::filesystem::copy_file(workingFile.GetPath(), baselineFile.GetPath(), std::filesystem::copy_options::overwrite_existing);
         SQLiteIndex prepared = SQLiteIndex::Open(baselineFile.GetPath().u8string(), SQLiteStorageBase::OpenDisposition::ReadWrite);
         prepared.PrepareForPackaging();
+        prepared.MarkAsBaseline();
     }
 
     // Set tracking base to "now" so no packages appear changed
@@ -4365,6 +4369,7 @@ TEST_CASE("SQLiteIndex_Delta_MergedViews_AssociationsAreSuppressedPerRow", "[sql
         std::filesystem::copy_file(workingFile.GetPath(), baselineFile.GetPath(), std::filesystem::copy_options::overwrite_existing);
         SQLiteIndex prepared = SQLiteIndex::Open(baselineFile.GetPath().u8string(), SQLiteStorageBase::OpenDisposition::ReadWrite);
         prepared.PrepareForPackaging();
+        prepared.MarkAsBaseline();
     }
 
     // Publisher1 trades t2 for t3, keeping t1. Publisher2 goes away entirely.
@@ -4417,6 +4422,7 @@ TEST_CASE("SQLiteIndex_Delta_OpenWithBaseline_Search", "[sqliteindex][V2_1][delt
         std::filesystem::copy_file(workingFile.GetPath(), baselineFile.GetPath(), std::filesystem::copy_options::overwrite_existing);
         SQLiteIndex prepared = SQLiteIndex::Open(baselineFile.GetPath().u8string(), SQLiteStorageBase::OpenDisposition::ReadWrite);
         prepared.PrepareForPackaging();
+        prepared.MarkAsBaseline();
     }
 
     ManifestAndPath m2;
@@ -4480,6 +4486,7 @@ TEST_CASE("SQLiteIndex_Delta_OpenWithBaseline_RemovedPackageExcluded", "[sqlitei
         std::filesystem::copy_file(workingFile.GetPath(), baselineFile.GetPath(), std::filesystem::copy_options::overwrite_existing);
         SQLiteIndex prepared = SQLiteIndex::Open(baselineFile.GetPath().u8string(), SQLiteStorageBase::OpenDisposition::ReadWrite);
         prepared.PrepareForPackaging();
+        prepared.MarkAsBaseline();
     }
 
     // Remove Publisher2 and generate delta
@@ -4511,3 +4518,88 @@ TEST_CASE("SQLiteIndex_Delta_OpenWithBaseline_RemovedPackageExcluded", "[sqlitei
     REQUIRE(id.value() == "Publisher1.Id");
 }
 
+TEST_CASE("SQLiteIndex_Delta_UnmarkedBaselineRejected", "[sqliteindex][V2_1][delta]")
+{
+    TempFile workingFile{ "delta_working"s, ".db"s };
+    TempFile baselineFile{ "delta_baseline"s, ".db"s };
+    TempFile deltaFile{ "delta_output"s, ".db"s };
+
+    ManifestAndPath m1;
+    CreateFakeManifestAndPath(m1, "Publisher1", "1.0");
+
+    // Prepare a baseline but never designate it as one, so it has no identity for a delta to name.
+    {
+        SQLiteIndex index = SQLiteIndex::CreateNew(workingFile, SQLiteVersion{ 2, 1 });
+        index.SetProperty(SQLiteIndex::Property::PackageUpdateTrackingBaseTime, "0");
+        index.AddManifest(m1.Manifest, m1.Path);
+
+        std::filesystem::copy_file(workingFile.GetPath(), baselineFile.GetPath(), std::filesystem::copy_options::overwrite_existing);
+        SQLiteIndex prepared = SQLiteIndex::Open(baselineFile.GetPath().u8string(), SQLiteStorageBase::OpenDisposition::ReadWrite);
+        prepared.PrepareForPackaging();
+    }
+
+    ManifestAndPath m2;
+    CreateFakeManifestAndPath(m2, "Publisher2", "1.0");
+
+    SQLiteIndex index = SQLiteIndex::Open(workingFile, SQLiteStorageBase::OpenDisposition::ReadWrite);
+    index.SetProperty(SQLiteIndex::Property::PackageUpdateTrackingBaseTime, "");
+
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+
+    index.AddManifest(m2.Manifest, m2.Path);
+
+    index.SetProperty(SQLiteIndex::Property::DeltaBaselineIndexPath, baselineFile.GetPath().u8string());
+    index.SetProperty(SQLiteIndex::Property::DeltaOutputPath, deltaFile.GetPath().u8string());
+
+    REQUIRE_THROWS_HR(index.PrepareForPackaging(), APPINSTALLER_CLI_ERROR_INDEX_INTEGRITY_COMPROMISED);
+}
+
+TEST_CASE("SQLiteIndex_Delta_MismatchedBaselineRejected", "[sqliteindex][V2_1][delta]")
+{
+    TempFile workingFile{ "delta_working"s, ".db"s };
+    TempFile baselineFile{ "delta_baseline"s, ".db"s };
+    TempFile otherBaselineFile{ "delta_baseline_other"s, ".db"s };
+    TempFile deltaFile{ "delta_output"s, ".db"s };
+
+    ManifestAndPath m1;
+    CreateFakeManifestAndPath(m1, "Publisher1", "1.0");
+
+    // Two baselines with identical contents. Designating each gives it its own identity, which is
+    // the point: a delta is tied to the baseline it was computed from, not to data that looks like it.
+    {
+        SQLiteIndex index = SQLiteIndex::CreateNew(workingFile, SQLiteVersion{ 2, 1 });
+        index.SetProperty(SQLiteIndex::Property::PackageUpdateTrackingBaseTime, "0");
+        index.AddManifest(m1.Manifest, m1.Path);
+
+        for (TempFile* file : { &baselineFile, &otherBaselineFile })
+        {
+            std::filesystem::copy_file(workingFile.GetPath(), file->GetPath(), std::filesystem::copy_options::overwrite_existing);
+            SQLiteIndex prepared = SQLiteIndex::Open(file->GetPath().u8string(), SQLiteStorageBase::OpenDisposition::ReadWrite);
+            prepared.PrepareForPackaging();
+            prepared.MarkAsBaseline();
+        }
+    }
+
+    ManifestAndPath m2;
+    CreateFakeManifestAndPath(m2, "Publisher2", "1.0");
+
+    {
+        SQLiteIndex index = SQLiteIndex::Open(workingFile, SQLiteStorageBase::OpenDisposition::ReadWrite);
+        index.SetProperty(SQLiteIndex::Property::PackageUpdateTrackingBaseTime, "");
+
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+
+        index.AddManifest(m2.Manifest, m2.Path);
+
+        index.SetProperty(SQLiteIndex::Property::DeltaBaselineIndexPath, baselineFile.GetPath().u8string());
+        index.SetProperty(SQLiteIndex::Property::DeltaOutputPath, deltaFile.GetPath().u8string());
+        index.PrepareForPackaging();
+    }
+
+    // The baseline it was generated against opens fine.
+    REQUIRE_NOTHROW(SQLiteIndex::OpenWithBaseline(deltaFile.GetPath().u8string(), baselineFile.GetPath().u8string()));
+
+    REQUIRE_THROWS_HR(
+        SQLiteIndex::OpenWithBaseline(deltaFile.GetPath().u8string(), otherBaselineFile.GetPath().u8string()),
+        APPINSTALLER_CLI_ERROR_INDEX_INTEGRITY_COMPROMISED);
+}

@@ -151,6 +151,17 @@ namespace AppInstaller::Repository::Microsoft::Schema
 
         // Set the property value.
         virtual void SetProperty(SQLite::Connection& connection, Property property, const std::string& value);
+
+        // Version 2.1
+
+        // Designates this index as a baseline that delta indexes may be generated against, giving
+        // it an identity that a delta can name. A schema version that cannot be a baseline throws.
+        virtual void MarkAsBaseline(SQLite::Connection& connection);
+
+        // Sets this index up to read the combination of a delta and the baseline that it was
+        // generated against, so that every subsequent read sees the merged data. Must be called
+        // before any read. A schema version that cannot read a delta throws.
+        virtual void SetupDeltaReadMode(SQLite::Connection& connection, const std::string& baselinePath);
     };
 
     DEFINE_ENUM_FLAG_OPERATORS(ISQLiteIndex::CreateOptions);

@@ -9,6 +9,8 @@
 #include <winget/SQLiteMetadataTable.h>
 #include <AppInstallerDateTime.h>
 
+#include <sstream>
+
 namespace AppInstaller::Repository::Microsoft::Schema::V2_1
 {
     Interface::Interface(Utility::NormalizationVersion normVersion) : V2_0::Interface(normVersion)
@@ -44,6 +46,20 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_1
 
         savepoint.Rollback(true);
         return false;
+    }
+
+    void Interface::MarkAsBaseline(SQLite::Connection& connection)
+    {
+        GUID baselineIdentifier;
+        THROW_IF_FAILED(CoCreateGuid(&baselineIdentifier));
+
+        std::ostringstream stream;
+        stream << baselineIdentifier;
+        std::string value = stream.str();
+
+        AICLI_LOG(Repo, Info, << "Marking index as a delta baseline with identifier [" << value << "]");
+
+        SQLite::MetadataTable::SetNamedValue(connection, s_MetadataValueName_BaselineIdentifier, value);
     }
 
     void Interface::SetupDeltaReadMode(SQLite::Connection& connection, const std::string& baselinePath)

@@ -5,7 +5,6 @@
 #include <winget/SQLiteStorageBase.h>
 #include "ArpVersionValidation.h"
 #include <winget/ManifestYamlParser.h>
-#include "Microsoft/Schema/2_0/Interface.h"
 
 namespace AppInstaller::Repository::Microsoft
 {
@@ -56,11 +55,10 @@ namespace AppInstaller::Repository::Microsoft
 
         result.m_contextData.Add<Schema::Property::DeltaBaselineIndexPath>(baselinePath);
 
-        // TODO: Add a new interface function for this rather than casting
-        // The interface must be V2_0 to support delta read mode
-        //auto* v2Interface = dynamic_cast<Schema::V2_0::Interface*>(result.m_interface.get());
-        //THROW_HR_IF(E_NOTIMPL, v2Interface == nullptr);
-        //v2Interface->SetupDeltaReadMode(result.m_dbconn, baselinePath);
+        // The interface for the delta's schema version establishes the combined view. A version
+        // that does not understand deltas throws, which is the right answer: nothing else here
+        // could make sense of the pair.
+        result.m_interface->SetupDeltaReadMode(result.m_dbconn, baselineFilePath);
 
         return result;
     }
@@ -275,6 +273,20 @@ namespace AppInstaller::Repository::Microsoft
         AICLI_LOG(Repo, Info, << "Preparing index for packaging");
 
         m_interface->PrepareForPackaging(Schema::SQLiteIndexContext{ m_dbconn, m_contextData });
+    }
+
+    void SQLiteIndex::MarkAsBaseline()
+    {
+        std::lock_guard<std::mutex> lockInterface{ *m_interfaceLock };
+        AICLI_LOG(Repo, Info, << "Marking index as a delta baseline");
+
+        SQLite::Savepoint savepoint = SQLite::Savepoint::Create(m_dbconn, "sqliteindex_markasbaseline");
+
+        m_interface->MarkAsBaseline(m_dbconn);
+
+        SetLastWriteTime();
+
+        savepoint.Commit();
     }
 
     bool SQLiteIndex::CheckConsistency(bool log) const

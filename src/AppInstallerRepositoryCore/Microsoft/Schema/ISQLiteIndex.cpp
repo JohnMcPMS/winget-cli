@@ -26,6 +26,16 @@ namespace AppInstaller::Repository::Microsoft::Schema
         THROW_WIN32(ERROR_NOT_SUPPORTED);
     }
 
+    void ISQLiteIndex::MarkAsBaseline(SQLite::Connection&)
+    {
+        THROW_WIN32(ERROR_NOT_SUPPORTED);
+    }
+
+    void ISQLiteIndex::SetupDeltaReadMode(SQLite::Connection&, const std::string&)
+    {
+        THROW_WIN32(ERROR_NOT_SUPPORTED);
+    }
+
     std::unique_ptr<ISQLiteIndex> CreateISQLiteIndex(const SQLite::Version& version)
     {
         if (version.MajorVersion == 1 ||

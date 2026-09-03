@@ -3,13 +3,16 @@
 #include "pch.h"
 #include "Microsoft/Schema/2_1/DeltaViews.h"
 #include "Microsoft/Schema/2_1/DeltaTables.h"
+#include "Microsoft/Schema/2_1/Interface.h"
 
 #include "Microsoft/Schema/2_0/PackagesTable.h"
 #include "Microsoft/Schema/2_0/OneToManyTableWithMap.h"
 #include "Microsoft/Schema/2_0/SystemReferenceStringTable.h"
 
 #include <winget/SQLiteStatementBuilder.h>
+#include <winget/SQLiteMetadataTable.h>
 
+#include <optional>
 #include <string>
 
 
@@ -146,11 +149,38 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_1::Delta
 
             builder.Execute(connection);
         }
+
+        // Verifies that the baseline is the one that the delta was generated against.
+        //
+        // Merging a delta with any other baseline produces plausible looking nonsense rather than
+        // an error: the packages it did not change are taken from a version of the world it never
+        // saw, and the rowids that tie the two together mean different things on each side.
+        //
+        // The baseline is read on a connection of its own because the metadata accessors always
+        // read the main database, and by the time it is attached it is not that.
+        void ValidateBaselineAffinity(const SQLite::Connection& connection, const std::string& baselinePath)
+        {
+            std::optional<std::string> expected =
+                SQLite::MetadataTable::TryGetNamedValue<std::string>(connection, s_MetadataValueName_DeltaBaselineIdentifier);
+
+            SQLite::Connection baselineConnection = SQLite::Connection::Create(baselinePath, SQLite::Connection::OpenDisposition::ReadOnly);
+            std::optional<std::string> actual =
+                SQLite::MetadataTable::TryGetNamedValue<std::string>(baselineConnection, s_MetadataValueName_BaselineIdentifier);
+
+            if (!expected || !actual || expected.value() != actual.value())
+            {
+                AICLI_LOG(Repo, Error, << "Delta expects baseline [" << expected.value_or("<none>") <<
+                    "] but was given [" << actual.value_or("<none>") << "]");
+                THROW_HR(APPINSTALLER_CLI_ERROR_INDEX_INTEGRITY_COMPROMISED);
+            }
+        }
     }
 
     void SetupReadMode(SQLite::Connection& connection, const std::string& baselinePath)
     {
         AICLI_LOG(Repo, Info, << "Setting up delta read mode with baseline [" << baselinePath << "]");
+
+        ValidateBaselineAffinity(connection, baselinePath);
 
         {
             StatementBuilder builder;
