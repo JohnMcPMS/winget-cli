@@ -3,6 +3,10 @@
 #include "pch.h"
 #include "Interface.h"
 #include "Microsoft/Schema/2_0/PackageUpdateTrackingTable.h"
+#include "Microsoft/Schema/2_1/DeltaGeneration.h"
+
+#include <winget/SQLiteMetadataTable.h>
+#include <AppInstallerDateTime.h>
 
 namespace AppInstaller::Repository::Microsoft::Schema::V2_1
 {
@@ -34,6 +38,49 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_1
 
         savepoint.Rollback(true);
         return false;
+    }
+
+    void Interface::CreateAdditionalPackagingOutput(const SQLiteIndexContext& context)
+    {
+        SQLite::Connection& connection = context.Connection;
+
+        // Record the point from which a delta against this index should be computed. Every 2.1 index
+        // does this, because any of them may later be designated as a baseline.
+        // TODO: We may need to set the baseline time to the max update tracking time +1 to only catch new incoming changes
+        //       This assumes some delay between delta generation and the next package update.
+        // TODO: We also need to ensure that our times are UTC / not impacted by timezone shifts, etc.
+        SQLite::MetadataTable::SetNamedValue(connection, s_MetadataValueName_DeltaBaselineTime, std::to_string(Utility::GetCurrentUnixEpoch()));
+
+        if (!context.Data.Contains(Property::DeltaBaselineIndexPath) ||
+            !context.Data.Contains(Property::DeltaOutputPath))
+        {
+            return;
+        }
+
+        std::filesystem::path baselinePath = context.Data.Get<Property::DeltaBaselineIndexPath>();
+        std::filesystem::path deltaOutputPath = context.Data.Get<Property::DeltaOutputPath>();
+
+        AICLI_LOG(Repo, Info, << "Generating a delta index against baseline [" << baselinePath << "]");
+
+        SQLite::Connection baselineConnection = SQLite::Connection::Create(baselinePath.u8string(), SQLite::Connection::OpenDisposition::ReadOnly);
+
+        // The changes to capture are those written after the baseline recorded its own time.
+        int64_t baselineTime = 0;
+        std::optional<std::string> baselineTimeString = SQLite::MetadataTable::TryGetNamedValue<std::string>(baselineConnection, s_MetadataValueName_DeltaBaselineTime);
+        if (baselineTimeString && !baselineTimeString->empty())
+        {
+            baselineTime = std::stoll(baselineTimeString.value());
+        }
+
+        auto changedPackages = V2_0::PackageUpdateTrackingTable::GetUpdatesSince(connection, baselineTime, GetTrackingRemovalBehavior());
+        auto removedPackages = V2_0::PackageUpdateTrackingTable::GetRemovalsSince(connection, baselineTime, GetTrackingRemovalBehavior());
+
+        Delta::Generate(
+            connection,
+            baselineConnection,
+            deltaOutputPath,
+            changedPackages,
+            removedPackages);
     }
 
     V2_0::PackageUpdateTrackingTable::RemovalBehavior Interface::GetTrackingRemovalBehavior() const

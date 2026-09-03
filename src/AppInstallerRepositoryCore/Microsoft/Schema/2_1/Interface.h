@@ -5,6 +5,9 @@
 
 namespace AppInstaller::Repository::Microsoft::Schema::V2_1
 {
+    // The point in time from which the next delta generated against this index should be computed.
+    static constexpr std::string_view s_MetadataValueName_DeltaBaselineTime = "deltaBaselineTime"sv;
+
     // Interface to schema version 2.1 exposed through ISQLiteIndex.
     // Version 2.1 adds the is_removed column to the update_tracking table,
     // enabling delta index generation that can represent package removals.
@@ -19,6 +22,10 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_1
         bool MigrateFrom(SQLite::Connection& connection, const ISQLiteIndex* current) override;
 
     protected:
+        // Records the baseline time for this index, and generates a delta index against a previous
+        // baseline when the caller has supplied the paths to do so.
+        void CreateAdditionalPackagingOutput(const SQLiteIndexContext& context) override;
+
         // Records removals in the update tracking table rather than deleting the row,
         // so that delta generation can see which packages have gone away.
         V2_0::PackageUpdateTrackingTable::RemovalBehavior GetTrackingRemovalBehavior() const override;

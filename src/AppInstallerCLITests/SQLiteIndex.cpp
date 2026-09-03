@@ -4259,7 +4259,7 @@ TEST_CASE("SQLiteIndex_Delta_RemovedPackage", "[sqliteindex][V2_1][delta]")
     REQUIRE(idStmt.GetColumn<std::string>(0) == "Publisher2.Id");
 }
 
-TEST_CASE("SQLiteIndex_Delta_NoChanges_NoDeltaFile", "[sqliteindex][V2_1][delta]")
+TEST_CASE("SQLiteIndex_Delta_NoChanges_EmptyDelta", "[sqliteindex][V2_1][delta]")
 {
     TempFile workingFile{ "delta_working"s, ".db"s };
     TempFile baselineFile{ "delta_baseline"s, ".db"s };
@@ -4289,8 +4289,23 @@ TEST_CASE("SQLiteIndex_Delta_NoChanges_NoDeltaFile", "[sqliteindex][V2_1][delta]
         index.PrepareForPackaging();
     }
 
-    // No changes tracked after setting base time, so delta file should NOT have been created
-    REQUIRE(!std::filesystem::exists(deltaFile.GetPath()));
+    // A delta is produced even with nothing to report, so that a consumer never has to handle a
+    // missing delta as a special case. It is simply empty.
+    REQUIRE(std::filesystem::exists(deltaFile.GetPath()));
+
+    Connection deltaConn = Connection::Create(deltaFile.GetPath().u8string(), Connection::OpenDisposition::ReadOnly);
+
+    for (std::string_view tableName : {
+        "delta_packages"sv,
+        "delta_pfns2"sv, "delta_productcodes2"sv, "delta_norm_names2"sv, "delta_norm_publishers2"sv, "delta_upgradecodes2"sv,
+        "delta_tags2"sv, "delta_tags2_map"sv, "delta_commands2"sv, "delta_commands2_map"sv })
+    {
+        INFO(tableName);
+
+        Statement countStmt = Statement::Create(deltaConn, "SELECT COUNT(*) FROM [" + std::string{ tableName } + "]");
+        REQUIRE(countStmt.Step());
+        REQUIRE(countStmt.GetColumn<int64_t>(0) == 0);
+    }
 }
 
 TEST_CASE("SQLiteIndex_Delta_OpenWithBaseline_Search", "[sqliteindex][V2_1][delta]")

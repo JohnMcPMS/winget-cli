@@ -18,6 +18,11 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_0
         static constexpr std::string_view s_OneToManyTableWithMap_MapTable_IndexSuffix = "_index"sv;
         static constexpr std::string_view s_OneToManyTableWithMap_PrimaryKeyIndexSuffix = "_pkindex"sv;
 
+        std::string_view OneToManyTableGetManifestColumnName()
+        {
+            return s_OneToManyTableWithMap_MapTable_PrimaryName;
+        }
+
         namespace anon
         {
             // Create the mapping table insert statement for multiple use.
