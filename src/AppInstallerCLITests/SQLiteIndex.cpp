@@ -4033,7 +4033,7 @@ TEST_CASE("SQLiteIndex_PrepareForPackaging_RowIdsAreStable", "[sqliteindex][V2_0
     REQUIRE(GetPreparedPackageRowId(secondFile.GetPath(), "Publisher4.Id") > GetPreparedPackageRowId(secondFile.GetPath(), "Publisher3.Id"));
 }
 
-TEST_CASE("SQLiteIndex_UpdateTracking_V2_1_RemovalDeletesRow", "[sqliteindex][V2_0][updatetracking]")
+TEST_CASE("SQLiteIndex_UpdateTracking_V2_0_RemovalDeletesRow", "[sqliteindex][V2_0][updatetracking]")
 {
     TempFile indexFile{ "updatetracking"s, ".db"s };
 
@@ -4043,7 +4043,7 @@ TEST_CASE("SQLiteIndex_UpdateTracking_V2_1_RemovalDeletesRow", "[sqliteindex][V2
     CreateFakeManifestAndPath(m2, "Publisher2", "1.0");
 
     {
-        SQLiteIndex index = SQLiteIndex::CreateNew(indexFile, SQLiteVersion{ 2, 1 });
+        SQLiteIndex index = SQLiteIndex::CreateNew(indexFile, SQLiteVersion{ 2, 0 });
         index.SetProperty(SQLiteIndex::Property::PackageUpdateTrackingBaseTime, "0");
         index.AddManifest(m1.Manifest, m1.Path);
         index.AddManifest(m2.Manifest, m2.Path);
@@ -4294,6 +4294,13 @@ TEST_CASE("SQLiteIndex_Delta_NoChanges_EmptyDelta", "[sqliteindex][V2_1][delta]"
     REQUIRE(std::filesystem::exists(deltaFile.GetPath()));
 
     Connection deltaConn = Connection::Create(deltaFile.GetPath().u8string(), Connection::OpenDisposition::ReadOnly);
+
+    // The delta is a database in its own right, carrying the metadata that any index has. Without
+    // it the delta could not be opened, since opening reads the schema version to pick an interface.
+    REQUIRE(MetadataTable::GetNamedValue<int64_t>(deltaConn, AppInstaller::SQLite::s_MetadataValueName_MajorVersion) == 2);
+    REQUIRE(MetadataTable::GetNamedValue<int64_t>(deltaConn, AppInstaller::SQLite::s_MetadataValueName_MinorVersion) == 1);
+    REQUIRE(!MetadataTable::TryGetNamedValue<std::string>(deltaConn, AppInstaller::SQLite::s_MetadataValueName_DatabaseIdentifier).value_or(std::string{}).empty());
+    REQUIRE(MetadataTable::TryGetNamedValue<int64_t>(deltaConn, AppInstaller::SQLite::s_MetadataValueName_LastWriteTime).has_value());
 
     for (std::string_view tableName : {
         "delta_packages"sv,

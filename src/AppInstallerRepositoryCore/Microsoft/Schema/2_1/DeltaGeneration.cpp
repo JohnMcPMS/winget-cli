@@ -9,6 +9,7 @@
 #include "Microsoft/Schema/2_0/SystemReferenceStringTable.h"
 
 #include <winget/SQLiteStatementBuilder.h>
+#include <winget/SQLiteStorageBase.h>
 
 #include <algorithm>
 #include <map>
@@ -21,6 +22,27 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_1::Delta
 
     namespace
     {
+        // The delta database is created through SQLiteStorageBase rather than as a bare connection
+        // so that it carries the same metadata as any other index: a schema version, a database
+        // identifier, and a last write time. Without that metadata it could not be opened, as
+        // opening reads the schema version to decide which interface to use.
+        struct DeltaDatabase : public SQLite::SQLiteStorageBase
+        {
+            DeltaDatabase(const std::filesystem::path& path, const SQLite::Version& version) :
+                SQLiteStorageBase(path.u8string(), version)
+            {
+                SQLite::Savepoint savepoint = SQLite::Savepoint::Create(m_dbconn, "delta_createdatabase_v2_1");
+
+                m_version.SetSchemaVersion(m_dbconn);
+                CreateTables(m_dbconn);
+                SetLastWriteTime();
+
+                savepoint.Commit();
+            }
+
+            SQLite::Connection& GetConnection() { return m_dbconn; }
+        };
+
         // Gets the rowid of the given package identifier in the packages table, if it is present.
         std::optional<SQLite::rowid_t> SelectPackageRowId(const SQLite::Connection& connection, const std::string& packageIdentifier)
         {
@@ -276,15 +298,15 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_1::Delta
         const SQLite::Connection& sourceConnection,
         const SQLite::Connection& baselineConnection,
         const std::filesystem::path& deltaOutputPath,
+        const SQLite::Version& version,
         const std::vector<V2_0::PackageUpdateTrackingTable::PackageData>& changedPackages,
         const std::vector<std::string>& removedPackages)
     {
         AICLI_LOG(Repo, Info, << "Generating delta index at [" << deltaOutputPath << "] for " << changedPackages.size() <<
             " changed and " << removedPackages.size() << " removed packages");
 
-        SQLite::Connection deltaConnection = SQLite::Connection::Create(deltaOutputPath.u8string(), SQLite::Connection::OpenDisposition::Create);
-
-        CreateTables(deltaConnection);
+        DeltaDatabase deltaDatabase{ deltaOutputPath, version };
+        SQLite::Connection& deltaConnection = deltaDatabase.GetConnection();
 
         SQLite::Savepoint savepoint = SQLite::Savepoint::Create(deltaConnection, "delta_generate_v2_1");
 

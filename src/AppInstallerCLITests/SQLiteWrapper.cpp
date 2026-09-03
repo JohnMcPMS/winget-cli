@@ -924,7 +924,7 @@ TEST_CASE("SQLBuilder_AttachAndTempView", "[sqlbuilder]")
         createTable.Execute(connection);
 
         Builder::StatementBuilder insert;
-        insert.InsertInto(deltaTable).Columns({ s_firstColumn, s_secondColumn }).Values(2, "delta");
+        insert.InsertInto(deltaTable).Columns({ s_firstColumn, s_secondColumn }).Values(2, "delta"sv);
         insert.Execute(connection);
     }
 

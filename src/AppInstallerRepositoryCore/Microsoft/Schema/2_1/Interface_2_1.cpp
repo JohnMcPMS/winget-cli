@@ -79,6 +79,7 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_1
             connection,
             baselineConnection,
             deltaOutputPath,
+            GetVersion(),
             changedPackages,
             removedPackages);
     }
