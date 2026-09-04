@@ -404,7 +404,6 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_1::Delta
 
             AICLI_LOG(Repo, Verbose, << "Delta: recording removal of [" << baselinePackageId.value() << "] (rowid " << removedRowId << ")");
 
-            writtenRowIds.insert(removedRowId);
             WriteRemovedPackage(deltaConnection, removedRowId, baselinePackageId.value());
         }
 

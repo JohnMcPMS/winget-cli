@@ -97,13 +97,10 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_1::Delta
                 });
             builder.Execute(connection);
 
-            // Generation must never write two rows for the same package, and the delta is small
-            // enough that the index costs little while it is being built. It is dropped again
-            // before the delta ships; see PrepareTablesForPackaging.
-            StatementBuilder indexBuilder;
-            indexBuilder.CreateUniqueIndex({ tableName, s_Delta_ValueIndexSuffix }).
-                On(tableName).Columns(V2_0::PackagesTable::IdColumn::Name);
-            indexBuilder.Execute(connection);
+            // No index on the identifier. Identity here is the rowid, and one identifier can
+            // legitimately occupy two rows: a package removed and re-added within the window
+            // vacates one rowid and takes another, which is recorded as a removal at the first and
+            // a change at the second. Uniqueness on the rowid is already given by the primary key.
         }
 
         // The system reference tables hold the value itself, so the delta only adds the removal flag.
@@ -164,9 +161,8 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_1::Delta
     {
         using namespace SQLite::Builder;
 
-        // Every index here exists only to serve generation: the one on the packages table enforces
-        // that a package is recorded once, and those on the one to many data tables let generation
-        // find the rowid it already allocated for a value. Nothing reads them.
+        // Every index here exists only to serve generation: those on the one to many data tables
+        // let generation find the rowid it already allocated for a value. Nothing reads them.
         //
         // The merged views need no index at all. They suppress baseline packages by rowid, and
         // baseline associations by the (value, package) pair that is the primary key of a WITHOUT
@@ -174,11 +170,6 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_1::Delta
         // which drops all of its indexes in PrepareForPackaging and ships as plain tables.
         {
             SQLite::Savepoint savepoint = SQLite::Savepoint::Create(connection, "delta_preparetables_v2_1");
-
-            StatementBuilder packagesBuilder;
-            auto packagesTableName = GetTableName(V2_0::PackagesTable::TableName());
-            packagesBuilder.DropIndex({ packagesTableName, s_Delta_ValueIndexSuffix });
-            packagesBuilder.Execute(connection);
 
             for (const auto& table : OneToManyTables())
             {

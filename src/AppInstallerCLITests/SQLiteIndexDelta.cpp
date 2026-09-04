@@ -157,8 +157,15 @@ namespace
 
         // Copies the working index out, prepares it, and designates it as a baseline.
         // Everything the working index does afterwards is what the delta will describe.
+        //
+        // The sleep is load bearing. Preparing the baseline records the time from which a delta
+        // against it is computed, and tracking times are whole seconds compared inclusively, so a
+        // baseline captured in the same second as the data it holds would report all of it as
+        // changed. Advancing past that second is what makes the boundary observable.
         void CaptureBaseline(bool markAsBaseline = true)
         {
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+
             std::filesystem::copy_file(WorkingFile.GetPath(), BaselineFile.GetPath(), std::filesystem::copy_options::overwrite_existing);
 
             SQLiteIndex prepared = SQLiteIndex::Open(BaselineFile.GetPath().u8string(), SQLiteStorageBase::OpenDisposition::ReadWrite);
@@ -174,8 +181,9 @@ namespace
 
         // Opens the working index for the changes that the delta will carry.
         //
-        // The base time is reset to now so that only what follows is considered changed, and the
-        // sleep is what makes that boundary observable: the tracking table stores whole seconds.
+        // The base time reset governs the version data manifest export that preparing performs; the
+        // window the delta itself uses comes from the baseline, and was fixed when it was captured.
+        // The sleep is what makes this boundary observable, as tracking times are whole seconds.
         SQLiteIndex OpenWorkingForChanges()
         {
             SQLiteIndex index = SQLiteIndex::Open(WorkingFile, SQLiteStorageBase::OpenDisposition::ReadWrite);
