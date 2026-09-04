@@ -4,6 +4,8 @@
 #include "Microsoft/Schema/ISQLiteIndex.h"
 #include <winget/SQLiteWrapper.h>
 
+#include <set>
+
 
 namespace AppInstaller::Repository::Microsoft::Schema::V2_0
 {
@@ -64,10 +66,10 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_0
         // Removed packages are never included; use GetRemovalsSince to retrieve those.
         static std::vector<PackageData> GetUpdatesSince(const SQLite::Connection& connection, int64_t updateBaseTime, RemovalBehavior removals);
 
-        // Gets the identifiers of the packages removed since the given base time.
+        // Gets the identifiers of the packages removed since the given base time, with their case
+        // folded so that a package appears once regardless of how its casing changed over time.
         // Only meaningful when removals are being recorded; always empty otherwise.
-        // A package that was removed more than once contributes a single entry.
-        static std::vector<std::string> GetRemovalsSince(const SQLite::Connection& connection, int64_t updateBaseTime, RemovalBehavior removals);
+        static std::set<std::string> GetRemovalsSince(const SQLite::Connection& connection, int64_t updateBaseTime, RemovalBehavior removals);
 
         // Gets the data hash for the given package identifier.
         static SQLite::blob_t GetDataHash(const SQLite::Connection& connection, const std::string& packageIdentifier, RemovalBehavior removals);

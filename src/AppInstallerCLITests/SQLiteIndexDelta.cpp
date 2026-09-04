@@ -458,14 +458,16 @@ TEST_CASE("SQLiteIndex_Delta_RemoveAddRemove", "[sqliteindex][V2_1][delta]")
         REQUIRE(GetScalar(working, "SELECT COUNT(*) FROM [update_tracking] WHERE [package] = 'Publisher2.Id' AND [is_removed] = 1") == 2);
 
         auto removals = Tracking::GetRemovalsSince(working, 0, Tracking::RemovalBehavior::Record);
-        REQUIRE(std::count(removals.begin(), removals.end(), "Publisher2.Id") == 1);
+        REQUIRE(removals == std::set<std::string>{ "publisher2.id" });
     }
 
     REQUIRE_NOTHROW(context.GenerateDelta());
 
     {
         Connection delta = context.OpenDeltaConnection();
-        REQUIRE(GetScalar(delta, "SELECT COUNT(*) FROM [delta_packages] WHERE [id] = 'Publisher2.Id'") == 1);
+        // A removal carries the folded identifier, since that is the identity the tracking table
+        // reports and the casing of the individual tombstones need not agree.
+        REQUIRE(GetScalar(delta, "SELECT COUNT(*) FROM [delta_packages] WHERE [id] = 'publisher2.id'") == 1);
         REQUIRE(GetScalar(delta, "SELECT COUNT(*) FROM [delta_packages] WHERE [rowid] = " + std::to_string(originalRowId) + " AND [is_removed] = 1") == 1);
     }
 
@@ -789,7 +791,7 @@ TEST_CASE("SQLiteIndex_Delta_RemovedPackage", "[sqliteindex][V2_1][delta]")
     Connection delta = context.OpenDeltaConnection();
 
     REQUIRE(GetScalar(delta, "SELECT COUNT(*) FROM [delta_packages] WHERE [is_removed] = 1") == 1);
-    REQUIRE(GetStrings(delta, "SELECT [id] FROM [delta_packages] WHERE [is_removed] = 1") == std::set<std::string>{ "Publisher2.Id" });
+    REQUIRE(GetStrings(delta, "SELECT [id] FROM [delta_packages] WHERE [is_removed] = 1") == std::set<std::string>{ "publisher2.id" });
 
     // A removal carries no data beyond identity, so the rest of the row stays null.
     REQUIRE(GetScalar(delta,
@@ -858,7 +860,7 @@ TEST_CASE("SQLiteIndex_Delta_MultipleChangesAndRemovals", "[sqliteindex][V2_1][d
     Connection delta = context.OpenDeltaConnection();
 
     REQUIRE(GetStrings(delta, "SELECT [id] FROM [delta_packages] WHERE [is_removed] = 1") ==
-        std::set<std::string>{ "Publisher1.Id", "Publisher2.Id" });
+        std::set<std::string>{ "publisher1.id", "publisher2.id" });
     REQUIRE(GetStrings(delta, "SELECT [id] FROM [delta_packages] WHERE [is_removed] = 0") ==
         std::set<std::string>{ "Publisher3.Id", "Publisher5.Id", "Publisher6.Id" });
 
@@ -879,7 +881,7 @@ TEST_CASE("SQLiteIndex_Delta_PackageAddedAndRemovedWithinWindow", "[sqliteindex]
     REQUIRE_NOTHROW(context.GenerateDelta());
 
     Connection delta = context.OpenDeltaConnection();
-    REQUIRE(GetScalar(delta, "SELECT COUNT(*) FROM [delta_packages] WHERE [id] = 'Transient.Id'") == 0);
+    REQUIRE(GetScalar(delta, "SELECT COUNT(*) FROM [delta_packages] WHERE [id] LIKE 'Transient.Id'") == 0);
 
     SQLiteIndex combined = context.OpenCombined();
     REQUIRE(GetSearchedIds(combined) == std::set<std::string>{ "Publisher1.Id" });
@@ -901,7 +903,7 @@ TEST_CASE("SQLiteIndex_Delta_IdentifierWithLikeWildcards", "[sqliteindex][V2_1][
     Connection delta = context.OpenDeltaConnection();
 
     // Only the package actually removed; a LIKE would also have matched the decoy.
-    REQUIRE(GetStrings(delta, "SELECT [id] FROM [delta_packages] WHERE [is_removed] = 1") == std::set<std::string>{ "Publisher_A.Id" });
+    REQUIRE(GetStrings(delta, "SELECT [id] FROM [delta_packages] WHERE [is_removed] = 1") == std::set<std::string>{ "publisher_a.id" });
 
     SQLiteIndex combined = context.OpenCombined();
     REQUIRE(GetSearchedIds(combined) == std::set<std::string>{ "PublisherXA.Id", "Pub%cent.Id" });
@@ -1430,7 +1432,7 @@ TEST_CASE("SQLiteIndex_Delta_CheckConsistency_ReAddedPackageIsNotCorruption", "[
 
     // The removal is still reported, since the old rowid genuinely was vacated.
     auto removals = Tracking::GetRemovalsSince(connection, 0, Tracking::RemovalBehavior::Record);
-    REQUIRE(std::count(removals.begin(), removals.end(), "Publisher2.Id") == 1);
+    REQUIRE(removals == std::set<std::string>{ "publisher2.id" });
 
     // And it is not also reported as an update under that identity being gone.
     auto updates = Tracking::GetUpdatesSince(connection, 0, Tracking::RemovalBehavior::Record);

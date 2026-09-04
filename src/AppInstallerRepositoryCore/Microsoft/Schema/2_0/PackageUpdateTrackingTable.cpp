@@ -474,9 +474,9 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_0
         return result;
     }
 
-    std::vector<std::string> PackageUpdateTrackingTable::GetRemovalsSince(const SQLite::Connection& connection, int64_t updateBaseTime, RemovalBehavior removals)
+    std::set<std::string> PackageUpdateTrackingTable::GetRemovalsSince(const SQLite::Connection& connection, int64_t updateBaseTime, RemovalBehavior removals)
     {
-        std::vector<std::string> result;
+        std::set<std::string> result;
 
         if (removals == RemovalBehavior::Delete)
         {
@@ -491,20 +491,9 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_0
 
         Statement select = builder.Prepare(connection);
 
-        // A package that was removed, re-added at a different rowid, and removed again leaves a
-        // tombstone for each rowid it vacated. They all name the same package, and a consumer
-        // resolves that name against the baseline once, so report it once. Folding the case keeps
-        // this consistent with the ICU LIKE that decides package identity everywhere else.
-        std::set<std::string> seen;
-
         while (select.Step())
         {
-            std::string packageIdentifier = select.GetColumn<std::string>(0);
-
-            if (seen.insert(Utility::FoldCase(static_cast<std::string_view>(packageIdentifier))).second)
-            {
-                result.emplace_back(std::move(packageIdentifier));
-            }
+            result.emplace(Utility::FoldCase(static_cast<std::string_view>(select.GetColumn<std::string>(0))));
         }
 
         return result;

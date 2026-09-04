@@ -5,6 +5,7 @@
 #include <winget/SQLiteWrapper.h>
 #include <winget/SQLiteVersion.h>
 #include <filesystem>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -29,5 +30,5 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_1::Delta
         const std::filesystem::path& deltaOutputPath,
         const SQLite::Version& version,
         const std::vector<V2_0::PackageUpdateTrackingTable::PackageData>& changedPackages,
-        const std::vector<std::string>& removedPackages);
+        const std::set<std::string>& removedPackages);
 }
