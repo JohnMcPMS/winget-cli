@@ -328,27 +328,32 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_1::Delta
             nextValueRowIds[table.TableName] = GetMaximumRowId(baselineConnection, table.TableName);
         }
 
-        // Resolve the changed packages first so that the removals can tell whether the rowid they
-        // are about to vacate has already been taken by one of them.
-        //
-        // The rowid comes from the source rather than the baseline so that packages new to this
-        // delta are covered by the same lookup; rowid stability is what makes the two agree.
-        struct ChangedPackage
-        {
-            const V2_0::PackageUpdateTrackingTable::PackageData* Data;
-            SQLite::rowid_t RowId;
-        };
-
-        std::vector<ChangedPackage> changed;
+        // The changed packages are written first so that the removals can tell whether the rowid
+        // they are about to vacate has already been taken by one of them.
         std::set<SQLite::rowid_t> claimedRowIds;
 
         for (const auto& package : changedPackages)
         {
+            // The rowid comes from the source rather than the baseline so that packages new to this
+            // delta are covered by the same lookup; rowid stability is what makes the two agree.
             std::optional<SQLite::rowid_t> packageRowId = SelectPackageRowId(sourceConnection, package.PackageIdentifier);
             THROW_HR_IF(E_NOT_VALID_STATE, !packageRowId);
 
-            changed.emplace_back(ChangedPackage{ &package, packageRowId.value() });
+            AICLI_LOG(Repo, Verbose, << "Delta: recording change to [" << package.PackageIdentifier << "] (rowid " << packageRowId.value() << ")");
+
             claimedRowIds.insert(packageRowId.value());
+
+            WriteChangedPackage(deltaConnection, sourceConnection, packageRowId.value());
+
+            for (const auto& table : SystemReferenceTables())
+            {
+                WriteSystemReferenceDifference(deltaConnection, sourceConnection, baselineConnection, table, packageRowId.value());
+            }
+
+            for (const auto& table : OneToManyTables())
+            {
+                WriteOneToManyDifference(deltaConnection, sourceConnection, baselineConnection, table, packageRowId.value(), nextValueRowIds[table.TableName]);
+            }
         }
 
         for (const std::string& packageIdentifier : removedPackages)
@@ -378,23 +383,6 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_1::Delta
             AICLI_LOG(Repo, Verbose, << "Delta: recording removal of [" << packageIdentifier << "] (rowid " << packageRowId.value() << ")");
 
             WriteRemovedPackage(deltaConnection, packageRowId.value(), packageIdentifier);
-        }
-
-        for (const auto& package : changed)
-        {
-            AICLI_LOG(Repo, Verbose, << "Delta: recording change to [" << package.Data->PackageIdentifier << "] (rowid " << package.RowId << ")");
-
-            WriteChangedPackage(deltaConnection, sourceConnection, package.RowId);
-
-            for (const auto& table : SystemReferenceTables())
-            {
-                WriteSystemReferenceDifference(deltaConnection, sourceConnection, baselineConnection, table, package.RowId);
-            }
-
-            for (const auto& table : OneToManyTables())
-            {
-                WriteOneToManyDifference(deltaConnection, sourceConnection, baselineConnection, table, package.RowId, nextValueRowIds[table.TableName]);
-            }
         }
 
         savepoint.Commit();
