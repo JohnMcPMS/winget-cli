@@ -39,7 +39,7 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_1
         // Migration from 2.0 → 2.1: add the is_removed column to update_tracking.
         if (v2result || (currentVersion.MajorVersion == 2 && currentVersion.MinorVersion == 0))
         {
-            V2_0::PackageUpdateTrackingTable::AddIsRemovedColumn(connection);
+            V2_0::PackageUpdateTrackingTable::AddRemovalTrackingColumns(connection);
             savepoint.Commit();
             return true;
         }

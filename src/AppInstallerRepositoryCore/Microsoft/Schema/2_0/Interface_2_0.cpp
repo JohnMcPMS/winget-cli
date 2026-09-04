@@ -726,7 +726,7 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_0
 
             SQLite::rowid_t packageId = PackagesTable::InsertWithRowId(connection, idRowId.value(), packageData);
 
-            PackagesTable::UpdateValueIdById<PackagesTable::HashColumn>(connection, packageId, PackageUpdateTrackingTable::GetDataHash(connection, packageIdentifier));
+            PackagesTable::UpdateValueIdById<PackagesTable::HashColumn>(connection, packageId, PackageUpdateTrackingTable::GetDataHash(connection, packageIdentifier, m_trackingRemovalBehavior));
 
             for (const auto& versionKey : versionKeys)
             {

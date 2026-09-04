@@ -28,6 +28,9 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_0
         // Creates the table.
         static void Create(SQLite::Connection& connection, RemovalBehavior removals);
 
+        // Creates the unique index that allows at most one live row per package rowid.
+        static void CreateLiveRowIndex(SQLite::Connection& connection);
+
         // Creates the table if it does not exist.
         static void EnsureExists(SQLite::Connection& connection, RemovalBehavior removals);
 
@@ -52,6 +55,9 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_0
             int64_t WriteTime = 0;
             SQLite::blob_t Manifest;
             SQLite::blob_t Hash;
+            // The rowid the package occupies in the index, or 0 when it is not known.
+            // Only recorded when removals are being recorded; see the column comment.
+            SQLite::rowid_t PackageRowId = 0;
         };
 
         // Gets the data on updates that have been written since the given base time.
@@ -60,13 +66,15 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_0
 
         // Gets the identifiers of the packages removed since the given base time.
         // Only meaningful when removals are being recorded; always empty otherwise.
+        // A package that was removed more than once contributes a single entry.
         static std::vector<std::string> GetRemovalsSince(const SQLite::Connection& connection, int64_t updateBaseTime, RemovalBehavior removals);
 
         // Gets the data hash for the given package identifier.
-        static SQLite::blob_t GetDataHash(const SQLite::Connection& connection, const std::string& packageIdentifier);
+        static SQLite::blob_t GetDataHash(const SQLite::Connection& connection, const std::string& packageIdentifier, RemovalBehavior removals);
 
-        // Adds the is_removed column to an existing table that does not have it.
+        // Adds the columns needed to record removals to an existing table that does not have them,
+        // and backfills the package rowid for the rows already present.
         // Used when migrating from schema 2.0 to 2.1; does nothing if the table does not exist.
-        static void AddIsRemovedColumn(SQLite::Connection& connection);
+        static void AddRemovalTrackingColumns(SQLite::Connection& connection);
     };
 }
