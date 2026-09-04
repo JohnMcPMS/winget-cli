@@ -42,17 +42,32 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_0
             return V1_0::IdTable::SelectIdByValue(connection, packageIdentifier, true);
         }
 
-        // Determines whether the package currently has a row that is not marked as removed.
-        bool HasLiveRow(const SQLite::Connection& connection, const std::string& packageIdentifier)
+        // The tombstones, as the identifier recorded for the package and the rowid it vacated.
+        // Generation needs only the rowid, so the public accessor reports that; the consistency
+        // check needs both in order to say which package is at fault.
+        std::vector<std::pair<std::string, SQLite::rowid_t>> GetRemovedRows(
+            const SQLite::Connection& connection,
+            PackageUpdateTrackingTable::RemovalBehavior removals)
         {
+            std::vector<std::pair<std::string, SQLite::rowid_t>> result;
+
+            if (removals == PackageUpdateTrackingTable::RemovalBehavior::Delete)
+            {
+                return result;
+            }
+
             Builder::StatementBuilder builder;
-            builder.Select(Builder::RowCount).From(s_PUTT_Table_Name).
-                Where(s_PUTT_Package).LikeWithEscape(packageIdentifier).
-                And(s_PUTT_IsRemoved).Equals(0);
+            builder.Select({ s_PUTT_Package, s_PUTT_PackageRowId }).From(s_PUTT_Table_Name).
+                Where(s_PUTT_IsRemoved).Equals(1);
 
             Statement statement = builder.Prepare(connection);
-            THROW_HR_IF(E_UNEXPECTED, !statement.Step());
-            return statement.GetColumn<int64_t>(0) != 0;
+
+            while (statement.Step())
+            {
+                result.emplace_back(statement.GetColumn<std::string>(0), statement.GetColumn<SQLite::rowid_t>(1));
+            }
+
+            return result;
         }
     }
 
@@ -79,9 +94,9 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_0
             builder.Column(ColumnBuilder(s_PUTT_IsRemoved, Type::Int64).NotNull().Default(0));
 
             // The rowid the package occupies in the index, which is what a delta is keyed on.
-            // 0 means unknown, which only arises for a removal of a package that was never
-            // tracked as present; generation resolves removals against the baseline anyway.
-            builder.Column(ColumnBuilder(s_PUTT_PackageRowId, Type::Int64).NotNull().Default(0));
+            // Always known: the add path resolves it while the package is present, and the remove
+            // path is given it by the caller, which resolves it before the package leaves.
+            builder.Column(ColumnBuilder(s_PUTT_PackageRowId, Type::Int64).NotNull());
         }
 
         builder.EndColumns();
@@ -143,7 +158,7 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_0
         return statement.GetColumn<int64_t>(0) != 0;
     }
 
-    void PackageUpdateTrackingTable::Update(SQLite::Connection& connection, const ISQLiteIndex* internalIndex, const std::string& packageIdentifier, RemovalBehavior removals, bool ensureTable)
+    void PackageUpdateTrackingTable::Update(SQLite::Connection& connection, const ISQLiteIndex* internalIndex, const std::string& packageIdentifier, RemovalBehavior removals, bool ensureTable, std::optional<SQLite::rowid_t> removedPackageRowId)
     {
         if (ensureTable)
         {
@@ -167,10 +182,16 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_0
             else
             {
                 // Mark the package as removed rather than deleting the row, clearing the data columns.
-                // Only the live row is marked; earlier tombstones refer to rowids the package has
-                // already vacated and must be preserved so that a delta learns about each of them.
-                // The package rowid is carried forward untouched, since the package is already gone
-                // from the index and can no longer be looked up there.
+                // The row is found by the rowid the package occupied rather than by its identifier:
+                // that is the identity a delta is keyed on, and matching on it means a package whose
+                // identifier changed casing still marks the row it actually owns. Earlier tombstones
+                // refer to rowids the package has already vacated and must be preserved so that a
+                // delta learns about each of them.
+                //
+                // The rowid cannot be looked up here, because the package has already left the index.
+                // The caller resolves it beforehand and passes it in.
+                THROW_HR_IF(E_NOT_VALID_STATE, !removedPackageRowId);
+
                 int64_t currentTime = Utility::GetCurrentUnixEpoch();
 
                 Builder::StatementBuilder updateBuilder;
@@ -179,7 +200,7 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_0
                     Column(s_PUTT_Manifest).AssignValue(nullptr).
                     Column(s_PUTT_Hash).AssignValue(nullptr).
                     Column(s_PUTT_IsRemoved).Equals(1).
-                    Where(s_PUTT_Package).LikeWithEscape(packageIdentifier).
+                    Where(s_PUTT_PackageRowId).Equals(removedPackageRowId.value()).
                     And(s_PUTT_IsRemoved).Equals(0);
                 updateBuilder.Execute(connection);
 
@@ -187,13 +208,11 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_0
                 {
                     // The package was added and removed without an intervening tracking checkpoint,
                     // so there is no row to mark. Record the removal so that a delta built against an
-                    // older baseline still learns that the package is gone. The rowid is unknown
-                    // because the package is no longer in the index; generation does not need it,
-                    // as it resolves a removal against the baseline by identifier.
+                    // older baseline still learns that the rowid was vacated.
                     Builder::StatementBuilder insertBuilder;
                     insertBuilder.InsertInto(s_PUTT_Table_Name).
-                        Columns({ s_PUTT_Package, s_PUTT_WriteTime, s_PUTT_IsRemoved }).
-                        Values(packageIdentifier, currentTime, 1);
+                        Columns({ s_PUTT_Package, s_PUTT_WriteTime, s_PUTT_IsRemoved, s_PUTT_PackageRowId }).
+                        Values(packageIdentifier, currentTime, 1, removedPackageRowId.value());
                     insertBuilder.Execute(connection);
                 }
             }
@@ -338,21 +357,15 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_0
             }
         }
 
-        // Any package recorded as removed must no longer be in the internal index
-        for (const std::string& packageIdentifier : GetRemovalsSince(connection, 0, removals))
+        // A package recorded as removed must no longer occupy the rowid it vacated. Comparing the
+        // rowid rather than merely checking for absence is what makes this precise: a package that
+        // was removed and re-added is legitimately back in the index, but at a different rowid, and
+        // the tombstone for the one it gave up is still meaningful.
+        for (const auto& [packageIdentifier, vacatedRowId] : GetRemovedRows(connection, removals))
         {
-            // A package that was removed and later re-added keeps the tombstone for the rowid it
-            // vacated alongside a live row for the rowid it now occupies. Its presence in the
-            // index is therefore expected, and only the live row describes it.
-            if (HasLiveRow(connection, packageIdentifier))
-            {
-                continue;
-            }
+            std::optional<SQLite::rowid_t> indexRowId = GetPackageRowIdInIndex(connection, packageIdentifier);
 
-            SearchRequest request;
-            request.Inclusions.emplace_back(PackageMatchField::Id, MatchType::CaseInsensitive, packageIdentifier);
-
-            if (!internalIndex->Search(connection, request).Matches.empty())
+            if (indexRowId && indexRowId.value() == vacatedRowId)
             {
                 if (!log)
                 {
@@ -361,7 +374,8 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_0
 
                 result = false;
                 AICLI_LOG(Repo, Info, << "  [INVALID] value [" << s_PUTT_Package << "] in table [" << s_PUTT_Table_Name <<
-                    "]; the package [" << packageIdentifier << "] is marked as removed but is present in the internal index");
+                    "]; the package [" << packageIdentifier << "] is marked as having vacated rowid [" << vacatedRowId <<
+                    "] but still occupies it in the internal index");
             }
         }
 
@@ -474,9 +488,9 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_0
         return result;
     }
 
-    std::set<std::string> PackageUpdateTrackingTable::GetRemovalsSince(const SQLite::Connection& connection, int64_t updateBaseTime, RemovalBehavior removals)
+    std::set<SQLite::rowid_t> PackageUpdateTrackingTable::GetRemovalsSince(const SQLite::Connection& connection, int64_t updateBaseTime, RemovalBehavior removals)
     {
-        std::set<std::string> result;
+        std::set<SQLite::rowid_t> result;
 
         if (removals == RemovalBehavior::Delete)
         {
@@ -485,15 +499,21 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_0
         }
 
         Builder::StatementBuilder builder;
-        builder.Select(s_PUTT_Package).From(s_PUTT_Table_Name).
+        builder.Select(s_PUTT_PackageRowId).From(s_PUTT_Table_Name).
             Where(s_PUTT_WriteTime).IsGreaterThanOrEqualTo(updateBaseTime).
             And(s_PUTT_IsRemoved).Equals(1);
 
         Statement select = builder.Prepare(connection);
 
+        // The rowid is reported rather than the identifier because it is the identity a delta is
+        // keyed on, and it is the only one that can be compared exactly. Identifiers cannot: the
+        // casing recorded for a package is frozen when its row is written, so one package can leave
+        // tombstones under several spellings, and no string comparison available here reproduces
+        // the ICU LIKE that decides identity elsewhere. Two packages can still vacate the same
+        // rowid in turn, so the result is a set.
         while (select.Step())
         {
-            result.emplace(Utility::FoldCase(static_cast<std::string_view>(select.GetColumn<std::string>(0))));
+            result.emplace(select.GetColumn<SQLite::rowid_t>(0));
         }
 
         return result;

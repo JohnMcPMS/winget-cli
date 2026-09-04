@@ -435,8 +435,10 @@ TEST_CASE("SQLiteIndex_Delta_ReusedRowIdReplacesAssociations", "[sqliteindex][V2
     REQUIRE(GetOneToManyValues(merged, "tags2", "tag", "Publisher1.Id") == std::set<std::string>{ "keep" });
 }
 
-// B6. Remove, re-add, and remove again leaves a tombstone for each rowid the package vacated. They
-// all name the same package, and it resolves to one baseline rowid, so it must be reported once.
+// B6. Remove, re-add, and remove again leaves a tombstone for each rowid the package vacated. Both
+// are reported, but only one of them names a rowid the baseline holds, so only one removal is
+// written — a delta that recorded the transient rowid too would claim to suppress a row that has
+// never existed.
 TEST_CASE("SQLiteIndex_Delta_RemoveAddRemove", "[sqliteindex][V2_1][delta]")
 {
     auto p1 = MakePackage("Publisher1.Id", "Package 1");
@@ -454,20 +456,67 @@ TEST_CASE("SQLiteIndex_Delta_RemoveAddRemove", "[sqliteindex][V2_1][delta]")
     {
         Connection working = Connection::Create(context.WorkingFile.GetPath().u8string(), Connection::OpenDisposition::ReadOnly);
 
-        // One tombstone per vacated rowid, but a single identifier reported to generation.
+        // One tombstone per vacated rowid, and generation is told about both of them.
         REQUIRE(GetScalar(working, "SELECT COUNT(*) FROM [update_tracking] WHERE [package] = 'Publisher2.Id' AND [is_removed] = 1") == 2);
 
         auto removals = Tracking::GetRemovalsSince(working, 0, Tracking::RemovalBehavior::Record);
-        REQUIRE(removals == std::set<std::string>{ "publisher2.id" });
+        REQUIRE(removals.size() == 2);
+        REQUIRE(removals.count(originalRowId) == 1);
     }
 
     REQUIRE_NOTHROW(context.GenerateDelta());
 
     {
         Connection delta = context.OpenDeltaConnection();
-        // A removal carries the folded identifier, since that is the identity the tracking table
-        // reports and the casing of the individual tombstones need not agree.
-        REQUIRE(GetScalar(delta, "SELECT COUNT(*) FROM [delta_packages] WHERE [id] = 'publisher2.id'") == 1);
+        // Only the rowid the baseline actually holds is written; the one the re-add briefly
+        // occupied is above the baseline's range, so there is nothing there to suppress.
+        REQUIRE(GetScalar(delta, "SELECT COUNT(*) FROM [delta_packages] WHERE [id] = 'Publisher2.Id'") == 1);
+        REQUIRE(GetScalar(delta, "SELECT COUNT(*) FROM [delta_packages] WHERE [rowid] = " + std::to_string(originalRowId) + " AND [is_removed] = 1") == 1);
+    }
+
+    SQLiteIndex combined = context.OpenCombined();
+    REQUIRE(GetSearchedIds(combined) == std::set<std::string>{ "Publisher1.Id", "Publisher3.Id" });
+}
+
+// B14. The same sequence, but the re-add changes the casing of the identifier. The tracking table
+// freezes the casing of each row at insert, so the two tombstones carry byte different names. With
+// identity settled on the rowid this is uneventful, which is exactly what it is asserting: no part
+// of the removal path compares the two spellings, so nothing can get the comparison wrong.
+TEST_CASE("SQLiteIndex_Delta_RemoveAddRemove_CasingChanged", "[sqliteindex][V2_1][delta]")
+{
+    auto p1 = MakePackage("Publisher1.Id", "Package 1");
+    auto p2 = MakePackage("Publisher2.Id", "Package 2");
+    auto p3 = MakePackage("Publisher3.Id", "Package 3");
+    auto p2Recased = MakePackage("publisher2.id", "Package 2");
+
+    DeltaTestContext context{ { p1, p2, p3 } };
+
+    rowid_t originalRowId = GetPreparedPackageRowId(context.BaselineFile.GetPath(), "Publisher2.Id").value();
+
+    // Publisher3 holds the highest rowid, so the re-add lands on a new one and leaves the first
+    // tombstone in place rather than reviving it.
+    context.Remove(p2);
+    context.Add(p2Recased);
+    context.Remove(p2Recased);
+
+    {
+        Connection working = Connection::Create(context.WorkingFile.GetPath().u8string(), Connection::OpenDisposition::ReadOnly);
+
+        // Two tombstones at two rowids. The differing casing does not participate in identity at
+        // all, which is the point: nothing here has to reconcile the two spellings.
+        auto removals = Tracking::GetRemovalsSince(working, 0, Tracking::RemovalBehavior::Record);
+        REQUIRE(removals.size() == 2);
+        REQUIRE(removals.count(originalRowId) == 1);
+    }
+
+    REQUIRE_NOTHROW(context.GenerateDelta());
+
+    {
+        Connection delta = context.OpenDeltaConnection();
+
+        // Only the baseline rowid was written, and the identifier stored with it is the one the
+        // baseline holds rather than either spelling the tracking table recorded.
+        REQUIRE(GetScalar(delta, "SELECT COUNT(*) FROM [delta_packages] WHERE [is_removed] = 1") == 1);
         REQUIRE(GetScalar(delta, "SELECT COUNT(*) FROM [delta_packages] WHERE [rowid] = " + std::to_string(originalRowId) + " AND [is_removed] = 1") == 1);
     }
 
@@ -791,7 +840,7 @@ TEST_CASE("SQLiteIndex_Delta_RemovedPackage", "[sqliteindex][V2_1][delta]")
     Connection delta = context.OpenDeltaConnection();
 
     REQUIRE(GetScalar(delta, "SELECT COUNT(*) FROM [delta_packages] WHERE [is_removed] = 1") == 1);
-    REQUIRE(GetStrings(delta, "SELECT [id] FROM [delta_packages] WHERE [is_removed] = 1") == std::set<std::string>{ "publisher2.id" });
+    REQUIRE(GetStrings(delta, "SELECT [id] FROM [delta_packages] WHERE [is_removed] = 1") == std::set<std::string>{ "Publisher2.Id" });
 
     // A removal carries no data beyond identity, so the rest of the row stays null.
     REQUIRE(GetScalar(delta,
@@ -860,7 +909,7 @@ TEST_CASE("SQLiteIndex_Delta_MultipleChangesAndRemovals", "[sqliteindex][V2_1][d
     Connection delta = context.OpenDeltaConnection();
 
     REQUIRE(GetStrings(delta, "SELECT [id] FROM [delta_packages] WHERE [is_removed] = 1") ==
-        std::set<std::string>{ "publisher1.id", "publisher2.id" });
+        std::set<std::string>{ "Publisher1.Id", "Publisher2.Id" });
     REQUIRE(GetStrings(delta, "SELECT [id] FROM [delta_packages] WHERE [is_removed] = 0") ==
         std::set<std::string>{ "Publisher3.Id", "Publisher5.Id", "Publisher6.Id" });
 
@@ -903,7 +952,7 @@ TEST_CASE("SQLiteIndex_Delta_IdentifierWithLikeWildcards", "[sqliteindex][V2_1][
     Connection delta = context.OpenDeltaConnection();
 
     // Only the package actually removed; a LIKE would also have matched the decoy.
-    REQUIRE(GetStrings(delta, "SELECT [id] FROM [delta_packages] WHERE [is_removed] = 1") == std::set<std::string>{ "publisher_a.id" });
+    REQUIRE(GetStrings(delta, "SELECT [id] FROM [delta_packages] WHERE [is_removed] = 1") == std::set<std::string>{ "Publisher_A.Id" });
 
     SQLiteIndex combined = context.OpenCombined();
     REQUIRE(GetSearchedIds(combined) == std::set<std::string>{ "PublisherXA.Id", "Pub%cent.Id" });
@@ -1432,7 +1481,7 @@ TEST_CASE("SQLiteIndex_Delta_CheckConsistency_ReAddedPackageIsNotCorruption", "[
 
     // The removal is still reported, since the old rowid genuinely was vacated.
     auto removals = Tracking::GetRemovalsSince(connection, 0, Tracking::RemovalBehavior::Record);
-    REQUIRE(removals == std::set<std::string>{ "publisher2.id" });
+    REQUIRE(removals.size() == 1);
 
     // And it is not also reported as an update under that identity being gone.
     auto updates = Tracking::GetUpdatesSince(connection, 0, Tracking::RemovalBehavior::Record);

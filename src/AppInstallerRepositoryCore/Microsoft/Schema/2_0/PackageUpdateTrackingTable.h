@@ -43,7 +43,10 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_0
         static bool Exists(const SQLite::Connection& connection);
 
         // Updates the tracking table for the given package identifier in the internal index.
-        static void Update(SQLite::Connection& connection, const ISQLiteIndex* internalIndex, const std::string& packageIdentifier, RemovalBehavior removals, bool ensureTable = true);
+        // When the package is no longer present and removals are being recorded, removedPackageRowId
+        // must carry the rowid it occupied; the caller has to resolve that before removing it from
+        // the index, as the ids row is gone by the time this is called.
+        static void Update(SQLite::Connection& connection, const ISQLiteIndex* internalIndex, const std::string& packageIdentifier, RemovalBehavior removals, bool ensureTable = true, std::optional<SQLite::rowid_t> removedPackageRowId = {});
 
         // Checks the consistency of the index to ensure that every referenced row exists.
         // Returns true if index is consistent; false if it is not.
@@ -66,10 +69,11 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_0
         // Removed packages are never included; use GetRemovalsSince to retrieve those.
         static std::vector<PackageData> GetUpdatesSince(const SQLite::Connection& connection, int64_t updateBaseTime, RemovalBehavior removals);
 
-        // Gets the identifiers of the packages removed since the given base time, with their case
-        // folded so that a package appears once regardless of how its casing changed over time.
+        // Gets the rowids vacated by packages removed since the given base time.
         // Only meaningful when removals are being recorded; always empty otherwise.
-        static std::set<std::string> GetRemovalsSince(const SQLite::Connection& connection, int64_t updateBaseTime, RemovalBehavior removals);
+        // The rowid is reported rather than the identifier because it is the identity a delta is
+        // keyed on and the only one that can be compared exactly; see the implementation.
+        static std::set<SQLite::rowid_t> GetRemovalsSince(const SQLite::Connection& connection, int64_t updateBaseTime, RemovalBehavior removals);
 
         // Gets the data hash for the given package identifier.
         static SQLite::blob_t GetDataHash(const SQLite::Connection& connection, const std::string& packageIdentifier, RemovalBehavior removals);

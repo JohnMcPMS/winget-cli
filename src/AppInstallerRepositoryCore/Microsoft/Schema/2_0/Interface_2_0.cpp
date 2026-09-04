@@ -140,10 +140,21 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_0
     {
         EnsureInternalInterface(connection, true);
         std::optional<std::string> identifier = m_internalInterface->GetPropertyByPrimaryId(connection, manifestId, PackageVersionProperty::Id);
+
+        // Resolve the rowid the package occupies while it is still present. If this removes its
+        // last version the ids row goes with it, and the value becomes unrecoverable; the tracking
+        // table needs it in order to record which rowid was vacated.
+        std::optional<SQLite::rowid_t> packageRowId;
+
+        if (identifier && m_trackingRemovalBehavior == PackageUpdateTrackingTable::RemovalBehavior::Record)
+        {
+            packageRowId = V1_0::IdTable::SelectIdByValue(connection, identifier.value(), true);
+        }
+
         m_internalInterface->RemoveManifestById(connection, manifestId);
         if (identifier)
         {
-            PackageUpdateTrackingTable::Update(connection, m_internalInterface.get(), identifier.value(), m_trackingRemovalBehavior);
+            PackageUpdateTrackingTable::Update(connection, m_internalInterface.get(), identifier.value(), m_trackingRemovalBehavior, true, packageRowId);
         }
     }
 

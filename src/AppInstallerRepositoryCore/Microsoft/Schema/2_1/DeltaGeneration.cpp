@@ -63,6 +63,23 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_1::Delta
             return {};
         }
 
+        // Gets the identifier of the package at the given rowid, if there is one.
+        std::optional<std::string> SelectPackageIdByRowId(const SQLite::Connection& connection, SQLite::rowid_t packageRowId)
+        {
+            StatementBuilder builder;
+            builder.Select(V2_0::PackagesTable::IdColumn::Name).From(V2_0::PackagesTable::TableName()).
+                Where(SQLite::RowIDName).Equals(packageRowId);
+
+            SQLite::Statement statement = builder.Prepare(connection);
+
+            if (statement.Step())
+            {
+                return statement.GetColumn<std::string>(0);
+            }
+
+            return {};
+        }
+
         // Gets the rowid of the given value in a one to many data table, if it is present.
         std::optional<SQLite::rowid_t> SelectValueRowId(
             const SQLite::Connection& connection,
@@ -303,7 +320,7 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_1::Delta
         const std::filesystem::path& deltaOutputPath,
         const SQLite::Version& version,
         const std::vector<V2_0::PackageUpdateTrackingTable::PackageData>& changedPackages,
-        const std::set<std::string>& removedPackages)
+        const std::set<SQLite::rowid_t>& removedPackages)
     {
         AICLI_LOG(Repo, Info, << "Generating delta index at [" << deltaOutputPath << "] for " << changedPackages.size() <<
             " changed and " << removedPackages.size() << " removed packages");
@@ -328,9 +345,11 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_1::Delta
             nextValueRowIds[table.TableName] = GetMaximumRowId(baselineConnection, table.TableName);
         }
 
-        // The changed packages are written first so that the removals can tell whether the rowid
-        // they are about to vacate has already been taken by one of them.
-        std::set<SQLite::rowid_t> claimedRowIds;
+        // Every rowid already written to the delta's packages table. The changed packages are
+        // written first so that a removal can tell whether the rowid it is about to vacate has
+        // since been taken, and each removal joins the set so that two tombstones resolving to one
+        // baseline rowid cannot both be written.
+        std::set<SQLite::rowid_t> writtenRowIds;
 
         for (const auto& package : changedPackages)
         {
@@ -341,8 +360,7 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_1::Delta
 
             AICLI_LOG(Repo, Verbose, << "Delta: recording change to [" << package.PackageIdentifier << "] (rowid " << packageRowId.value() << ")");
 
-            claimedRowIds.insert(packageRowId.value());
-
+            writtenRowIds.insert(packageRowId.value());
             WriteChangedPackage(deltaConnection, sourceConnection, packageRowId.value());
 
             for (const auto& table : SystemReferenceTables())
@@ -356,33 +374,38 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_1::Delta
             }
         }
 
-        for (const std::string& packageIdentifier : removedPackages)
+        for (SQLite::rowid_t removedRowId : removedPackages)
         {
-            std::optional<SQLite::rowid_t> packageRowId = SelectPackageRowId(baselineConnection, packageIdentifier);
+            // The rowid is resolved against the baseline directly, which is exact and is a primary
+            // key lookup. Whatever identifier the tracking table recorded is irrelevant here: what
+            // the delta suppresses is the baseline row at this rowid, so that row is also where the
+            // identifier stored alongside the tombstone comes from.
+            std::optional<std::string> baselinePackageId = SelectPackageIdByRowId(baselineConnection, removedRowId);
 
-            if (!packageRowId)
+            if (!baselinePackageId)
             {
-                // The package was both added and removed since the baseline was produced, so as far
-                // as the baseline is concerned it never existed and there is nothing to suppress.
-                AICLI_LOG(Repo, Verbose, << "Delta: [" << packageIdentifier << "] was removed but is not in the baseline");
+                // The rowid was allocated after the baseline was produced, so as far as the
+                // baseline is concerned it never held anything and there is nothing to suppress.
+                AICLI_LOG(Repo, Verbose, << "Delta: rowid " << removedRowId << " was vacated but is not in the baseline");
                 continue;
             }
 
-            if (claimedRowIds.count(packageRowId.value()))
+            if (writtenRowIds.count(removedRowId))
             {
-                // Another package has taken the rowid this one vacated. Recording the removal is
-                // both impossible, since the rowid is the primary key of the delta's package table,
-                // and unnecessary: the row written for the new occupant already suppresses the
-                // baseline row, and the association differences are computed against the baseline
-                // at that same rowid, so the old package's data is displaced entirely.
-                AICLI_LOG(Repo, Verbose, << "Delta: [" << packageIdentifier << "] was removed but its rowid " <<
-                    packageRowId.value() << " is now held by a changed package");
+                // The rowid has already been written, either by a package that has since taken it
+                // or by an earlier tombstone that vacated it. Writing it again is both impossible,
+                // since the rowid is the primary key of the delta's package table, and unnecessary:
+                // the row already there suppresses the baseline row, and where a new occupant wrote
+                // it the association differences were computed against the baseline at that same
+                // rowid, so the old package's data is displaced entirely.
+                AICLI_LOG(Repo, Verbose, << "Delta: rowid " << removedRowId << " was vacated but has already been written");
                 continue;
             }
 
-            AICLI_LOG(Repo, Verbose, << "Delta: recording removal of [" << packageIdentifier << "] (rowid " << packageRowId.value() << ")");
+            AICLI_LOG(Repo, Verbose, << "Delta: recording removal of [" << baselinePackageId.value() << "] (rowid " << removedRowId << ")");
 
-            WriteRemovedPackage(deltaConnection, packageRowId.value(), packageIdentifier);
+            writtenRowIds.insert(removedRowId);
+            WriteRemovedPackage(deltaConnection, removedRowId, baselinePackageId.value());
         }
 
         savepoint.Commit();
