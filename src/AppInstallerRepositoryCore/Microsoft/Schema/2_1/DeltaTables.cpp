@@ -176,13 +176,15 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_1::Delta
             SQLite::Savepoint savepoint = SQLite::Savepoint::Create(connection, "delta_preparetables_v2_1");
 
             StatementBuilder packagesBuilder;
-            packagesBuilder.DropIndex({ GetTableName(V2_0::PackagesTable::TableName()), s_Delta_ValueIndexSuffix });
+            auto packagesTableName = GetTableName(V2_0::PackagesTable::TableName());
+            packagesBuilder.DropIndex({ packagesTableName, s_Delta_ValueIndexSuffix });
             packagesBuilder.Execute(connection);
 
             for (const auto& table : OneToManyTables())
             {
                 StatementBuilder builder;
-                builder.DropIndex({ GetTableName(table.TableName), s_Delta_ValueIndexSuffix });
+                auto tableName = GetTableName(table.TableName);
+                builder.DropIndex({ tableName, s_Delta_ValueIndexSuffix });
                 builder.Execute(connection);
             }
 
