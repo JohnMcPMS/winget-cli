@@ -649,9 +649,6 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_0
 
         THROW_WIN32_IF(ERROR_INVALID_STATE, baseOutputDirectory.empty() || baseOutputDirectory.is_relative());
 
-        // TEMP
-        PackageUpdateTrackingTable::EnsureExists(connection, m_trackingRemovalBehavior);
-
         // Output all of the changed package version manifests since the base time to the target location
         for (const auto& packageData : PackageUpdateTrackingTable::GetUpdatesSince(connection, updateBaseTime, m_trackingRemovalBehavior))
         {

@@ -197,6 +197,15 @@ namespace
             index.AddManifest(manifest, fields.Path);
         }
 
+        // Adds to the working index without moving the change window, for setup that has to be
+        // part of the baseline rather than part of the delta.
+        void AddToWorking(const IndexFields& fields)
+        {
+            SQLiteIndex index = SQLiteIndex::Open(WorkingFile, SQLiteStorageBase::OpenDisposition::ReadWrite);
+            Manifest manifest = CreateManifest(fields);
+            index.AddManifest(manifest, fields.Path);
+        }
+
         void Update(const IndexFields& fields)
         {
             SQLiteIndex index = OpenWorkingForChanges();
@@ -278,18 +287,21 @@ namespace
         std::vector<NormalizedString> tags = { "t1", "t2" },
         std::vector<NormalizedString> commands = { "c1" },
         std::vector<NormalizedString> packageFamilyNames = {},
-        std::vector<NormalizedString> productCodes = {})
+        std::vector<NormalizedString> productCodes = {},
+        std::string version = "1.0"s)
     {
+        std::string path = id + "/" + version;
+
         return IndexFields{
             id,
             std::move(name),
             "Publisher"s,
             "moniker"s,
-            "1.0"s,
+            std::move(version),
             ""s,
             std::move(tags),
             std::move(commands),
-            id + "/1.0",
+            std::move(path),
             std::move(packageFamilyNames),
             std::move(productCodes) };
     }
@@ -582,6 +594,57 @@ TEST_CASE("SQLiteIndex_Delta_TrackingRowIdMatchesPreparedIndex", "[sqliteindex][
         REQUIRE(preparedRowId.has_value());
         REQUIRE(preparedRowId.value() == trackedRowId);
     }
+}
+
+// B12. Package identity is case insensitive everywhere in the index: the ids table collapses
+// LIKE equal identifiers onto one rowid and overwrites the stored string with the most recent
+// casing, while the tracking table freezes the casing it first saw. Generation therefore has to
+// resolve a package across a casing difference between the two.
+//
+// On the changed path, byte equality fails to resolve the package and generation throws for the
+// entire index.
+TEST_CASE("SQLiteIndex_Delta_IdentifierCasingChange_Changed", "[sqliteindex][V2_1][delta]")
+{
+    DeltaTestContext context{ { MakePackage("Publisher1.Id", "Package 1"), MakePackage("Publisher2.Id", "Package 2") } };
+
+    // Adding a version under a different casing rewrites the ids table entry, and with it the
+    // identifier that packaging will put in the packages table. The tracking row keeps the
+    // original casing.
+    context.Add(MakePackage("publisher1.id", "Package 1 V2", { "t1", "t2" }, { "c1" }, {}, {}, "2.0"s));
+
+    REQUIRE_NOTHROW(context.GenerateDelta());
+
+    SQLiteIndex combined = context.OpenCombined();
+
+    // Exactly one row for the package. Resolving to no rowid would have left the baseline row
+    // unsuppressed alongside the delta's, showing it twice.
+    REQUIRE(GetSearchedIds(combined) == std::set<std::string>{ "publisher1.id", "Publisher2.Id" });
+}
+
+// B13. The silent half of the same defect. Here the casing changed before the baseline was taken,
+// so the baseline holds the new casing while the tracking table still holds the old. A removal
+// that cannot be resolved against the baseline is treated as "never existed there" and skipped,
+// leaving the baseline row visible forever.
+TEST_CASE("SQLiteIndex_Delta_IdentifierCasingChange_Removed", "[sqliteindex][V2_1][delta]")
+{
+    auto original = MakePackage("Publisher1.Id", "Package 1");
+    auto recased = MakePackage("publisher1.id", "Package 1 V2", { "t1", "t2" }, { "c1" }, {}, {}, "2.0"s);
+
+    DeltaTestContext context;
+    context.CreateWorking({ original, MakePackage("Publisher2.Id", "Package 2") });
+    context.AddToWorking(recased);
+    context.CaptureBaseline();
+
+    REQUIRE(GetPreparedPackageRowId(context.BaselineFile.GetPath(), "publisher1.id").has_value());
+
+    context.Remove(original);
+    context.Remove(recased);
+
+    context.GenerateDelta();
+
+    SQLiteIndex combined = context.OpenCombined();
+
+    REQUIRE(GetSearchedIds(combined) == std::set<std::string>{ "Publisher2.Id" });
 }
 
 // B11. The migration adds the rowid column to a table whose rows predate it. A backfill that left
@@ -1442,6 +1505,8 @@ namespace
         addFieldRequest(PackageMatchField::NormalizedNameAndPublisher, MatchType::Exact, "Package Replacement", "Publisher");
         addFieldRequest(PackageMatchField::NormalizedNameAndPublisher, MatchType::Exact, "Package Original", "Publisher");
 
+        size_t matchedRequests = 0;
+
         for (size_t i = 0; i < requests.size(); ++i)
         {
             INFO("request index " << i);
@@ -1465,7 +1530,17 @@ namespace
 
             REQUIRE(combinedIds.has_value() == fullIds.has_value());
             REQUIRE(combinedIds == fullIds);
+
+            if (fullIds && !fullIds->empty())
+            {
+                ++matchedRequests;
+            }
         }
+
+        // Agreement is only meaningful if the battery actually matched something. Without this the
+        // group passes when every request throws or returns nothing, which is exactly what a defect
+        // in the merged views could cause.
+        REQUIRE(matchedRequests != 0);
 
         // H3. The identifiers agreeing is not enough; the rowids that name them have to agree too,
         // since that is what the merge is built on and what a caller carries around.
@@ -1482,6 +1557,9 @@ namespace
         }
 
         REQUIRE(combinedPrimaryIds.size() == fullPrimaryIds.size());
+
+        // H2 and H3 iterate this map, so an empty one would make both pass vacuously.
+        REQUIRE(!combinedPrimaryIds.empty());
 
         for (const auto& [packageId, primaryId] : combinedPrimaryIds)
         {

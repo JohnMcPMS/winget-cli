@@ -51,7 +51,7 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_1::Delta
         {
             StatementBuilder builder;
             builder.Select(SQLite::RowIDName).From(V2_0::PackagesTable::TableName()).
-                Where(V2_0::PackagesTable::IdColumn::Name).Equals(packageIdentifier);
+                Where(V2_0::PackagesTable::IdColumn::Name).LikeWithEscape(packageIdentifier);
 
             SQLite::Statement statement = builder.Prepare(connection);
 
