@@ -58,7 +58,8 @@ namespace AppInstaller::Repository::Microsoft
         // Opens a delta index combined with its baseline for reading.
         // The delta is the main connection; the baseline is ATTACHed and TEMP VIEWs are created
         // so that existing search code operates transparently across both.
-        static SQLiteIndex OpenWithBaseline(const std::string& deltaFilePath, const std::string& baselineFilePath);
+        // The disposition applies to both files, because the pair is only meaningful as a unit.
+        static SQLiteIndex OpenWithBaseline(const std::string& deltaFilePath, const std::string& baselineFilePath, OpenDisposition disposition = OpenDisposition::Read);
 
 #ifndef AICLI_DISABLE_TEST_HOOKS
         // Changes the version of the interface being used to operate on the database.
@@ -191,6 +192,8 @@ namespace AppInstaller::Repository::Microsoft
 
         // Constructor used to open an existing index.
         SQLiteIndex(const std::string& target, SQLiteStorageBase::OpenDisposition disposition, Utility::ManagedFile&& indexFile);
+
+        SQLiteIndex(const SQLite::DatabaseSpecifier& specifier, Utility::ManagedFile&& indexFile);
 
         // Constructor used to copy the given index.
         SQLiteIndex(const std::string& target, SQLiteIndex& source);

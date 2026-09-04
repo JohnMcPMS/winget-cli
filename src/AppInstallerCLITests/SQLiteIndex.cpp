@@ -4392,7 +4392,7 @@ TEST_CASE("SQLiteIndex_Delta_MergedViews_AssociationsAreSuppressedPerRow", "[sql
     REQUIRE(std::filesystem::exists(deltaFile.GetPath()));
 
     Connection deltaConnection = Connection::Create(deltaFile.GetPath().u8string(), Connection::OpenDisposition::ReadOnly);
-    Schema::V2_1::Delta::SetupReadMode(deltaConnection, baselineFile.GetPath().u8string());
+    Schema::V2_1::Delta::SetupReadMode(deltaConnection, DatabaseSpecifier{ baselineFile.GetPath().u8string(), DatabaseDisposition::Read });
 
     // The delta records only what changed about Publisher1, so it never mentions t1 at all.
     // Suppressing the baseline at the level of the package would therefore lose it.
@@ -4405,6 +4405,11 @@ TEST_CASE("SQLiteIndex_Delta_MergedViews_AssociationsAreSuppressedPerRow", "[sql
 
 TEST_CASE("SQLiteIndex_Delta_OpenWithBaseline_Search", "[sqliteindex][V2_1][delta]")
 {
+    // Immutable is the disposition the shipped path uses, and it is the one that reaches SQLite as
+    // a URI rather than a plain path, so both files have to be named that way for the attach to
+    // resolve at all.
+    auto disposition = GENERATE(SQLiteStorageBase::OpenDisposition::Read, SQLiteStorageBase::OpenDisposition::Immutable);
+
     TempFile workingFile{ "delta_working"s, ".db"s };
     TempFile baselineFile{ "delta_baseline"s, ".db"s };
     TempFile workingFile2{ "delta_working2"s, ".db"s };
@@ -4447,7 +4452,8 @@ TEST_CASE("SQLiteIndex_Delta_OpenWithBaseline_Search", "[sqliteindex][V2_1][delt
     // Open the delta combined with the baseline
     SQLiteIndex combined = SQLiteIndex::OpenWithBaseline(
         deltaFile.GetPath().u8string(),
-        baselineFile.GetPath().u8string());
+        baselineFile.GetPath().u8string(),
+        disposition);
 
     // Search should return both Publisher1 (from baseline) and Publisher2 (from delta)
     auto results = combined.Search({});

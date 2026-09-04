@@ -161,7 +161,7 @@ namespace AppInstaller::Repository::Microsoft::Schema
         // Sets this index up to read the combination of a delta and the baseline that it was
         // generated against, so that every subsequent read sees the merged data. Must be called
         // before any read. A schema version that cannot read a delta throws.
-        virtual void SetupDeltaReadMode(SQLite::Connection& connection, const std::string& baselinePath);
+        virtual void SetupDeltaReadMode(SQLite::Connection& connection, const SQLite::DatabaseSpecifier& baseline);
     };
 
     DEFINE_ENUM_FLAG_OPERATORS(ISQLiteIndex::CreateOptions);

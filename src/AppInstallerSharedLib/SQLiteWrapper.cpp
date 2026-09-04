@@ -213,6 +213,11 @@ namespace AppInstaller::SQLite
         return result;
     }
 
+    Connection Connection::Create(const DatabaseSpecifier& specifier)
+    {
+        return Create(specifier.Target(), specifier.ConnectionDisposition(), specifier.ConnectionFlags());
+    }
+
     void Connection::EnableICU()
     {
         AICLI_LOG(SQL, Verbose, << "Enabling ICU");
@@ -263,6 +268,82 @@ namespace AppInstaller::SQLite
     std::shared_ptr<details::SharedConnection> Connection::GetSharedConnection() const
     {
         return m_dbconn;
+    }
+
+    DatabaseSpecifier::DatabaseSpecifier(std::string path, DatabaseDisposition disposition) :
+        m_path(std::move(path)), m_disposition(disposition)
+    {
+        if (m_disposition != DatabaseDisposition::Immutable)
+        {
+            m_target = m_path;
+            return;
+        }
+
+        // Following the algorithm set forth at https://sqlite.org/uri.html [3.1] to convert to a URI path.
+        // The execution order builds out the string so that it shouldn't require any moves (other than growing).
+        // Add an 'arbitrary' growth size to prevent the majority of needing to grow (adding 'file:/' and '?immutable=1').
+        m_target.reserve(m_path.size() + 20);
+
+        m_target += "file:";
+
+        bool wasLastCharSlash = false;
+
+        if (m_path.size() >= 2 && m_path[1] == ':' &&
+            ((m_path[0] >= 'a' && m_path[0] <= 'z') ||
+                (m_path[0] >= 'A' && m_path[0] <= 'Z')))
+        {
+            m_target += '/';
+            wasLastCharSlash = true;
+        }
+
+        for (char c : m_path)
+        {
+            bool wasThisCharSlash = false;
+            switch (c)
+            {
+            case '?': m_target += "%3f"; break;
+            case '#': m_target += "%23"; break;
+            case '\\':
+            case '/':
+            {
+                wasThisCharSlash = true;
+                if (!wasLastCharSlash)
+                {
+                    m_target += '/';
+                }
+                break;
+            }
+            default: m_target += c; break;
+            }
+
+            wasLastCharSlash = wasThisCharSlash;
+        }
+
+        m_target += "?immutable=1";
+    }
+
+    Connection::OpenDisposition DatabaseSpecifier::ConnectionDisposition() const
+    {
+        switch (m_disposition)
+        {
+        case DatabaseDisposition::Read:
+        case DatabaseDisposition::Immutable:
+            return Connection::OpenDisposition::ReadOnly;
+        case DatabaseDisposition::ReadWrite:
+            return Connection::OpenDisposition::ReadWrite;
+        default:
+            THROW_HR(E_UNEXPECTED);
+        }
+    }
+
+    Connection::OpenFlags DatabaseSpecifier::ConnectionFlags() const
+    {
+        // URI handling is enabled unconditionally, not only for the dispositions that produce one.
+        // SQLite decides whether a name is a URI when the connection is opened and applies that
+        // same decision to every later `ATTACH`, so a connection that did not ask for URIs cannot
+        // attach one. A name that does not begin with "file:" is always taken literally, so this
+        // costs nothing for the dispositions that hand over a plain path.
+        return Connection::OpenFlags::Uri;
     }
 
     Statement::Statement(const Connection& connection, std::string_view sql)

@@ -17,10 +17,10 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_1::Delta
     };
 
     // The tables that store a value directly alongside the package that it refers to.
-    std::vector<ValueTableInfo> SystemReferenceTables();
+    const std::vector<ValueTableInfo>& SystemReferenceTables();
 
     // The tables that store values in a data table, associated with packages through a map table.
-    std::vector<ValueTableInfo> OneToManyTables();
+    const std::vector<ValueTableInfo>& OneToManyTables();
 
     // Gets the name of the delta table that mirrors the given 2.0 table.
     // The delta tables are named distinctly so that a delta database can be attached alongside
@@ -35,8 +35,4 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_1::Delta
 
     // Creates the full set of delta tables in the given database.
     void CreateTables(SQLite::Connection& connection);
-
-    // Drops the indexes that only generation needs, leaving the delta in the form that ships.
-    // Must be called outside of a transaction, as it vacuums to reclaim the freed pages.
-    void PrepareTablesForPackaging(SQLite::Connection& connection);
 }

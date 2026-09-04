@@ -62,9 +62,9 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_1
         SQLite::MetadataTable::SetNamedValue(connection, s_MetadataValueName_BaselineIdentifier, value);
     }
 
-    void Interface::SetupDeltaReadMode(SQLite::Connection& connection, const std::string& baselinePath)
+    void Interface::SetupDeltaReadMode(SQLite::Connection& connection, const SQLite::DatabaseSpecifier& baseline)
     {
-        Delta::SetupReadMode(connection, baselinePath);
+        Delta::SetupReadMode(connection, baseline);
 
         // The merged data is presented through views rather than tables, so the checks that the
         // base makes to decide whether this index has been packaged cannot see it. Record that the

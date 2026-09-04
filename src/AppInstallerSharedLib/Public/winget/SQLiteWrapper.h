@@ -206,6 +206,7 @@ namespace AppInstaller::SQLite
     };
 
     struct Statement;
+    struct DatabaseSpecifier;
 
     // The connection to a database.
     struct Connection
@@ -233,6 +234,9 @@ namespace AppInstaller::SQLite
         };
 
         static Connection Create(const std::string& target, OpenDisposition disposition, OpenFlags flags = OpenFlags::None);
+
+        // Creates a connection to the database that the specifier identifies.
+        static Connection Create(const DatabaseSpecifier& specifier);
 
         Connection() = default;
 
@@ -280,6 +284,46 @@ namespace AppInstaller::SQLite
 
         size_t m_id = 0;
         std::shared_ptr<details::SharedConnection> m_dbconn;
+    };
+
+    // How a database is intended to be used.
+    enum class DatabaseDisposition
+    {
+        // Open for read only.
+        Read,
+        // Open for read and write.
+        ReadWrite,
+        // The database will not change while in use; open for immutable read.
+        Immutable,
+    };
+
+    // Identifies a database and how it is to be used, translating that into the target string and
+    // flags that SQLite requires.
+    //
+    // The translation cannot live inside the act of opening a connection, because `ATTACH` takes
+    // the same target string as `sqlite3_open_v2` and has to be given the identical value. Anything
+    // that needs to name a database therefore takes one of these rather than a bare path.
+    struct DatabaseSpecifier
+    {
+        DatabaseSpecifier(std::string path, DatabaseDisposition disposition);
+
+        // The path to the database file, as given.
+        const std::string& Path() const { return m_path; }
+
+        DatabaseDisposition Disposition() const { return m_disposition; }
+
+        // The value to hand to SQLite, which is a URI when the disposition requires query
+        // parameters to express it and the path itself otherwise.
+        const std::string& Target() const { return m_target; }
+
+        // The connection level disposition and flags that carry this disposition.
+        Connection::OpenDisposition ConnectionDisposition() const;
+        Connection::OpenFlags ConnectionFlags() const;
+
+    private:
+        std::string m_path;
+        std::string m_target;
+        DatabaseDisposition m_disposition;
     };
 
     // A SQL statement.

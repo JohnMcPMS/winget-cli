@@ -158,12 +158,12 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_1::Delta
         //
         // The baseline is read on a connection of its own because the metadata accessors always
         // read the main database, and by the time it is attached it is not that.
-        void ValidateBaselineAffinity(const SQLite::Connection& connection, const std::string& baselinePath)
+        void ValidateBaselineAffinity(const SQLite::Connection& connection, const SQLite::DatabaseSpecifier& baseline)
         {
             std::optional<std::string> expected =
                 SQLite::MetadataTable::TryGetNamedValue<std::string>(connection, s_MetadataValueName_DeltaBaselineIdentifier);
 
-            SQLite::Connection baselineConnection = SQLite::Connection::Create(baselinePath, SQLite::Connection::OpenDisposition::ReadOnly);
+            SQLite::Connection baselineConnection = SQLite::Connection::Create(baseline);
             std::optional<std::string> actual =
                 SQLite::MetadataTable::TryGetNamedValue<std::string>(baselineConnection, s_MetadataValueName_BaselineIdentifier);
 
@@ -176,15 +176,15 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_1::Delta
         }
     }
 
-    void SetupReadMode(SQLite::Connection& connection, const std::string& baselinePath)
+    void SetupReadMode(SQLite::Connection& connection, const SQLite::DatabaseSpecifier& baseline)
     {
-        AICLI_LOG(Repo, Info, << "Setting up delta read mode with baseline [" << baselinePath << "]");
+        AICLI_LOG(Repo, Info, << "Setting up delta read mode with baseline [" << baseline.Path() << "]");
 
-        ValidateBaselineAffinity(connection, baselinePath);
+        ValidateBaselineAffinity(connection, baseline);
 
         {
             StatementBuilder builder;
-            builder.Attach(baselinePath, s_Delta_BaselineSchema);
+            builder.Attach(baseline, s_Delta_BaselineSchema);
             builder.Execute(connection);
         }
 

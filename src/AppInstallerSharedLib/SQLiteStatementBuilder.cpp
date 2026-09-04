@@ -972,10 +972,10 @@ namespace AppInstaller::SQLite::Builder
         return *this;
     }
 
-    StatementBuilder& StatementBuilder::Attach(const std::string& path, std::string_view alias)
+    StatementBuilder& StatementBuilder::Attach(const DatabaseSpecifier& specifier, std::string_view alias)
     {
         m_stream << "ATTACH DATABASE ?";
-        AddBindFunctor(m_bindIndex++, path);
+        AddBindFunctor(m_bindIndex++, specifier.Target());
         OutputOperationAndTable(m_stream, " AS", alias);
         return *this;
     }

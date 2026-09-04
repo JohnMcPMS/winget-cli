@@ -519,11 +519,11 @@ namespace AppInstaller::SQLite::Builder
         // Output the set portion of an update statement.
         StatementBuilder& Vacuum();
 
-        // Attaches another database file to the connection under the given alias.
-        // The file path is bound as a parameter rather than embedded in the statement text.
+        // Attaches another database to the connection under the given alias.
+        // The target is bound as a parameter rather than embedded in the statement text.
         // The alias remains valid only for the connection that executes the statement, and
         // the attachment is released when that connection is closed.
-        StatementBuilder& Attach(const std::string& path, std::string_view alias);
+        StatementBuilder& Attach(const DatabaseSpecifier& specifier, std::string_view alias);
 
         // General purpose functions to begin and end a parenthetical expression.
         StatementBuilder& BeginParenthetical();

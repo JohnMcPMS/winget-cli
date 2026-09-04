@@ -45,20 +45,25 @@ namespace AppInstaller::Repository::Microsoft
         return { filePath, source };
     }
 
-    SQLiteIndex SQLiteIndex::OpenWithBaseline(const std::string& deltaFilePath, const std::string& baselineFilePath)
+    SQLiteIndex SQLiteIndex::OpenWithBaseline(const std::string& deltaFilePath, const std::string& baselineFilePath, OpenDisposition disposition)
     {
         AICLI_LOG(Repo, Info, << "Opening delta index [" << deltaFilePath << "] with baseline [" << baselineFilePath << "]");
-        SQLiteIndex result{ deltaFilePath, SQLiteStorageBase::OpenDisposition::Read, {} };
+
+        // The combined form is presented through views over a union of two databases, so there is
+        // nothing here that could be written back to.
+        THROW_HR_IF(E_INVALIDARG, disposition == OpenDisposition::ReadWrite);
 
         std::filesystem::path baselinePath{ Utility::ConvertToUTF16(baselineFilePath) };
         THROW_HR_IF(E_INVALIDARG, baselinePath.empty() || baselinePath.is_relative());
+
+        SQLiteIndex result{ SQLite::DatabaseSpecifier{ deltaFilePath, disposition }, {} };
 
         result.m_contextData.Add<Schema::Property::DeltaBaselineIndexPath>(baselinePath);
 
         // The interface for the delta's schema version establishes the combined view. A version
         // that does not understand deltas throws, which is the right answer: nothing else here
         // could make sense of the pair.
-        result.m_interface->SetupDeltaReadMode(result.m_dbconn, baselineFilePath);
+        result.m_interface->SetupDeltaReadMode(result.m_dbconn, SQLite::DatabaseSpecifier{ baselineFilePath, disposition });
 
         return result;
     }
@@ -72,13 +77,18 @@ namespace AppInstaller::Repository::Microsoft
     }
 
     SQLiteIndex::SQLiteIndex(const std::string& target, SQLiteStorageBase::OpenDisposition disposition, Utility::ManagedFile&& indexFile) :
-        SQLiteStorageBase(target, disposition, std::move(indexFile))
+        SQLiteIndex(SQLite::DatabaseSpecifier{ target, disposition }, std::move(indexFile))
+    {
+    }
+
+    SQLiteIndex::SQLiteIndex(const SQLite::DatabaseSpecifier& specifier, Utility::ManagedFile&& indexFile) :
+        SQLiteStorageBase(specifier, std::move(indexFile))
     {
         m_dbconn.EnableICU();
         AICLI_LOG(Repo, Info, << "Opened SQLite Index with version [" << m_version << "], last write [" << GetLastWriteTime() << "]");
         m_interface = Schema::CreateISQLiteIndex(m_version);
-        THROW_HR_IF(APPINSTALLER_CLI_ERROR_CANNOT_WRITE_TO_UPLEVEL_INDEX, disposition == SQLiteStorageBase::OpenDisposition::ReadWrite && m_version != m_interface->GetVersion());
-        SetDatabaseFilePath(target);
+        THROW_HR_IF(APPINSTALLER_CLI_ERROR_CANNOT_WRITE_TO_UPLEVEL_INDEX, specifier.Disposition() == SQLiteStorageBase::OpenDisposition::ReadWrite && m_version != m_interface->GetVersion());
+        SetDatabaseFilePath(specifier.Path());
     }
 
     SQLiteIndex::SQLiteIndex(const std::string& target, SQLiteIndex& source) :

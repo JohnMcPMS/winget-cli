@@ -931,7 +931,7 @@ TEST_CASE("SQLBuilder_AttachAndTempView", "[sqlbuilder]")
     {
         INFO("Attach the baseline database");
         Builder::StatementBuilder attach;
-        attach.Attach(baselineFile.GetPath().u8string(), baselineAlias);
+        attach.Attach(DatabaseSpecifier{ baselineFile.GetPath().u8string(), DatabaseDisposition::Read }, baselineAlias);
         attach.Execute(connection);
     }
 
@@ -1155,6 +1155,50 @@ TEST_CASE("SQLiteWrapperTransactionWriteConflict", "[sqlitewrapper]")
         Transaction transaction2 = Transaction::Create(connection2, "test_transaction2", true);
         InsertIntoSimpleTestTable(connection2, firstVal, secondVal);
     }
+
+    SelectFromSimpleTestTableOnlyOneRow(connection, firstVal, secondVal);
+}
+
+TEST_CASE("SQLiteDatabaseSpecifierTargets", "[sqlitewrapper]")
+{
+    // A disposition that SQLite can express with flags alone hands over the path untouched.
+    DatabaseSpecifier plain{ "D:\\test\\index.db"s, DatabaseDisposition::Read };
+    REQUIRE(plain.Target() == "D:\\test\\index.db");
+    REQUIRE(plain.ConnectionDisposition() == Connection::OpenDisposition::ReadOnly);
+
+    // Immutability can only be asked for through a URI query parameter.
+    DatabaseSpecifier immutable{ "D:\\test\\index.db"s, DatabaseDisposition::Immutable };
+    REQUIRE(immutable.Target() == "file:/D:/test/index.db?immutable=1");
+    REQUIRE(immutable.ConnectionDisposition() == Connection::OpenDisposition::ReadOnly);
+
+    // Characters that would otherwise start the query or fragment are escaped, and repeated
+    // separators collapse, per the conversion the URI documentation prescribes.
+    DatabaseSpecifier escaped{ "D:\\a#b\\\\c?d\\index.db"s, DatabaseDisposition::Immutable };
+    REQUIRE(escaped.Target() == "file:/D:/a%23b/c%3fd/index.db?immutable=1");
+
+    // Every disposition enables URI handling, because a connection that did not ask for it cannot
+    // attach one later regardless of how the attached database is named.
+    REQUIRE(plain.ConnectionFlags() == Connection::OpenFlags::Uri);
+    REQUIRE(immutable.ConnectionFlags() == Connection::OpenFlags::Uri);
+}
+
+TEST_CASE("SQLiteDatabaseSpecifierImmutableOpen", "[sqlitewrapper]")
+{
+    TestCommon::TempFile tempFile{ "repolibtest_tempdb"s, ".db"s };
+    INFO("Using temporary file named: " << tempFile.GetPath());
+
+    int firstVal = 1;
+    std::string secondVal = "test";
+
+    {
+        Connection connection = Connection::Create(tempFile, Connection::OpenDisposition::Create);
+
+        CreateSimpleTestTable(connection);
+
+        InsertIntoSimpleTestTable(connection, firstVal, secondVal);
+    }
+
+    Connection connection = Connection::Create(DatabaseSpecifier{ tempFile.GetPath().u8string(), DatabaseDisposition::Immutable });
 
     SelectFromSimpleTestTableOnlyOneRow(connection, firstVal, secondVal);
 }

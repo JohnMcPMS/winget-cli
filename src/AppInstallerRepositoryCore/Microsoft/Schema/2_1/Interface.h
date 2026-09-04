@@ -40,7 +40,7 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_1
         // Sets this index up to read the combination of a delta and the baseline it was generated
         // against. Attaches the baseline and defines the merged views, after which every inherited
         // read path operates on the combination. Must be called before any read.
-        void SetupDeltaReadMode(SQLite::Connection& connection, const std::string& baselinePath) override;
+        void SetupDeltaReadMode(SQLite::Connection& connection, const SQLite::DatabaseSpecifier& baseline) override;
 
     protected:
         // Records the baseline time for this index, and generates a delta index against a previous
