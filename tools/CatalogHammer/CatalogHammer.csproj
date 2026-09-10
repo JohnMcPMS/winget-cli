@@ -1,0 +1,91 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    CET fail-fast repro harness for WindowsPackageManagerServer.exe (Watson #63388223).
+    Diagnostic tool only. Not shipped, not part of the product, not covered by tests.
+    See README.md in this folder for build and usage notes.
+
+    This project references the *build output* of
+    src\Microsoft.Management.Deployment.Projection rather than the project itself, so it does
+    not drag the C++ projects into its own build. Build src\AppInstallerCLI.sln for the matching
+    platform and configuration first.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <Platforms>x64;arm64</Platforms>
+    <Configurations>Debug;Release;ReleaseStatic</Configurations>
+    <Platform Condition="'$(Platform)' == '' or '$(Platform)' == 'AnyCPU'">x64</Platform>
+    <Configuration Condition="'$(Configuration)' == ''">Release</Configuration>
+    <RuntimeIdentifier Condition="'$(Platform)' == 'x64'">win-x64</RuntimeIdentifier>
+    <RuntimeIdentifier Condition="'$(Platform)' == 'arm64'">win-arm64</RuntimeIdentifier>
+    <SelfContained>false</SelfContained>
+    <AssemblyName>CatalogHammer</AssemblyName>
+    <RootNamespace>CatalogHammer</RootNamespace>
+    <OutDir>$(MSBuildThisFileDirectory)bin\$(Platform)\$(Configuration)\</OutDir>
+  </PropertyGroup>
+
+  <!--
+    Where the solution build drops the projection assembly. The projection project sets
+    OutDir to $(SolutionDir)$(Platform)\$(Configuration)\Microsoft.Management.Deployment.Projection\,
+    and $(SolutionDir) is src\ when building AppInstallerCLI.sln.
+    Override with /p:WinGetProjectionDir=... if you build somewhere else.
+  -->
+  <PropertyGroup>
+    <WinGetProjectionDir Condition="'$(WinGetProjectionDir)' == ''">$(MSBuildThisFileDirectory)..\..\src\$(Platform)\$(Configuration)\Microsoft.Management.Deployment.Projection\</WinGetProjectionDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="Microsoft.Management.Deployment.Projection">
+      <HintPath>$(WinGetProjectionDir)Microsoft.Management.Deployment.Projection.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="Microsoft.WinGet.SharedLib">
+      <HintPath>$(WinGetProjectionDir)Microsoft.WinGet.SharedLib.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+  </ItemGroup>
+
+  <!--
+    The WinRT metadata must sit next to the executable. Without it, metadata resolution fails at
+    runtime and activation surfaces as 0x80073D54 (APPMODEL_ERROR_NO_PACKAGE), which is misleading
+    because it looks like a packaging problem rather than a missing file.
+  -->
+  <ItemGroup>
+    <None Include="$(WinGetProjectionDir)Microsoft.Management.Deployment.winmd"
+          Condition="Exists('$(WinGetProjectionDir)Microsoft.Management.Deployment.winmd')">
+      <Link>Microsoft.Management.Deployment.winmd</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <!--
+    The projection assembly is a library, so its NuGet assets are not copied to its output
+    directory. WinRT.Runtime is required to compile against and to run the projected types,
+    so pull it from the package directly. Keep this version in sync with
+    src\Directory.Packages.props; central package management does not reach tools\.
+  -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Windows.CsWinRT" Version="2.3.1" />
+  </ItemGroup>
+
+  <!--
+    We consume the already-generated projection from the referenced assembly and do not generate
+    one here, but the CsWinRT targets still require a Windows metadata version to be declared.
+    Matches CsWinRTWindowsMetadata in the projection project.
+  -->
+  <PropertyGroup>
+    <CsWinRTWindowsMetadata>10.0.26100.0</CsWinRTWindowsMetadata>
+    <CsWinRTGenerateProjection>false</CsWinRTGenerateProjection>
+  </PropertyGroup>
+
+  <Target Name="VerifyWinGetProjectionAvailable" BeforeTargets="ResolveAssemblyReferences">
+    <Error Condition="!Exists('$(WinGetProjectionDir)Microsoft.Management.Deployment.Projection.dll')"
+           Text="Microsoft.Management.Deployment.Projection.dll was not found at '$(WinGetProjectionDir)'. Build src\AppInstallerCLI.sln for Platform=$(Platform) Configuration=$(Configuration) first, or pass /p:WinGetProjectionDir=&lt;path&gt;." />
+  </Target>
+
+</Project>
