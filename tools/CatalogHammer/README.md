@@ -159,7 +159,26 @@ Get-Process WindowsPackageManagerServer | ForEach-Object { (Get-ProcessMitigatio
 `Setup-ReproVM.ps1 -CheckServer` does exactly this. The server is demand-started, so run it once
 the harness is going rather than beforehand.
 
-The field dumps show shadow stacks enforced rather than in audit mode, so the VM must match.
+### What the correct state looks like
+
+```
+UserShadowStack           : ON
+AuditUserShadowStack      : OFF
+UserShadowStackStrictMode : OFF
+```
+
+This matches the field dumps and is what you want. In particular:
+
+- **Audit OFF is the important one.** Audit mode logs a violation and continues; enforcement mode
+  fail-fasts, which is the crash being chased. With audit on, the bug would not surface.
+- **Strict mode OFF is correct — do not turn it on.** Strict mode governs whether non-CET-compatible
+  modules are allowed to keep shadow stacks enabled for the process; it does not make violations
+  "more enforced." Enabling it would diverge from the field configuration.
+
+One consequence of non-strict mode worth knowing: if a module that is not CET-compatible loads into
+the server, Windows may relax shadow stack enforcement for that process on compatibility grounds. If
+a long run produces nothing, re-run `-CheckServer` against the still-live server to confirm shadow
+stacks are still on rather than having been dropped after some DLL loaded.
 
 ## The actual goal
 
