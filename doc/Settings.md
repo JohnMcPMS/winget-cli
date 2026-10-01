@@ -462,3 +462,15 @@ Note that search result ordering is dependent on several factors, and source pri
         "sourcePriority": true
   },
 ```
+
+### deltaIndex
+
+This feature changes how the client acquires updates to a pre-indexed source. Instead of downloading the whole index every time, it downloads a delta describing only what has changed since a periodically published baseline, and combines the two locally. The baseline is downloaded only when the source does not already have the one the delta was built against.
+
+The data presented by the source is the same either way; only how it is acquired differs. A source that does not publish a delta is unaffected, and the client falls back to downloading the full index.
+
+```json
+  "experimentalFeatures": {
+        "deltaIndex": true
+  },
+```
