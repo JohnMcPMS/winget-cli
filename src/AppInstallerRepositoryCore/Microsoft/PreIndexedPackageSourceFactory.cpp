@@ -256,34 +256,6 @@ namespace AppInstaller::Repository::Microsoft
             return UseDeployedPackage() ? GetDeployedPackageVersion(details) : GetLocalFilePackageVersion(details);
         }
 
-        bool CheckForUpdateBeforeOpen(const SourceDetails& details, std::optional<Msix::PackageVersion> currentVersion, const std::optional<TimeSpan>& requestedUpdateInterval)
-        {
-            // If we can't find a good package, then we have to update to operate
-            if (!currentVersion)
-            {
-                AICLI_LOG(Repo, Verbose, << "Source `" << details.Name << "` has no data");
-                return true;
-            }
-
-            using namespace std::chrono_literals;
-            using clock = std::chrono::system_clock;
-
-            // Attempt to convert the package version to a time_point
-            clock::time_point versionTime = Utility::GetTimePointFromVersion(currentVersion.value());
-
-            // Since we expect that the version time indicates creation time, don't let it be far in the future.
-            auto now = clock::now();
-            if (versionTime > now && versionTime - now > 24h)
-            {
-                versionTime = clock::time_point::min();
-            }
-
-            // Use the later of the version and last update times
-            clock::time_point timeToCheck = (versionTime > details.LastUpdateTime ? versionTime : details.LastUpdateTime);
-
-            return IsAfterUpdateCheckTime(details.Name, timeToCheck, requestedUpdateInterval);
-        }
-
         struct SourceOpenTimer
         {
             using clock = std::chrono::steady_clock;
@@ -385,7 +357,32 @@ namespace AppInstaller::Repository::Microsoft
 
             bool ShouldUpdateBeforeOpen(const std::optional<TimeSpan>& requestedUpdateInterval) override
             {
-                return CheckForUpdateBeforeOpen(m_details, GetCurrentVersion(m_details), requestedUpdateInterval);
+                auto currentVersion = GetCurrentVersion(m_details);
+
+                // If we can't find a good package, then we have to update to operate
+                if (!currentVersion)
+                {
+                    AICLI_LOG(Repo, Verbose, << "Source `" << m_details.Name << "` has no data");
+                    return true;
+                }
+
+                using namespace std::chrono_literals;
+                using clock = std::chrono::system_clock;
+
+                // Attempt to convert the package version to a time_point
+                clock::time_point versionTime = Utility::GetTimePointFromVersion(currentVersion.value());
+
+                // Since we expect that the version time indicates creation time, don't let it be far in the future.
+                auto now = clock::now();
+                if (versionTime > now && versionTime - now > 24h)
+                {
+                    versionTime = clock::time_point::min();
+                }
+
+                // Use the later of the version and last update times
+                clock::time_point timeToCheck = (versionTime > m_details.LastUpdateTime ? versionTime : m_details.LastUpdateTime);
+
+                return IsAfterUpdateCheckTime(m_details.Name, timeToCheck, requestedUpdateInterval);
             }
 
             std::shared_ptr<ISource> Open(IProgressCallback& progress) override
