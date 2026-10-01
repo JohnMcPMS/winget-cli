@@ -189,25 +189,323 @@ namespace AppInstaller::Repository::Microsoft
             return "PreIndexedSourceCPL_"s + GetPackageFamilyNameFromDetails(details);
         }
 
-        // The base class for a package that comes from a preindexed packaged source.
-        struct PreIndexedFactoryBase : public ISourceFactory
+        // Selects between the two mechanisms for holding the index package locally.
+        bool UseDeployedPackage()
         {
-            std::string_view TypeName() const override final
+            return Runtime::IsRunningInPackagedContext();
+        }
+
+        // The optimistic deployed open calls this without the cross process lock, and retries under the lock on failure.
+        std::optional<Deployment::Extension> GetExtensionFromDetails(const SourceDetails& details)
+        {
+            Deployment::ExtensionCatalog catalog(Deployment::SourceExtensionName);
+            return catalog.FindByPackageFamilyAndId(GetPackageFamilyNameFromDetails(details), Deployment::IndexDBId);
+        }
+
+        std::optional<Msix::PackageVersion> GetDeployedPackageVersion(const SourceDetails& details)
+        {
+            auto extension = GetExtensionFromDetails(details);
+
+            if (extension)
+            {
+                auto version = extension->GetPackageVersion();
+                return Msix::PackageVersion{ version.Major, version.Minor, version.Build, version.Revision };
+            }
+            else
+            {
+                return std::nullopt;
+            }
+        }
+
+        // Constructs the location that we will write files to.
+        std::filesystem::path GetStatePathFromDetails(const SourceDetails& details)
+        {
+            std::filesystem::path result = Runtime::GetPathTo(Runtime::PathName::LocalState);
+            result /= PreIndexedPackageSourceFactory::Type();
+            result /= GetPackageFamilyNameFromDetails(details);
+            return result;
+        }
+
+        std::optional<Msix::PackageVersion> GetLocalFilePackageVersion(const SourceDetails& details)
+        {
+            std::filesystem::path packageState = GetStatePathFromDetails(details);
+            std::filesystem::path packagePath = packageState / s_PreIndexedPackageSourceFactory_PackageFileName;
+
+            if (std::filesystem::exists(packagePath))
+            {
+                // If we already have a trusted index package, use it to determine if we need to update or not.
+                Msix::WriteLockedMsixFile indexPackage{ packagePath };
+                if (indexPackage.ValidateTrustInfo(WI_IsFlagSet(details.TrustLevel, SourceTrustLevel::StoreOrigin)))
+                {
+                    Msix::MsixInfo msixInfo{ packagePath };
+                    auto manifest = msixInfo.GetAppPackageManifests();
+
+                    if (manifest.size() == 1)
+                    {
+                        return manifest[0].GetIdentity().GetVersion();
+                    }
+                }
+            }
+
+            return std::nullopt;
+        }
+
+        // Retrieves the currently held version of the index package, or nothing when there is none.
+        std::optional<Msix::PackageVersion> GetCurrentVersion(const SourceDetails& details)
+        {
+            return UseDeployedPackage() ? GetDeployedPackageVersion(details) : GetLocalFilePackageVersion(details);
+        }
+
+        bool CheckForUpdateBeforeOpen(const SourceDetails& details, std::optional<Msix::PackageVersion> currentVersion, const std::optional<TimeSpan>& requestedUpdateInterval)
+        {
+            // If we can't find a good package, then we have to update to operate
+            if (!currentVersion)
+            {
+                AICLI_LOG(Repo, Verbose, << "Source `" << details.Name << "` has no data");
+                return true;
+            }
+
+            using namespace std::chrono_literals;
+            using clock = std::chrono::system_clock;
+
+            // Attempt to convert the package version to a time_point
+            clock::time_point versionTime = Utility::GetTimePointFromVersion(currentVersion.value());
+
+            // Since we expect that the version time indicates creation time, don't let it be far in the future.
+            auto now = clock::now();
+            if (versionTime > now && versionTime - now > 24h)
+            {
+                versionTime = clock::time_point::min();
+            }
+
+            // Use the later of the version and last update times
+            clock::time_point timeToCheck = (versionTime > details.LastUpdateTime ? versionTime : details.LastUpdateTime);
+
+            return IsAfterUpdateCheckTime(details.Name, timeToCheck, requestedUpdateInterval);
+        }
+
+        struct SourceOpenTimer
+        {
+            using clock = std::chrono::steady_clock;
+
+            struct SingleTimer
+            {
+                SingleTimer(long long& durationMs) : m_durationMs(durationMs), m_start(clock::now()) {}
+
+                ~SingleTimer()
+                {
+                    Stop();
+                }
+
+                void Stop()
+                {
+                    if (!m_stopped)
+                    {
+                        m_durationMs += std::chrono::duration_cast<std::chrono::milliseconds>(clock::now() - m_start).count();
+                        m_stopped = true;
+                    }
+                }
+
+            private:
+                long long& m_durationMs;
+                clock::time_point m_start;
+                bool m_stopped = false;
+            };
+
+            SourceOpenTimer(const std::string& sourceName) : m_sourceName(sourceName), m_start(clock::now()) {}
+
+            ~SourceOpenTimer()
+            {
+                const auto totalMs = std::chrono::duration_cast<std::chrono::milliseconds>(clock::now() - m_start).count();
+                AICLI_LOG(Repo, Info, << "Packaged source open for '" << m_sourceName << "' " << (m_succeeded ? "succeeded" : "failed") <<
+                    " in " << totalMs << " ms [extensionLookup=" << m_extensionLookupMs <<
+                    " ms, verifyContentIntegrity=" << m_verifyContentIntegrityMs <<
+                    " ms, sqliteOpen=" << m_sqliteOpenMs << " ms, mode=" << (m_usedLockFallback ? "fallbackLocked" : "optimistic") << "]");
+            }
+
+            SingleTimer MeasureExtensionLookup() { return SingleTimer{ m_extensionLookupMs }; }
+            SingleTimer MeasureVerifyContentIntegrity() { return SingleTimer{ m_verifyContentIntegrityMs }; }
+            SingleTimer MeasureSQLiteOpen() { return SingleTimer{ m_sqliteOpenMs }; }
+            void MarkFallbackLocked() { m_usedLockFallback = true; }
+            void MarkSucceeded() { m_succeeded = true; }
+
+        private:
+            const std::string& m_sourceName;
+            clock::time_point m_start;
+            bool m_succeeded = false;
+            bool m_usedLockFallback = false;
+            long long m_extensionLookupMs = 0;
+            long long m_verifyContentIntegrityMs = 0;
+            long long m_sqliteOpenMs = 0;
+        };
+
+        SQLiteIndex OpenDeployedIndex(const SourceDetails& details, IProgressCallback& progress, SourceOpenTimer& openTimer)
+        {
+            auto extensionLookupTimer = openTimer.MeasureExtensionLookup();
+            auto extension = GetExtensionFromDetails(details);
+            extensionLookupTimer.Stop();
+            if (!extension)
+            {
+                AICLI_LOG(Repo, Info, << "Package not found " << details.Data);
+                THROW_HR(APPINSTALLER_CLI_ERROR_SOURCE_DATA_MISSING);
+            }
+
+            auto verifyTimer = openTimer.MeasureVerifyContentIntegrity();
+            THROW_HR_IF(HRESULT_FROM_WIN32(ERROR_NEEDS_REMEDIATION), !extension->VerifyContentIntegrity(progress));
+            verifyTimer.Stop();
+
+            // To work around an issue with accessing the public folder, we are temporarily
+            // constructing the location ourself.  This was already the case for the non-packaged
+            // runtime, and we can fix both in the future.  The only problem with this is that
+            // the directory in the extension *must* be Public, rather than one set by the creator.
+            std::filesystem::path indexLocation = extension->GetPackagePath();
+            indexLocation /= s_PreIndexedPackageSourceFactory_IndexFilePath;
+
+            auto sqliteOpenTimer = openTimer.MeasureSQLiteOpen();
+            auto index = SQLiteIndex::Open(indexLocation.u8string(), SQLiteIndex::OpenDisposition::Immutable);
+            sqliteOpenTimer.Stop();
+
+            return index;
+        }
+
+        // A reference to a preindexed package source.
+        struct PreIndexedSourceReference : public ISourceReference
+        {
+            PreIndexedSourceReference(const SourceDetails& details) : m_details(details)
+            {
+                if (!m_details.Data.empty())
+                {
+                    m_details.Identifier = GetPackageFamilyNameFromDetails(details);
+                }
+            }
+
+            std::string GetIdentifier() override { return m_details.Identifier; }
+
+            SourceDetails& GetDetails() override { return m_details; };
+
+            bool ShouldUpdateBeforeOpen(const std::optional<TimeSpan>& requestedUpdateInterval) override
+            {
+                return CheckForUpdateBeforeOpen(m_details, GetCurrentVersion(m_details), requestedUpdateInterval);
+            }
+
+            std::shared_ptr<ISource> Open(IProgressCallback& progress) override
+            {
+                return UseDeployedPackage() ? OpenDeployed(progress) : OpenLocalFile(progress);
+            }
+
+        private:
+            SourceDetails m_details;
+
+            // Reads the index out of the location that the deployed package was installed to.
+            std::shared_ptr<ISource> OpenDeployed(IProgressCallback& progress)
+            {
+                SourceOpenTimer openTimer{ m_details.Name };
+                auto completeOpen = [&](SQLiteIndex index)
+                    {
+                        // We didn't use to store the source identifier, so we compute it here in case it's
+                        // missing from the details.
+                        m_details.Identifier = GetPackageFamilyNameFromDetails(m_details);
+                        openTimer.MarkSucceeded();
+                        return std::make_shared<SQLiteIndexSource>(m_details, std::move(index), false, true);
+                    };
+
+                std::optional<SQLiteIndex> index;
+                bool retryUnderLock = false;
+
+                try
+                {
+                    index.emplace(OpenDeployedIndex(m_details, progress, openTimer));
+                }
+                catch (...)
+                {
+                    if (progress.IsCancelledBy(CancelReason::Any))
+                    {
+                        throw;
+                    }
+
+                    LOG_CAUGHT_EXCEPTION_MSG("Optimistic packaged source open failed, retrying under lock for source: %hs", m_details.Name.c_str());
+                    retryUnderLock = true;
+                }
+
+                if (retryUnderLock)
+                {
+                    openTimer.MarkFallbackLocked();
+                    Synchronization::CrossProcessLock lock(CreateNameForCPL(m_details));
+                    if (!lock.Acquire(progress))
+                    {
+                        return {};
+                    }
+
+                    index.emplace(OpenDeployedIndex(m_details, progress, openTimer));
+                }
+
+                return completeOpen(std::move(index.value()));
+            }
+
+            // Extracts the index out of the package file held in local state.
+            std::shared_ptr<ISource> OpenLocalFile(IProgressCallback& progress)
+            {
+                Synchronization::CrossProcessLock lock(CreateNameForCPL(m_details));
+                if (!lock.Acquire(progress))
+                {
+                    return {};
+                }
+
+                std::filesystem::path packageLocation = GetStatePathFromDetails(m_details);
+                packageLocation /= s_PreIndexedPackageSourceFactory_PackageFileName;
+
+                if (!std::filesystem::exists(packageLocation))
+                {
+                    AICLI_LOG(Repo, Info, << "Data not found at " << packageLocation);
+                    THROW_HR(APPINSTALLER_CLI_ERROR_SOURCE_DATA_MISSING);
+                }
+
+                // Put a write exclusive lock on the index package.
+                Msix::WriteLockedMsixFile indexPackage{ packageLocation };
+
+                // Validate index package trust info.
+                THROW_HR_IF(APPINSTALLER_CLI_ERROR_SOURCE_DATA_INTEGRITY_FAILURE, !indexPackage.ValidateTrustInfo(WI_IsFlagSet(m_details.TrustLevel, SourceTrustLevel::StoreOrigin)));
+
+                // Create a temp lock exclusive index file.
+                auto tempIndexFilePath = Runtime::GetNewTempFilePath();
+                auto tempIndexFile = Utility::ManagedFile::CreateWriteLockedFile(tempIndexFilePath, GENERIC_WRITE, true);
+
+                // Populate temp index file.
+                Msix::MsixInfo packageInfo(packageLocation);
+                packageInfo.WriteToFileHandle(s_PreIndexedPackageSourceFactory_IndexFilePath, tempIndexFile.GetFileHandle(), progress);
+
+                if (progress.IsCancelledBy(CancelReason::Any))
+                {
+                    AICLI_LOG(Repo, Info, << "Cancelling open upon request");
+                    return {};
+                }
+
+                SQLiteIndex index = SQLiteIndex::Open(tempIndexFile.GetFilePath().u8string(), SQLiteIndex::OpenDisposition::Immutable, std::move(tempIndexFile));
+
+                // We didn't use to store the source identifier, so we compute it here in case it's
+                // missing from the details.
+                m_details.Identifier = GetPackageFamilyNameFromDetails(m_details);
+                return std::make_shared<SQLiteIndexSource>(m_details, std::move(index), false, true);
+            }
+        };
+
+        // The factory for a preindexed package source.
+        struct PreIndexedFactory : public ISourceFactory
+        {
+            std::string_view TypeName() const override
             {
                 return PreIndexedPackageSourceFactory::Type();
             }
 
-            std::shared_ptr<ISourceReference> Create(const SourceDetails& details) override final
+            std::shared_ptr<ISourceReference> Create(const SourceDetails& details) override
             {
                 // With more than one source implementation, we will probably need to probe first
                 THROW_HR_IF(E_INVALIDARG, !details.Type.empty() && details.Type != PreIndexedPackageSourceFactory::Type());
 
-                return CreateInternal(details);
+                return std::make_shared<PreIndexedSourceReference>(details);
             }
 
-            virtual std::shared_ptr<ISourceReference> CreateInternal(const SourceDetails& details) = 0;
-
-            bool Add(SourceDetails& details, IProgressCallback& progress) override final
+            bool Add(SourceDetails& details, IProgressCallback& progress) override
             {
                 if (details.Type.empty())
                 {
@@ -269,22 +567,25 @@ namespace AppInstaller::Repository::Microsoft
                 return result;
             }
 
-            bool Update(const SourceDetails& details, IProgressCallback& progress) override final
+            bool Update(const SourceDetails& details, IProgressCallback& progress) override
             {
                 return UpdateBase(details, false, progress);
             }
 
-            bool BackgroundUpdate(const SourceDetails& details, IProgressCallback& progress) override final
+            bool BackgroundUpdate(const SourceDetails& details, IProgressCallback& progress) override
             {
                 return UpdateBase(details, true, progress);
             }
 
-            // Retrieves the currently cached version of the package.
-            virtual std::optional<Msix::PackageVersion> GetCurrentVersion(const SourceDetails& details) = 0;
+            // Places the acquired package into whichever store the mechanism in use reads from.
+            bool UpdateInternal(const std::string& packageLocation, const SourceDetails& details, IProgressCallback& progress, std::optional<uint64_t>& downloadedBytes)
+            {
+                return UseDeployedPackage() ?
+                    UpdateDeployedPackage(packageLocation, details, progress, downloadedBytes) :
+                    UpdateLocalFilePackage(packageLocation, details, progress, downloadedBytes);
+            }
 
-            virtual bool UpdateInternal(const std::string& packageLocation, const SourceDetails& details, IProgressCallback& progress, std::optional<uint64_t>& downloadedBytes) = 0;
-
-            bool Remove(const SourceDetails& details, IProgressCallback& progress) override final
+            bool Remove(const SourceDetails& details, IProgressCallback& progress) override
             {
                 THROW_HR_IF(E_INVALIDARG, details.Type != PreIndexedPackageSourceFactory::Type());
                 auto lock = LockExclusive(details, progress);
@@ -293,10 +594,8 @@ namespace AppInstaller::Repository::Microsoft
                     return false;
                 }
 
-                return RemoveInternal(details, progress);
+                return UseDeployedPackage() ? RemoveDeployedPackage(details, progress) : RemoveLocalFilePackage(details, progress);
             }
-
-            virtual bool RemoveInternal(const SourceDetails& details, IProgressCallback&) = 0;
 
         private:
             Synchronization::CrossProcessLock LockExclusive(const SourceDetails& details, IProgressCallback& progress, bool isBackground = false)
@@ -375,257 +674,8 @@ namespace AppInstaller::Repository::Microsoft
 
                 return result;
             }
-        };
 
-        // Optimistic packaged source open may call this without the cross process lock and retry under the lock on failure.
-        std::optional<Deployment::Extension> GetExtensionFromDetails(const SourceDetails& details)
-        {
-            Deployment::ExtensionCatalog catalog(Deployment::SourceExtensionName);
-            return catalog.FindByPackageFamilyAndId(GetPackageFamilyNameFromDetails(details), Deployment::IndexDBId);
-        }
-
-        std::optional<Msix::PackageVersion> PackagedContextGetCurrentVersion(const SourceDetails& details)
-        {
-            auto extension = GetExtensionFromDetails(details);
-
-            if (extension)
-            {
-                auto version = extension->GetPackageVersion();
-                return Msix::PackageVersion{ version.Major, version.Minor, version.Build, version.Revision };
-            }
-            else
-            {
-                return std::nullopt;
-            }
-        }
-
-        // Constructs the location that we will write files to.
-        std::filesystem::path GetStatePathFromDetails(const SourceDetails& details)
-        {
-            std::filesystem::path result = Runtime::GetPathTo(Runtime::PathName::LocalState);
-            result /= PreIndexedPackageSourceFactory::Type();
-            result /= GetPackageFamilyNameFromDetails(details);
-            return result;
-        }
-
-        std::optional<Msix::PackageVersion> DesktopContextGetCurrentVersion(const SourceDetails& details)
-        {
-            std::filesystem::path packageState = GetStatePathFromDetails(details);
-            std::filesystem::path packagePath = packageState / s_PreIndexedPackageSourceFactory_PackageFileName;
-
-            if (std::filesystem::exists(packagePath))
-            {
-                // If we already have a trusted index package, use it to determine if we need to update or not.
-                Msix::WriteLockedMsixFile indexPackage{ packagePath };
-                if (indexPackage.ValidateTrustInfo(WI_IsFlagSet(details.TrustLevel, SourceTrustLevel::StoreOrigin)))
-                {
-                    Msix::MsixInfo msixInfo{ packagePath };
-                    auto manifest = msixInfo.GetAppPackageManifests();
-
-                    if (manifest.size() == 1)
-                    {
-                        return manifest[0].GetIdentity().GetVersion();
-                    }
-                }
-            }
-
-            return std::nullopt;
-        }
-
-        bool CheckForUpdateBeforeOpen(const SourceDetails& details, std::optional<Msix::PackageVersion> currentVersion, const std::optional<TimeSpan>& requestedUpdateInterval)
-        {
-            // If we can't find a good package, then we have to update to operate
-            if (!currentVersion)
-            {
-                AICLI_LOG(Repo, Verbose, << "Source `" << details.Name << "` has no data");
-                return true;
-            }
-
-            using namespace std::chrono_literals;
-            using clock = std::chrono::system_clock;
-
-            // Attempt to convert the package version to a time_point
-            clock::time_point versionTime = Utility::GetTimePointFromVersion(currentVersion.value());
-
-            // Since we expect that the version time indicates creation time, don't let it be far in the future.
-            auto now = clock::now();
-            if (versionTime > now && versionTime - now > 24h)
-            {
-                versionTime = clock::time_point::min();
-            }
-
-            // Use the later of the version and last update times
-            clock::time_point timeToCheck = (versionTime > details.LastUpdateTime ? versionTime : details.LastUpdateTime);
-
-            return IsAfterUpdateCheckTime(details.Name, timeToCheck, requestedUpdateInterval);
-        }
-
-        struct PackagedSourceOpenTimer
-        {
-            using clock = std::chrono::steady_clock;
-
-            struct SingleTimer
-            {
-                SingleTimer(long long& durationMs) : m_durationMs(durationMs), m_start(clock::now()) {}
-
-                ~SingleTimer()
-                {
-                    Stop();
-                }
-
-                void Stop()
-                {
-                    if (!m_stopped)
-                    {
-                        m_durationMs += std::chrono::duration_cast<std::chrono::milliseconds>(clock::now() - m_start).count();
-                        m_stopped = true;
-                    }
-                }
-
-            private:
-                long long& m_durationMs;
-                clock::time_point m_start;
-                bool m_stopped = false;
-            };
-
-            PackagedSourceOpenTimer(const std::string& sourceName) : m_sourceName(sourceName), m_start(clock::now()) {}
-
-            ~PackagedSourceOpenTimer()
-            {
-                const auto totalMs = std::chrono::duration_cast<std::chrono::milliseconds>(clock::now() - m_start).count();
-                AICLI_LOG(Repo, Info, << "Packaged source open for '" << m_sourceName << "' " << (m_succeeded ? "succeeded" : "failed") <<
-                    " in " << totalMs << " ms [extensionLookup=" << m_extensionLookupMs <<
-                    " ms, verifyContentIntegrity=" << m_verifyContentIntegrityMs <<
-                    " ms, sqliteOpen=" << m_sqliteOpenMs << " ms, mode=" << (m_usedLockFallback ? "fallbackLocked" : "optimistic") << "]");
-            }
-
-            SingleTimer MeasureExtensionLookup() { return SingleTimer{ m_extensionLookupMs }; }
-            SingleTimer MeasureVerifyContentIntegrity() { return SingleTimer{ m_verifyContentIntegrityMs }; }
-            SingleTimer MeasureSQLiteOpen() { return SingleTimer{ m_sqliteOpenMs }; }
-            void MarkFallbackLocked() { m_usedLockFallback = true; }
-            void MarkSucceeded() { m_succeeded = true; }
-
-        private:
-            const std::string& m_sourceName;
-            clock::time_point m_start;
-            bool m_succeeded = false;
-            bool m_usedLockFallback = false;
-            long long m_extensionLookupMs = 0;
-            long long m_verifyContentIntegrityMs = 0;
-            long long m_sqliteOpenMs = 0;
-        };
-
-        SQLiteIndex OpenPackagedContextIndex(const SourceDetails& details, IProgressCallback& progress, PackagedSourceOpenTimer& openTimer)
-        {
-            auto extensionLookupTimer = openTimer.MeasureExtensionLookup();
-            auto extension = GetExtensionFromDetails(details);
-            extensionLookupTimer.Stop();
-            if (!extension)
-            {
-                AICLI_LOG(Repo, Info, << "Package not found " << details.Data);
-                THROW_HR(APPINSTALLER_CLI_ERROR_SOURCE_DATA_MISSING);
-            }
-
-            auto verifyTimer = openTimer.MeasureVerifyContentIntegrity();
-            THROW_HR_IF(HRESULT_FROM_WIN32(ERROR_NEEDS_REMEDIATION), !extension->VerifyContentIntegrity(progress));
-            verifyTimer.Stop();
-
-            // To work around an issue with accessing the public folder, we are temporarily
-            // constructing the location ourself.  This was already the case for the non-packaged
-            // runtime, and we can fix both in the future.  The only problem with this is that
-            // the directory in the extension *must* be Public, rather than one set by the creator.
-            std::filesystem::path indexLocation = extension->GetPackagePath();
-            indexLocation /= s_PreIndexedPackageSourceFactory_IndexFilePath;
-
-            auto sqliteOpenTimer = openTimer.MeasureSQLiteOpen();
-            auto index = SQLiteIndex::Open(indexLocation.u8string(), SQLiteIndex::OpenDisposition::Immutable);
-            sqliteOpenTimer.Stop();
-
-            return index;
-        }
-
-        struct PackagedContextSourceReference : public ISourceReference
-        {
-            PackagedContextSourceReference(const SourceDetails& details) : m_details(details)
-            {
-                if (!m_details.Data.empty())
-                {
-                    m_details.Identifier = GetPackageFamilyNameFromDetails(details);
-                }
-            }
-
-            std::string GetIdentifier() override { return m_details.Identifier; }
-
-            SourceDetails& GetDetails() override { return m_details; };
-
-            bool ShouldUpdateBeforeOpen(const std::optional<TimeSpan>& requestedUpdateInterval) override
-            {
-                return CheckForUpdateBeforeOpen(m_details, PackagedContextGetCurrentVersion(m_details), requestedUpdateInterval);
-            }
-
-            std::shared_ptr<ISource> Open(IProgressCallback& progress) override
-            {
-                PackagedSourceOpenTimer openTimer{ m_details.Name };
-                auto completeOpen = [&](SQLiteIndex index)
-                    {
-                        // We didn't use to store the source identifier, so we compute it here in case it's
-                        // missing from the details.
-                        m_details.Identifier = GetPackageFamilyNameFromDetails(m_details);
-                        openTimer.MarkSucceeded();
-                        return std::make_shared<SQLiteIndexSource>(m_details, std::move(index), false, true);
-                    };
-
-                std::optional<SQLiteIndex> index;
-                bool retryUnderLock = false;
-
-                try
-                {
-                    index.emplace(OpenPackagedContextIndex(m_details, progress, openTimer));
-                }
-                catch (...)
-                {
-                    if (progress.IsCancelledBy(CancelReason::Any))
-                    {
-                        throw;
-                    }
-
-                    LOG_CAUGHT_EXCEPTION_MSG("Optimistic packaged source open failed, retrying under lock for source: %hs", m_details.Name.c_str());
-                    retryUnderLock = true;
-                }
-
-                if (retryUnderLock)
-                {
-                    openTimer.MarkFallbackLocked();
-                    Synchronization::CrossProcessLock lock(CreateNameForCPL(m_details));
-                    if (!lock.Acquire(progress))
-                    {
-                        return {};
-                    }
-
-                    index.emplace(OpenPackagedContextIndex(m_details, progress, openTimer));
-                }
-
-                return completeOpen(std::move(index.value()));
-            }
-
-        private:
-            SourceDetails m_details;
-        };
-
-        // Source factory for running within a packaged context
-        struct PackagedContextFactory : public PreIndexedFactoryBase
-        {
-            std::shared_ptr<ISourceReference> CreateInternal(const SourceDetails& details) override
-            {
-                return std::make_shared<PackagedContextSourceReference>(details);
-            }
-
-            std::optional<Msix::PackageVersion> GetCurrentVersion(const SourceDetails& details) override
-            {
-                return PackagedContextGetCurrentVersion(details);
-            }
-
-            bool UpdateInternal(const std::string& packageLocation, const SourceDetails& details, IProgressCallback& progress, std::optional<uint64_t>& downloadedBytes) override
+            bool UpdateDeployedPackage(const std::string& packageLocation, const SourceDetails& details, IProgressCallback& progress, std::optional<uint64_t>& downloadedBytes)
             {
                 // Due to complications with deployment, download the file and deploy from
                 // a local source while we investigate further.
@@ -681,7 +731,7 @@ namespace AppInstaller::Repository::Microsoft
                 return true;
             }
 
-            bool RemoveInternal(const SourceDetails& details, IProgressCallback& callback) override
+            bool RemoveDeployedPackage(const SourceDetails& details, IProgressCallback& callback)
             {
                 auto fullName = Msix::GetPackageFullNameFromFamilyName(GetPackageFamilyNameFromDetails(details));
 
@@ -697,90 +747,8 @@ namespace AppInstaller::Repository::Microsoft
 
                 return true;
             }
-        };
 
-        struct DesktopContextSourceReference : public ISourceReference
-        {
-            DesktopContextSourceReference(const SourceDetails& details) : m_details(details)
-            {
-                if (!m_details.Data.empty())
-                {
-                    m_details.Identifier = GetPackageFamilyNameFromDetails(details);
-                }
-            }
-
-            std::string GetIdentifier() override { return m_details.Identifier; }
-
-            SourceDetails& GetDetails() override { return m_details; };
-
-            bool ShouldUpdateBeforeOpen(const std::optional<TimeSpan>& requestedUpdateInterval) override
-            {
-                return CheckForUpdateBeforeOpen(m_details, DesktopContextGetCurrentVersion(m_details), requestedUpdateInterval);
-            }
-
-            std::shared_ptr<ISource> Open(IProgressCallback& progress) override
-            {
-                Synchronization::CrossProcessLock lock(CreateNameForCPL(m_details));
-                if (!lock.Acquire(progress))
-                {
-                    return {};
-                }
-
-                std::filesystem::path packageLocation = GetStatePathFromDetails(m_details);
-                packageLocation /= s_PreIndexedPackageSourceFactory_PackageFileName;
-
-                if (!std::filesystem::exists(packageLocation))
-                {
-                    AICLI_LOG(Repo, Info, << "Data not found at " << packageLocation);
-                    THROW_HR(APPINSTALLER_CLI_ERROR_SOURCE_DATA_MISSING);
-                }
-
-                // Put a write exclusive lock on the index package.
-                Msix::WriteLockedMsixFile indexPackage{ packageLocation };
-
-                // Validate index package trust info.
-                THROW_HR_IF(APPINSTALLER_CLI_ERROR_SOURCE_DATA_INTEGRITY_FAILURE, !indexPackage.ValidateTrustInfo(WI_IsFlagSet(m_details.TrustLevel, SourceTrustLevel::StoreOrigin)));
-
-                // Create a temp lock exclusive index file.
-                auto tempIndexFilePath = Runtime::GetNewTempFilePath();
-                auto tempIndexFile = Utility::ManagedFile::CreateWriteLockedFile(tempIndexFilePath, GENERIC_WRITE, true);
-
-                // Populate temp index file.
-                Msix::MsixInfo packageInfo(packageLocation);
-                packageInfo.WriteToFileHandle(s_PreIndexedPackageSourceFactory_IndexFilePath, tempIndexFile.GetFileHandle(), progress);
-
-                if (progress.IsCancelledBy(CancelReason::Any))
-                {
-                    AICLI_LOG(Repo, Info, << "Cancelling open upon request");
-                    return {};
-                }
-
-                SQLiteIndex index = SQLiteIndex::Open(tempIndexFile.GetFilePath().u8string(), SQLiteIndex::OpenDisposition::Immutable, std::move(tempIndexFile));
-
-                // We didn't use to store the source identifier, so we compute it here in case it's
-                // missing from the details.
-                m_details.Identifier = GetPackageFamilyNameFromDetails(m_details);
-                return std::make_shared<SQLiteIndexSource>(m_details, std::move(index), false, true);
-            }
-
-        private:
-            SourceDetails m_details;
-        };
-
-        // Source factory for running outside of a package.
-        struct DesktopContextFactory : public PreIndexedFactoryBase
-        {
-            std::shared_ptr<ISourceReference> CreateInternal(const SourceDetails& details) override
-            {
-                return std::make_shared<DesktopContextSourceReference>(details);
-            }
-
-            std::optional<Msix::PackageVersion> GetCurrentVersion(const SourceDetails& details) override
-            {
-                return DesktopContextGetCurrentVersion(details);
-            }
-
-            bool UpdateInternal(const std::string& packageLocation, const SourceDetails& details, IProgressCallback& progress, std::optional<uint64_t>& downloadedBytes) override
+            bool UpdateLocalFilePackage(const std::string& packageLocation, const SourceDetails& details, IProgressCallback& progress, std::optional<uint64_t>& downloadedBytes)
             {
                 // We will extract the manifest and index files directly to this location
                 std::filesystem::path packageState = GetStatePathFromDetails(details);
@@ -845,7 +813,7 @@ namespace AppInstaller::Repository::Microsoft
                 return true;
             }
 
-            bool RemoveInternal(const SourceDetails& details, IProgressCallback&) override
+            bool RemoveLocalFilePackage(const SourceDetails& details, IProgressCallback&)
             {
                 std::filesystem::path packageState = GetStatePathFromDetails(details);
 
@@ -866,13 +834,6 @@ namespace AppInstaller::Repository::Microsoft
 
     std::unique_ptr<ISourceFactory> PreIndexedPackageSourceFactory::Create()
     {
-        if (Runtime::IsRunningInPackagedContext())
-        {
-            return std::make_unique<PackagedContextFactory>();
-        }
-        else
-        {
-            return std::make_unique<DesktopContextFactory>();
-        }
+        return std::make_unique<PreIndexedFactory>();
     }
 }
