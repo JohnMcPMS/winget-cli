@@ -22,6 +22,8 @@ namespace AppInstaller::Repository::Microsoft
     {
         static constexpr std::string_view s_PreIndexedPackageSourceFactory_PackageFileName = "source.msix"sv;
         static constexpr std::string_view s_PreIndexedPackageSourceFactory_V2_PackageFileName = "source2.msix"sv;
+        static constexpr std::string_view s_PreIndexedPackageSourceFactory_DeltaPackageFileName = "delta.msix"sv;
+        static constexpr std::string_view s_PreIndexedPackageSourceFactory_LocalBaselineFileName = "baseline.msix"sv;
         static constexpr std::string_view s_PreIndexedPackageSourceFactory_PackageVersionHeader = "x-ms-meta-sourceversion"sv;
         static constexpr std::string_view s_PreIndexedPackageSourceFactory_IndexFileName = "index.db"sv;
         // TODO: This being hard coded to force using the Public directory name is not ideal.
@@ -41,32 +43,63 @@ namespace AppInstaller::Repository::Microsoft
         }
 
         // Gets the set of package locations that should be tried, in order.
-        std::vector<std::string> GetPackageLocations(const SourceDetails& details)
+        // Every relative location is tried against the primary arg before any is tried against the
+        // alternate, so that a source stays on its primary location whenever that location can
+        // serve the request at all.
+        std::vector<std::string> GetPackageLocations(const SourceDetails& details, const std::vector<std::string_view>& relativeLocations)
         {
             THROW_HR_IF(E_INVALIDARG, details.Arg.empty());
 
             std::vector<std::string> result;
 
-            result.emplace_back(GetPackageLocation(details.Arg, s_PreIndexedPackageSourceFactory_V2_PackageFileName));
-            result.emplace_back(GetPackageLocation(details.Arg, s_PreIndexedPackageSourceFactory_PackageFileName));
+            for (std::string_view relativeLocation : relativeLocations)
+            {
+                result.emplace_back(GetPackageLocation(details.Arg, relativeLocation));
+            }
 
             if (!details.AlternateArg.empty())
             {
-                result.emplace_back(GetPackageLocation(details.AlternateArg, s_PreIndexedPackageSourceFactory_V2_PackageFileName));
-                result.emplace_back(GetPackageLocation(details.AlternateArg, s_PreIndexedPackageSourceFactory_PackageFileName));
+                for (std::string_view relativeLocation : relativeLocations)
+                {
+                    result.emplace_back(GetPackageLocation(details.AlternateArg, relativeLocation));
+                }
             }
 
             return result;
+        }
+
+        // The locations of the full index, which is what a client that is not using a delta acquires.
+        std::vector<std::string> GetFullIndexPackageLocations(const SourceDetails& details)
+        {
+            return GetPackageLocations(details, {
+                s_PreIndexedPackageSourceFactory_V2_PackageFileName,
+                s_PreIndexedPackageSourceFactory_PackageFileName });
+        }
+
+        // The locations of the delta, which is published at a fixed name beside the full index.
+        std::vector<std::string> GetDeltaPackageLocations(const SourceDetails& details)
+        {
+            return GetPackageLocations(details, { s_PreIndexedPackageSourceFactory_DeltaPackageFileName });
+        }
+
+        // The locations of the baseline that a delta names.
+        //
+        // The path is relative to the source base location and travels inside the delta, so the
+        // service can version and relocate baselines without a client change, and a client can
+        // never pair a delta with a baseline chosen by a stale assumption of its own.
+        std::vector<std::string> GetBaselinePackageLocations(const SourceDetails& details, const std::string& relativeSourcePath)
+        {
+            THROW_HR_IF(E_INVALIDARG, relativeSourcePath.empty());
+
+            return GetPackageLocations(details, { relativeSourcePath });
         }
 
         // Abstracts the fallback for package location when the MsixInfo is needed.
         struct PreIndexedPackageInfo
         {
             template <typename LocationCheck>
-            PreIndexedPackageInfo(const SourceDetails& details, LocationCheck&& locationCheck)
+            PreIndexedPackageInfo(std::vector<std::string> potentialLocations, LocationCheck&& locationCheck)
             {
-                std::vector<std::string> potentialLocations = GetPackageLocations(details);
-
                 for (const auto& location : potentialLocations)
                 {
                     locationCheck(location);
@@ -106,10 +139,8 @@ namespace AppInstaller::Repository::Microsoft
         // Abstracts the fallback for package location when an update is being done.
         struct PreIndexedPackageUpdateCheck
         {
-            PreIndexedPackageUpdateCheck(const SourceDetails& details)
+            PreIndexedPackageUpdateCheck(std::vector<std::string> potentialLocations)
             {
-                std::vector<std::string> potentialLocations = GetPackageLocations(details);
-
                 std::exception_ptr primaryException;
 
                 for (const auto& location : potentialLocations)
@@ -189,22 +220,130 @@ namespace AppInstaller::Repository::Microsoft
             return "PreIndexedSourceCPL_"s + GetPackageFamilyNameFromDetails(details);
         }
 
+        // The packages that a source can hold locally.
+        //
+        // A delta and the baseline it names must both be present at the same time, so each of
+        // these occupies its own slot rather than replacing another. In particular the baseline is
+        // kept apart from the full index even though the two are the same format: falling back to
+        // a full index update must not overwrite the baseline that an already acquired delta is
+        // paired with.
+        enum class PackageSlot
+        {
+            // The complete index, as acquired by a client that is not using a delta.
+            FullIndex,
+
+            // The changes since the baseline.
+            Delta,
+
+            // The index that the delta's changes apply to.
+            Baseline,
+        };
+
+        // A short token for a slot, used in diagnostics and in temporary file names.
+        std::string_view GetSlotName(PackageSlot slot)
+        {
+            switch (slot)
+            {
+            case PackageSlot::FullIndex: return "fullIndex"sv;
+            case PackageSlot::Delta: return "delta"sv;
+            case PackageSlot::Baseline: return "baseline"sv;
+            }
+
+            THROW_HR(E_UNEXPECTED);
+        }
+
         // Selects between the two mechanisms for holding the index package locally.
         bool UseDeployedPackage()
         {
             return Runtime::IsRunningInPackagedContext();
         }
 
-        // The optimistic deployed open calls this without the cross process lock, and retries under the lock on failure.
-        std::optional<Deployment::Extension> GetExtensionFromDetails(const SourceDetails& details)
+        // The file name that a slot's package is stored under by the local file mechanism.
+        // We choose these names ourselves, so this mechanism needs no package identity at all.
+        std::string_view GetLocalFileNameForSlot(PackageSlot slot)
         {
-            Deployment::ExtensionCatalog catalog(Deployment::SourceExtensionName);
-            return catalog.FindByPackageFamilyAndId(GetPackageFamilyNameFromDetails(details), Deployment::IndexDBId);
+            switch (slot)
+            {
+            case PackageSlot::FullIndex: return s_PreIndexedPackageSourceFactory_PackageFileName;
+            case PackageSlot::Delta: return s_PreIndexedPackageSourceFactory_DeltaPackageFileName;
+            case PackageSlot::Baseline: return s_PreIndexedPackageSourceFactory_LocalBaselineFileName;
+            }
+
+            THROW_HR(E_UNEXPECTED);
         }
 
-        std::optional<Msix::PackageVersion> GetDeployedPackageVersion(const SourceDetails& details)
+        // The package family name that identifies a slot's package.
+        //
+        // Nothing when it is not known, which the deployed mechanism needs it to be: the platform
+        // keys installed packages on their identity, so a package whose identity we cannot name
+        // cannot be found again in a later process.
+        //
+        // TODO: Delta acquisition needs a richer SourceDetails::Data syntax, and a migration to it.
+        //
+        //       Data holds exactly one package family name. That was sufficient while a source had
+        //       one package; it is not now. The delta is published under its own identity while the
+        //       baseline keeps the identity the full index has always used, so a delta capable
+        //       source has two to name and Data can carry only one of them.
+        //
+        //       The ordering is what makes this awkward. The delta is the package that names its
+        //       baseline, so it must be acquired and opened first -- which means the delta's
+        //       identity is the one needed before any network access, and it is precisely the one
+        //       that Data does not carry.
+        //
+        //       Three things have to be settled before this can be relied upon:
+        //
+        //         1. A syntax for Data that carries both identities and can be distinguished from
+        //            the bare family name that every client written to date has stored.
+        //         2. A migration for sources already configured with the old syntax. Our own
+        //            sources can be special cased, since we publish them and know both identities,
+        //            but a third party pre-indexed source cannot be.
+        //         3. A way to persist the new value. Add is the only operation that writes Data
+        //            today: ISourceFactory::Update takes a const SourceDetails&, and the update
+        //            path writes only the metadata fields back afterwards, so a value learned
+        //            during an update is discarded. That is changeable, but not from this file.
+        //
+        //       Until then the deployed mechanism can name only the full index and the baseline.
+        //       The delta is found within a single acquisition pass, from the package that was
+        //       just downloaded, and cannot be found again in a later process. The local file
+        //       mechanism is unaffected, because it does not depend on identity.
+        std::optional<std::string> GetPackageFamilyNameForSlot(const SourceDetails& details, PackageSlot slot)
         {
-            auto extension = GetExtensionFromDetails(details);
+            switch (slot)
+            {
+            case PackageSlot::FullIndex:
+            case PackageSlot::Baseline:
+                // A baseline is a full index that has been designated as one, published under the
+                // identity that the source has always used, so the stored name identifies both.
+                return GetPackageFamilyNameFromDetails(details);
+            case PackageSlot::Delta:
+                return std::nullopt;
+            }
+
+            THROW_HR(E_UNEXPECTED);
+        }
+
+        // The optimistic deployed open calls this without the cross process lock, and retries under the lock on failure.
+        std::optional<Deployment::Extension> GetExtensionForPackageFamilyName(const std::string& packageFamilyName)
+        {
+            Deployment::ExtensionCatalog catalog(Deployment::SourceExtensionName);
+            return catalog.FindByPackageFamilyAndId(packageFamilyName, Deployment::IndexDBId);
+        }
+
+        std::optional<Deployment::Extension> GetExtensionFromDetails(const SourceDetails& details)
+        {
+            return GetExtensionForPackageFamilyName(GetPackageFamilyNameFromDetails(details));
+        }
+
+        // Nothing when the slot's identity is not known; see GetPackageFamilyNameForSlot.
+        std::optional<Deployment::Extension> GetExtensionForSlot(const SourceDetails& details, PackageSlot slot)
+        {
+            auto packageFamilyName = GetPackageFamilyNameForSlot(details, slot);
+            return packageFamilyName ? GetExtensionForPackageFamilyName(packageFamilyName.value()) : std::nullopt;
+        }
+
+        std::optional<Msix::PackageVersion> GetDeployedPackageVersion(const SourceDetails& details, PackageSlot slot)
+        {
+            auto extension = GetExtensionForSlot(details, slot);
 
             if (extension)
             {
@@ -226,10 +365,14 @@ namespace AppInstaller::Repository::Microsoft
             return result;
         }
 
-        std::optional<Msix::PackageVersion> GetLocalFilePackageVersion(const SourceDetails& details)
+        std::filesystem::path GetLocalFilePathForSlot(const SourceDetails& details, PackageSlot slot)
         {
-            std::filesystem::path packageState = GetStatePathFromDetails(details);
-            std::filesystem::path packagePath = packageState / s_PreIndexedPackageSourceFactory_PackageFileName;
+            return GetStatePathFromDetails(details) / GetLocalFileNameForSlot(slot);
+        }
+
+        std::optional<Msix::PackageVersion> GetLocalFilePackageVersion(const SourceDetails& details, PackageSlot slot)
+        {
+            std::filesystem::path packagePath = GetLocalFilePathForSlot(details, slot);
 
             if (std::filesystem::exists(packagePath))
             {
@@ -250,10 +393,107 @@ namespace AppInstaller::Repository::Microsoft
             return std::nullopt;
         }
 
-        // Retrieves the currently held version of the index package, or nothing when there is none.
-        std::optional<Msix::PackageVersion> GetCurrentVersion(const SourceDetails& details)
+        // Retrieves the currently held version of a slot's package, or nothing when there is none.
+        std::optional<Msix::PackageVersion> GetCurrentVersion(const SourceDetails& details, PackageSlot slot = PackageSlot::FullIndex)
         {
-            return UseDeployedPackage() ? GetDeployedPackageVersion(details) : GetLocalFilePackageVersion(details);
+            return UseDeployedPackage() ? GetDeployedPackageVersion(details, slot) : GetLocalFilePackageVersion(details, slot);
+        }
+
+        // Describes a package to acquire, and which of the source's slots to put it in.
+        struct AcquisitionTarget
+        {
+            // Which of the source's packages this is.
+            PackageSlot Slot = PackageSlot::FullIndex;
+
+            // The remote or local location to acquire it from.
+            std::string PackageLocation;
+
+            // The family name that the acquired package is required to carry, when that is known.
+            // A delta's identity is not known until it has been acquired, so it is not always.
+            std::optional<std::string> ExpectedPackageFamilyName;
+        };
+
+        // What acquiring a package produced.
+        struct AcquisitionResult
+        {
+            // The family name of the package that was acquired.
+            std::string PackageFamilyName;
+
+            // The bytes transferred, when the package came from a remote location.
+            std::optional<uint64_t> DownloadedBytes;
+        };
+
+        // Makes the index database of a package that we hold locally readable.
+        //
+        // The deployed mechanism already has it on disk inside the installed package; the local
+        // file mechanism has to extract it from the package file, so the result may own a
+        // temporary file that must outlive any read of the path.
+        struct ExtractedIndex
+        {
+            std::filesystem::path Path;
+            Utility::ManagedFile TemporaryFile;
+        };
+
+        std::optional<ExtractedIndex> ExtractIndexForSlot(const SourceDetails& details, PackageSlot slot, const std::string& packageFamilyName, IProgressCallback& progress)
+        {
+            ExtractedIndex result;
+
+            if (UseDeployedPackage())
+            {
+                auto extension = GetExtensionForPackageFamilyName(packageFamilyName);
+                if (!extension)
+                {
+                    AICLI_LOG(Repo, Info, << "Deployed " << GetSlotName(slot) << " package not found: " << packageFamilyName);
+                    return std::nullopt;
+                }
+
+                // See the note in OpenDeployedIndex on constructing this location ourselves.
+                result.Path = extension->GetPackagePath();
+                result.Path /= s_PreIndexedPackageSourceFactory_IndexFilePath;
+            }
+            else
+            {
+                std::filesystem::path packagePath = GetLocalFilePathForSlot(details, slot);
+                if (!std::filesystem::exists(packagePath))
+                {
+                    AICLI_LOG(Repo, Info, << "Data not found at " << packagePath);
+                    return std::nullopt;
+                }
+
+                auto tempIndexFilePath = Runtime::GetNewTempFilePath();
+                auto tempIndexFile = Utility::ManagedFile::CreateWriteLockedFile(tempIndexFilePath, GENERIC_WRITE, true);
+
+                Msix::MsixInfo packageInfo{ packagePath };
+                packageInfo.WriteToFileHandle(s_PreIndexedPackageSourceFactory_IndexFilePath, tempIndexFile.GetFileHandle(), progress);
+
+                result.Path = tempIndexFile.GetFilePath();
+                result.TemporaryFile = std::move(tempIndexFile);
+            }
+
+            return std::optional<ExtractedIndex>{ std::move(result) };
+        }
+
+        // Reads the baseline that a delta we hold names, from the delta itself.
+        //
+        // Nothing when the delta cannot be read or does not carry a complete locator; the caller
+        // falls back to the full index rather than guessing at a baseline of its own.
+        std::optional<SQLiteIndex::DeltaBaselineLocator> ReadBaselineLocatorFromDelta(
+            const SourceDetails& details,
+            const std::string& deltaPackageFamilyName,
+            IProgressCallback& progress)
+        {
+            auto extracted = ExtractIndexForSlot(details, PackageSlot::Delta, deltaPackageFamilyName, progress);
+            if (!extracted)
+            {
+                return std::nullopt;
+            }
+
+            // Opened as an index rather than as a bare database so that the schema version selects
+            // the interface that knows what a delta records; reading the metadata here would be
+            // this layer asserting a specific schema version's layout.
+            SQLiteIndex deltaIndex = SQLiteIndex::Open(extracted->Path.u8string(), SQLiteIndex::OpenDisposition::Immutable);
+
+            return deltaIndex.GetDeltaBaselineLocator();
         }
 
         struct SourceOpenTimer
@@ -387,6 +627,9 @@ namespace AppInstaller::Repository::Microsoft
 
             std::shared_ptr<ISource> Open(IProgressCallback& progress) override
             {
+                // TODO: Open still reads only the full index. Pairing an acquired delta with its
+                //       baseline through SQLiteIndex::OpenWithBaseline, including validating that
+                //       the baseline carries the identifier the delta names, is the next step.
                 return UseDeployedPackage() ? OpenDeployed(progress) : OpenLocalFile(progress);
             }
 
@@ -448,8 +691,7 @@ namespace AppInstaller::Repository::Microsoft
                     return {};
                 }
 
-                std::filesystem::path packageLocation = GetStatePathFromDetails(m_details);
-                packageLocation /= s_PreIndexedPackageSourceFactory_PackageFileName;
+                std::filesystem::path packageLocation = GetLocalFilePathForSlot(m_details, PackageSlot::FullIndex);
 
                 if (!std::filesystem::exists(packageLocation))
                 {
@@ -515,7 +757,7 @@ namespace AppInstaller::Repository::Microsoft
                     THROW_HR_IF(E_INVALIDARG, details.Type != PreIndexedPackageSourceFactory::Type());
                 }
 
-                PreIndexedPackageInfo packageInfo(details, [](const std::string& packageLocation)
+                PreIndexedPackageInfo packageInfo(GetFullIndexPackageLocations(details), [](const std::string& packageLocation)
                     {
                         THROW_HR_IF(APPINSTALLER_CLI_ERROR_SOURCE_NOT_SECURE, Utility::IsUrlRemote(packageLocation) && !Utility::IsUrlSecure(packageLocation));
                     });
@@ -527,6 +769,11 @@ namespace AppInstaller::Repository::Microsoft
                 auto fullName = packageInfo.MsixInfo().GetPackageFullName();
                 AICLI_LOG(Repo, Info, << "Found package full name: " << details.Name << " => " << fullName);
 
+                // TODO: Add remains on the full index, because it is the only operation that can
+                //       establish details.Data and the data syntax that can name a delta as well
+                //       has not been settled. See GetPackageFamilyNameForSlot. Until it
+                //       is, a newly added source acquires the full index and only later updates
+                //       pick up a delta.
                 details.Data = Msix::GetPackageFamilyNameFromFullName(fullName);
                 details.Identifier = Msix::GetPackageFamilyNameFromFullName(fullName);
 
@@ -536,10 +783,10 @@ namespace AppInstaller::Repository::Microsoft
                     return false;
                 }
 
-                std::optional<uint64_t> downloadedBytes;
-                bool result = UpdateInternal(packageInfo.PackageLocation(), details, progress, downloadedBytes);
+                AcquisitionResult acquisitionResult;
+                bool result = UpdateInternal({ PackageSlot::FullIndex, packageInfo.PackageLocation(), GetPackageFamilyNameForSlot(details, PackageSlot::FullIndex) }, details, progress, acquisitionResult);
 
-                if (downloadedBytes)
+                if (acquisitionResult.DownloadedBytes)
                 {
                     try
                     {
@@ -554,7 +801,7 @@ namespace AppInstaller::Repository::Microsoft
                                 std::nullopt,
                                 std::nullopt,
                                 false,
-                                downloadedBytes.value(),
+                                acquisitionResult.DownloadedBytes.value(),
                                 true);
                         }
                     }
@@ -575,11 +822,11 @@ namespace AppInstaller::Repository::Microsoft
             }
 
             // Places the acquired package into whichever store the mechanism in use reads from.
-            bool UpdateInternal(const std::string& packageLocation, const SourceDetails& details, IProgressCallback& progress, std::optional<uint64_t>& downloadedBytes)
+            bool UpdateInternal(const AcquisitionTarget& target, const SourceDetails& details, IProgressCallback& progress, AcquisitionResult& result)
             {
                 return UseDeployedPackage() ?
-                    UpdateDeployedPackage(packageLocation, details, progress, downloadedBytes) :
-                    UpdateLocalFilePackage(packageLocation, details, progress, downloadedBytes);
+                    UpdateDeployedPackage(target, details, progress, result) :
+                    UpdateLocalFilePackage(target, details, progress, result);
             }
 
             bool Remove(const SourceDetails& details, IProgressCallback& progress) override
@@ -616,8 +863,43 @@ namespace AppInstaller::Repository::Microsoft
             {
                 THROW_HR_IF(E_INVALIDARG, details.Type != PreIndexedPackageSourceFactory::Type());
 
+                if (Settings::ExperimentalFeature::IsEnabled(Settings::ExperimentalFeature::Feature::DeltaIndex))
+                {
+                    try
+                    {
+                        if (UpdateViaDelta(details, isBackground, progress))
+                        {
+                            return true;
+                        }
+                    }
+                    catch (...)
+                    {
+                        if (progress.IsCancelledBy(CancelReason::Any))
+                        {
+                            throw;
+                        }
+
+                        LOG_CAUGHT_EXCEPTION_MSG("Delta update failed for source: %hs", details.Name.c_str());
+                    }
+
+                    if (progress.IsCancelledBy(CancelReason::Any))
+                    {
+                        AICLI_LOG(Repo, Info, << "Cancelling update upon request");
+                        return false;
+                    }
+
+                    // Every delta failure falls back to the full index; the delta is an
+                    // optimization, never a correctness dependency.
+                    AICLI_LOG(Repo, Info, << "Falling back to the full index for source: " << details.Name);
+                }
+
+                return UpdateFullIndex(details, isBackground, progress);
+            }
+
+            bool UpdateFullIndex(const SourceDetails& details, bool isBackground, IProgressCallback& progress)
+            {
                 std::optional<Msix::PackageVersion> currentVersion = GetCurrentVersion(details);
-                PreIndexedPackageUpdateCheck updateCheck(details);
+                PreIndexedPackageUpdateCheck updateCheck(GetFullIndexPackageLocations(details));
 
                 if (currentVersion)
                 {
@@ -646,10 +928,9 @@ namespace AppInstaller::Repository::Microsoft
                     return false;
                 }
 
-                std::optional<uint64_t> downloadedBytes = 0;
-                bool result = UpdateInternal(updateCheck.PackageLocation(), details, progress, downloadedBytes);
+                AcquisitionResult acquisitionResult;
+                bool result = UpdateInternal({ PackageSlot::FullIndex, updateCheck.PackageLocation(), GetPackageFamilyNameForSlot(details, PackageSlot::FullIndex) }, details, progress, acquisitionResult);
 
-                if (downloadedBytes)
                 {
                     std::optional<std::chrono::system_clock::time_point> previousIndexPublishedAt;
                     if (currentVersion)
@@ -665,31 +946,189 @@ namespace AppInstaller::Repository::Microsoft
                         std::nullopt,
                         std::nullopt,
                         false,
-                        downloadedBytes.value(),
+                        acquisitionResult.DownloadedBytes.value_or(0),
                         !isBackground);
                 }
 
                 return result;
             }
 
-            bool UpdateDeployedPackage(const std::string& packageLocation, const SourceDetails& details, IProgressCallback& progress, std::optional<uint64_t>& downloadedBytes)
+            // Acquires the delta and, when the one we hold is not the one it names, its baseline.
+            //
+            // Returns true when the source holds a usable delta and baseline pair afterwards, and
+            // false when the caller must fall back to the full index.
+            bool UpdateViaDelta(const SourceDetails& details, bool isBackground, IProgressCallback& progress)
+            {
+                // TODO: With the deployed mechanism this is always nothing, because the delta's
+                //       identity is not stored anywhere that survives the process. Until the
+                //       details data syntax carries it, a deployed source re-acquires the delta on
+                //       every update rather than recognizing the one it already holds.
+                std::optional<Msix::PackageVersion> currentDeltaVersion = GetCurrentVersion(details, PackageSlot::Delta);
+
+                // The delta is published at a fixed name beside the full index, and is probed by
+                // exactly the same mechanism.
+                PreIndexedPackageUpdateCheck deltaCheck(GetDeltaPackageLocations(details));
+
+                bool deltaIsCurrent = currentDeltaVersion && currentDeltaVersion.value() >= deltaCheck.AvailableVersion();
+
+                // The delta names the baseline that its changes apply to; a client never chooses
+                // one for itself.
+                std::optional<SQLiteIndex::DeltaBaselineLocator> locator;
+
+                if (deltaIsCurrent)
+                {
+                    // The delta we hold is current, but we may still be missing the baseline that
+                    // it names, so being up to date is not on its own a reason to stop.
+                    locator = ReadBaselineLocatorFromDelta(details, {}, progress);
+
+                    if (locator)
+                    {
+                        auto heldBaselineVersion = GetCurrentVersion(details, PackageSlot::Baseline);
+
+                        if (heldBaselineVersion && heldBaselineVersion.value() == Msix::PackageVersion{ locator->PackageVersion })
+                        {
+                            AICLI_LOG(Repo, Verbose, << "Remote delta (" << deltaCheck.AvailableVersion().ToString() <<
+                                ") was not newer than existing (" << currentDeltaVersion.value().ToString() <<
+                                ") and its baseline is held, no update needed");
+                            return true;
+                        }
+                    }
+                }
+
+                // Re-acquire the delta when it is not current, and also when we could not read the
+                // one we hold -- in that case what we hold is unusable whatever its version says.
+                bool acquireDelta = !deltaIsCurrent || !locator;
+
+                if (progress.IsCancelledBy(CancelReason::Any))
+                {
+                    AICLI_LOG(Repo, Info, << "Cancelling update upon request");
+                    return false;
+                }
+
+                auto lock = LockExclusive(details, progress, isBackground);
+                if (!lock)
+                {
+                    return false;
+                }
+
+                AcquisitionResult deltaResult;
+
+                if (acquireDelta)
+                {
+                    if (!UpdateInternal(
+                        { PackageSlot::Delta, deltaCheck.PackageLocation(), GetPackageFamilyNameForSlot(details, PackageSlot::Delta) },
+                        details, progress, deltaResult))
+                    {
+                        return false;
+                    }
+
+                    locator = ReadBaselineLocatorFromDelta(details, deltaResult.PackageFamilyName, progress);
+                }
+
+                if (!locator)
+                {
+                    AICLI_LOG(Repo, Warning, << "Delta for source `" << details.Name << "` did not name a baseline");
+                    return false;
+                }
+
+                AICLI_LOG(Repo, Info, << "Delta for source `" << details.Name << "` names baseline " << locator->Identifier <<
+                    " at `" << locator->RelativeSourcePath << "` version " << locator->PackageVersion);
+
+                Msix::PackageVersion requiredBaselineVersion{ locator->PackageVersion };
+                std::optional<Msix::PackageVersion> currentBaselineVersion = GetCurrentVersion(details, PackageSlot::Baseline);
+
+                AcquisitionResult baselineResult;
+                bool baselineUpdated = false;
+
+                if (currentBaselineVersion && currentBaselineVersion.value() == requiredBaselineVersion)
+                {
+                    // The common case: the baseline changes far less often than the delta, so most
+                    // updates involve no baseline traffic at all.
+                    AICLI_LOG(Repo, Verbose, << "Already holding baseline version " << requiredBaselineVersion.ToString());
+                }
+                else
+                {
+                    // Probe for the baseline the same way the full index is probed, so that the
+                    // Arg / AlternateArg fallback applies to it as well.
+                    PreIndexedPackageUpdateCheck baselineCheck(GetBaselinePackageLocations(details, locator->RelativeSourcePath));
+
+                    // The delta told us which version it was computed against; anything else at
+                    // that location is not the baseline this delta can be paired with.
+                    if (baselineCheck.AvailableVersion() != requiredBaselineVersion)
+                    {
+                        AICLI_LOG(Repo, Warning, << "Baseline at `" << baselineCheck.PackageLocation() << "` was version " <<
+                            baselineCheck.AvailableVersion().ToString() << ", but the delta named " << requiredBaselineVersion.ToString());
+                        return false;
+                    }
+
+                    if (!UpdateInternal(
+                        { PackageSlot::Baseline, baselineCheck.PackageLocation(), GetPackageFamilyNameForSlot(details, PackageSlot::Baseline) },
+                        details, progress, baselineResult))
+                    {
+                        return false;
+                    }
+
+                    baselineUpdated = true;
+                }
+
+                // TODO: Validate that the acquired baseline carries the identifier that the delta
+                //       names, and open the two as a pair. Pairing happens in the open path, which
+                //       still opens only the full index; until it does, this acquisition has no
+                //       consumer and the feature gate keeps it unreachable.
+
+                std::optional<uint64_t> downloadedBytes;
+                if (deltaResult.DownloadedBytes || baselineResult.DownloadedBytes)
+                {
+                    downloadedBytes = deltaResult.DownloadedBytes.value_or(0) + baselineResult.DownloadedBytes.value_or(0);
+                }
+
+                if (downloadedBytes)
+                {
+                    std::optional<std::chrono::system_clock::time_point> previousIndexPublishedAt;
+                    if (currentDeltaVersion)
+                    {
+                        previousIndexPublishedAt = Utility::GetTimePointFromVersion(currentDeltaVersion.value());
+                    }
+
+                    std::optional<std::chrono::system_clock::time_point> previousBaselinePublishedAt;
+                    if (currentBaselineVersion)
+                    {
+                        previousBaselinePublishedAt = Utility::GetTimePointFromVersion(currentBaselineVersion.value());
+                    }
+
+                    Logging::Telemetry().LogPreindexedPackageUpdate(
+                        details.Identifier,
+                        previousIndexPublishedAt,
+                        Utility::GetTimePointFromVersion(deltaCheck.AvailableVersion()),
+                        true,
+                        previousBaselinePublishedAt,
+                        Utility::GetTimePointFromVersion(requiredBaselineVersion),
+                        baselineUpdated,
+                        downloadedBytes.value(),
+                        !isBackground);
+                }
+
+                return true;
+            }
+
+            bool UpdateDeployedPackage(const AcquisitionTarget& target, const SourceDetails& details, IProgressCallback& progress, AcquisitionResult& result)
             {
                 // Due to complications with deployment, download the file and deploy from
                 // a local source while we investigate further.
-                bool download = Utility::IsUrlRemote(packageLocation);
+                bool download = Utility::IsUrlRemote(target.PackageLocation);
                 std::filesystem::path localFile;
 
                 if (download)
                 {
                     localFile = Runtime::GetPathTo(Runtime::PathName::Temp);
-                    localFile /= GetPackageFamilyNameFromDetails(details) + ".msix";
+                    localFile /= GetPackageFamilyNameFromDetails(details) + "." + std::string{ GetSlotName(target.Slot) } + ".msix";
 
-                    auto downloadResult = Utility::Download(packageLocation, localFile, Utility::DownloadType::Index, progress);
-                    downloadedBytes = downloadResult.SizeInBytes;
+                    auto downloadResult = Utility::Download(target.PackageLocation, localFile, Utility::DownloadType::Index, progress);
+                    result.DownloadedBytes = downloadResult.SizeInBytes;
                 }
                 else
                 {
-                    localFile = Utility::ConvertToUTF16(packageLocation);
+                    localFile = Utility::ConvertToUTF16(target.PackageLocation);
                 }
 
                 // Verify the local file
@@ -699,9 +1138,11 @@ namespace AppInstaller::Repository::Microsoft
                 // The package should not be a bundle
                 THROW_HR_IF(APPINSTALLER_CLI_ERROR_PACKAGE_IS_BUNDLE, localMsixInfo.GetIsBundle());
 
-                // Ensure that family name has not changed
+                result.PackageFamilyName = Msix::GetPackageFamilyNameFromFullName(localMsixInfo.GetPackageFullName());
+
+                // Ensure that the family name is the one we expected, when we knew what to expect
                 THROW_HR_IF(APPINSTALLER_CLI_ERROR_SOURCE_DATA_INTEGRITY_FAILURE,
-                    GetPackageFamilyNameFromDetails(details) != Msix::GetPackageFamilyNameFromFullName(localMsixInfo.GetPackageFullName()));
+                    target.ExpectedPackageFamilyName && target.ExpectedPackageFamilyName.value() != result.PackageFamilyName);
 
                 if (!fileLock.ValidateTrustInfo(WI_IsFlagSet(details.TrustLevel, SourceTrustLevel::StoreOrigin)))
                 {
@@ -730,6 +1171,10 @@ namespace AppInstaller::Repository::Microsoft
 
             bool RemoveDeployedPackage(const SourceDetails& details, IProgressCallback& callback)
             {
+                // TODO: This removes only the identity that details.Data names, which covers the
+                //       full index and the baseline but not the delta. Removing a delta capable
+                //       source will leave its deployed delta package behind until the data syntax
+                //       carries that identity; see GetPackageFamilyNameForSlot.
                 auto fullName = Msix::GetPackageFullNameFromFamilyName(GetPackageFamilyNameFromDetails(details));
 
                 if (!fullName)
@@ -745,13 +1190,13 @@ namespace AppInstaller::Repository::Microsoft
                 return true;
             }
 
-            bool UpdateLocalFilePackage(const std::string& packageLocation, const SourceDetails& details, IProgressCallback& progress, std::optional<uint64_t>& downloadedBytes)
+            bool UpdateLocalFilePackage(const AcquisitionTarget& target, const SourceDetails& details, IProgressCallback& progress, AcquisitionResult& result)
             {
                 // We will extract the manifest and index files directly to this location
                 std::filesystem::path packageState = GetStatePathFromDetails(details);
                 std::filesystem::create_directories(packageState);
 
-                std::filesystem::path packagePath = packageState / s_PreIndexedPackageSourceFactory_PackageFileName;
+                std::filesystem::path packagePath = packageState / GetLocalFileNameForSlot(target.Slot);
 
                 std::filesystem::path tempPackagePath = packagePath.u8string() + ".dnld.msix";
                 auto removeTempFileOnExit = wil::scope_exit([&]()
@@ -766,14 +1211,14 @@ namespace AppInstaller::Repository::Microsoft
                         }
                     });
 
-                if (Utility::IsUrlRemote(packageLocation))
+                if (Utility::IsUrlRemote(target.PackageLocation))
                 {
-                    auto downloadResult = AppInstaller::Utility::Download(packageLocation, tempPackagePath, AppInstaller::Utility::DownloadType::Index, progress);
-                    downloadedBytes = downloadResult.SizeInBytes;
+                    auto downloadResult = AppInstaller::Utility::Download(target.PackageLocation, tempPackagePath, AppInstaller::Utility::DownloadType::Index, progress);
+                    result.DownloadedBytes = downloadResult.SizeInBytes;
                 }
                 else
                 {
-                    std::filesystem::copy(packageLocation, tempPackagePath);
+                    std::filesystem::copy(target.PackageLocation, tempPackagePath);
                     progress.OnProgress(100, 100, ProgressType::Percent);
                 }
 
@@ -791,9 +1236,11 @@ namespace AppInstaller::Repository::Microsoft
                     // The package should not be a bundle
                     THROW_HR_IF(APPINSTALLER_CLI_ERROR_PACKAGE_IS_BUNDLE, tempMsixInfo.GetIsBundle());
 
-                    // Ensure that family name has not changed
+                    result.PackageFamilyName = Msix::GetPackageFamilyNameFromFullName(tempMsixInfo.GetPackageFullName());
+
+                    // Ensure that the family name is the one we expected, when we knew what to expect
                     THROW_HR_IF(APPINSTALLER_CLI_ERROR_SOURCE_DATA_INTEGRITY_FAILURE,
-                        GetPackageFamilyNameFromDetails(details) != Msix::GetPackageFamilyNameFromFullName(tempMsixInfo.GetPackageFullName()));
+                        target.ExpectedPackageFamilyName && target.ExpectedPackageFamilyName.value() != result.PackageFamilyName);
 
                     if (!tempIndexPackage.ValidateTrustInfo(WI_IsFlagSet(details.TrustLevel, SourceTrustLevel::StoreOrigin)))
                     {
