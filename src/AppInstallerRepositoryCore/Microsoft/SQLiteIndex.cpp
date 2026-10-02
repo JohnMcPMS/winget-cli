@@ -64,6 +64,18 @@ namespace AppInstaller::Repository::Microsoft
         return result;
     }
 
+    std::optional<SQLiteIndex::DeltaBaselineLocator> SQLiteIndex::GetDeltaBaselineLocator() const
+    {
+        std::lock_guard<std::mutex> lockInterface{ *m_interfaceLock };
+        return m_interface->GetDeltaBaselineLocator(m_dbconn);
+    }
+
+    std::optional<std::string> SQLiteIndex::GetBaselineIdentifier() const
+    {
+        std::lock_guard<std::mutex> lockInterface{ *m_interfaceLock };
+        return m_interface->GetBaselineIdentifier(m_dbconn);
+    }
+
     SQLiteIndex::SQLiteIndex(const std::string& target, const SQLite::Version& version, CreateOptions options) : SQLiteStorageBase(target, version, GetPageSizeFromOptions(options))
     {
         m_dbconn.EnableICU();

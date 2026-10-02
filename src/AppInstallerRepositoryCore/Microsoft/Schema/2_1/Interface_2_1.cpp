@@ -82,6 +82,16 @@ namespace AppInstaller::Repository::Microsoft::Schema::V2_1
         m_internalInterfaceChecked = true;
     }
 
+    std::optional<ISQLiteIndex::DeltaBaselineLocator> Interface::GetDeltaBaselineLocator(const SQLite::Connection& connection) const
+    {
+        return Delta::ReadBaselineLocator(connection);
+    }
+
+    std::optional<std::string> Interface::GetBaselineIdentifier(const SQLite::Connection& connection) const
+    {
+        return Delta::ReadBaselineIdentifier(connection);
+    }
+
     bool Interface::CheckConsistency(const SQLiteIndexConstContext& context, bool log) const
     {
         bool hasBaseline = context.Data.Contains(Property::DeltaBaselineIndexPath);

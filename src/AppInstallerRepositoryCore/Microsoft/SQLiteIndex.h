@@ -61,6 +61,21 @@ namespace AppInstaller::Repository::Microsoft
         // The disposition applies to both files, because the pair is only meaningful as a unit.
         static SQLiteIndex OpenWithBaseline(const std::string& deltaFilePath, const std::string& baselineFilePath, OpenDisposition disposition = OpenDisposition::Read);
 
+        // What a delta records about the baseline that it must be paired with.
+        using DeltaBaselineLocator = Schema::ISQLiteIndex::DeltaBaselineLocator;
+
+        // Gets what this delta records about the baseline that it must be paired with.
+        //
+        // Returns nothing when this is not a delta, or does not fully name a baseline. Safe to
+        // ask of any index, including one whose version predates deltas.
+        std::optional<DeltaBaselineLocator> GetDeltaBaselineLocator() const;
+
+        // Gets the identifier that designates this index as a baseline, if it carries one.
+        //
+        // Returns nothing for any index that has not been designated, which is every index not
+        // prepared with DeltaMarkAsBaseline. Such an index cannot be paired with a delta.
+        std::optional<std::string> GetBaselineIdentifier() const;
+
 #ifndef AICLI_DISABLE_TEST_HOOKS
         // Changes the version of the interface being used to operate on the database.
         // Should only be used for testing.
