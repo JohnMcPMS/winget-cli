@@ -67,7 +67,7 @@ namespace AppInstaller::Repository::Microsoft::PreIndexed
                 return store.GetVersion(GetKey());
             }
 
-            bool Update(IPackageStore& store, bool isBackground, IProgressCallback& progress, UpdateReport& report) override
+            UpdateResult Update(IPackageStore& store, bool isBackground, IProgressCallback& progress, UpdateReport& report) override
             {
                 std::optional<Msix::PackageVersion> currentVersion = GetHeldVersion(store);
                 PreIndexedPackageUpdateCheck updateCheck(GetFullIndexPackageLocations(m_details));
@@ -85,7 +85,7 @@ namespace AppInstaller::Repository::Microsoft::PreIndexed
                     {
                         AICLI_LOG(Repo, Verbose, << "Remote source data (" << updateCheck.AvailableVersion().ToString() <<
                             ") was not newer than existing (" << currentVersion.value().ToString() << "), no update needed");
-                        return true;
+                        return UpdateResult::Success;
                     }
                     else
                     {
@@ -97,13 +97,14 @@ namespace AppInstaller::Repository::Microsoft::PreIndexed
                 if (progress.IsCancelledBy(CancelReason::Any))
                 {
                     AICLI_LOG(Repo, Info, << "Cancelling update upon request");
-                    return false;
+                    return UpdateResult::Aborted;
                 }
 
                 auto lock = store.Lock(progress, isBackground);
                 if (!lock)
                 {
-                    return false;
+                    // The lock says nothing about whether this form would have worked.
+                    return UpdateResult::Aborted;
                 }
 
                 report.Reportable = true;
@@ -113,19 +114,20 @@ namespace AppInstaller::Repository::Microsoft::PreIndexed
 
             // Acquires the index from a location that the caller has already determined, under a
             // lock that the caller already holds.
-            bool Acquire(IPackageStore& store, const std::string& location, IProgressCallback& progress, UpdateReport& report)
+            UpdateResult Acquire(IPackageStore& store, const std::string& location, IProgressCallback& progress, UpdateReport& report)
             {
                 auto acquired = store.Acquire(GetKey(), location, progress);
                 if (!acquired)
                 {
-                    return false;
+                    // Acquisition reports nothing only when it was cancelled.
+                    return UpdateResult::Aborted;
                 }
 
                 report.DownloadedBytes = acquired->DownloadedBytes;
 
                 store.Persist(std::move(acquired.value()), progress);
 
-                return true;
+                return UpdateResult::Success;
             }
 
             SQLiteIndex Open(IPackageStore& store, IProgressCallback& progress) override

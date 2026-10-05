@@ -36,6 +36,27 @@ namespace AppInstaller::Repository::Microsoft::PreIndexed
         bool Reportable = false;
     };
 
+    // What an attempt to update a form concluded.
+    //
+    // A bool cannot express this: the caller has to tell "this form cannot serve the source, try
+    // another" apart from "the operation did not complete", and only the first of those is a
+    // reason to fall back. Failing to take the lock is the case that makes the distinction
+    // necessary -- the delta may well have been usable, and falling back would acquire a full
+    // index that the source did not need.
+    enum class UpdateResult
+    {
+        // The store now holds this form, up to date with the source.
+        Success,
+
+        // The operation did not complete: it was cancelled, or the lock could not be taken.
+        // Nothing can be concluded about whether this form would have worked, so the caller
+        // reports failure rather than trying another form.
+        Aborted,
+
+        // This form cannot serve the source. The caller should fall back to another.
+        Unusable,
+    };
+
     // How a source's index is composed, and therefore which packages it has and how they relate.
     //
     // A form knows nothing about where its packages are kept. It is given a store to act on, and
@@ -68,9 +89,9 @@ namespace AppInstaller::Repository::Microsoft::PreIndexed
 
         // Brings the store up to date with the source.
         //
-        // Returns false when the caller should fall back to another form; a failure to update is
-        // reported by throwing.
-        virtual bool Update(IPackageStore& store, bool isBackground, IProgressCallback& progress, UpdateReport& report) = 0;
+        // A failure to update is reported by throwing; the result distinguishes the outcomes that
+        // are not failures. See UpdateResult.
+        virtual UpdateResult Update(IPackageStore& store, bool isBackground, IProgressCallback& progress, UpdateReport& report) = 0;
 
         // Opens the index that the store holds for this form.
         virtual SQLiteIndex Open(IPackageStore& store, IProgressCallback& progress) = 0;

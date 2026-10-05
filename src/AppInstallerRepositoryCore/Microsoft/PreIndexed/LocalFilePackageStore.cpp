@@ -6,6 +6,7 @@
 
 #include <AppInstallerMsixInfo.h>
 #include <AppInstallerRuntime.h>
+#include <winget/Filesystem.h>
 
 namespace AppInstaller::Repository::Microsoft::PreIndexed
 {
@@ -32,21 +33,6 @@ namespace AppInstaller::Repository::Microsoft::PreIndexed
             THROW_HR(E_UNEXPECTED);
         }
 
-        // Moves a file, falling back to a copy when the two are not on the same volume.
-        void MoveFile(const std::filesystem::path& from, const std::filesystem::path& to)
-        {
-            try
-            {
-                std::filesystem::rename(from, to);
-                return;
-            }
-            catch (const std::filesystem::filesystem_error&)
-            {
-                AICLI_LOG(Repo, Info, << "Could not rename " << from << " to " << to << "; copying instead");
-            }
-
-            std::filesystem::copy_file(from, to, std::filesystem::copy_options::overwrite_existing);
-        }
 
         // Holds a source's packages as files in our own local state.
         struct LocalFilePackageStore : public PackageStoreBase
@@ -84,7 +70,7 @@ namespace AppInstaller::Repository::Microsoft::PreIndexed
 
                 if (package.IsTemporary())
                 {
-                    MoveFile(package.Path, stagedPath);
+                    Filesystem::RenameFile(package.Path, stagedPath);
                     package.ReleaseTemporary();
                 }
                 else

@@ -203,19 +203,22 @@ namespace AppInstaller::Repository::Microsoft
 
                 // Adding is the only operation that can establish what a source's packages are, so
                 // it is the only one that discovers them and writes the result back.
-                std::unique_ptr<IIndexForm> form;
-                std::optional<std::string> data;
+                UpdateReport report;
+                UpdateResult result = UpdateResult::Unusable;
 
                 if (IsDeltaIndexEnabled())
                 {
                     try
                     {
-                        auto deltaForm = CreateDeltaIndexForm(details);
-                        data = deltaForm->DiscoverIdentities(progress);
+                        auto form = CreateDeltaIndexForm(details);
+                        auto data = form->DiscoverIdentities(progress);
 
                         if (data)
                         {
-                            form = std::move(deltaForm);
+                            WriteDiscoveredIdentities(details, data.value());
+
+                            auto store = CreateStore(details);
+                            result = form->Update(*store, false, progress, report);
                         }
                     }
                     catch (...)
@@ -226,25 +229,27 @@ namespace AppInstaller::Repository::Microsoft
                         }
 
                         LOG_CAUGHT_EXCEPTION_MSG("Delta discovery failed while adding source: %hs", details.Name.c_str());
+                        result = UpdateResult::Unusable;
                     }
                 }
 
-                if (!form)
+                if (result == UpdateResult::Unusable)
                 {
-                    form = CreateFullIndexForm(details);
-                    data = form->DiscoverIdentities(progress);
+                    // Either the source publishes no delta, or the one it publishes cannot serve
+                    // it. Adding must still succeed, so the full index is acquired instead.
+                    report = {};
+
+                    auto form = CreateFullIndexForm(details);
+                    auto data = form->DiscoverIdentities(progress);
                     THROW_HR_IF(APPINSTALLER_CLI_ERROR_SOURCE_DATA_MISSING, !data);
+
+                    WriteDiscoveredIdentities(details, data.value());
+
+                    auto store = CreateStore(details);
+                    result = form->Update(*store, false, progress, report);
                 }
 
-                details.Data = data.value();
-                // TODO: Perform proper identifier extraction once delta Data model is worked out
-                details.Identifier = data.value();
-
-                auto store = CreateStore(details);
-
-                UpdateReport report;
-                bool result = form->Update(*store, false, progress, report);
-
+                // Unlike an update, an add reports only when something was transferred.
                 if (report.DownloadedBytes && report.NewIndexPublishedAt)
                 {
                     try
@@ -263,7 +268,7 @@ namespace AppInstaller::Repository::Microsoft
                     CATCH_LOG();
                 }
 
-                return result;
+                return result == UpdateResult::Success;
             }
 
             bool Update(const SourceDetails& details, IProgressCallback& progress) override
@@ -318,6 +323,14 @@ namespace AppInstaller::Repository::Microsoft
             }
 
         private:
+            // Records what a form discovered about the source's packages.
+            static void WriteDiscoveredIdentities(SourceDetails& details, const std::string& data)
+            {
+                details.Data = data;
+                // TODO: Perform proper identifier extraction once delta Data model is worked out
+                details.Identifier = data;
+            }
+
             bool UpdateBase(const SourceDetails& details, bool isBackground, IProgressCallback& progress)
             {
                 THROW_HR_IF(E_INVALIDARG, details.Type != PreIndexedPackageSourceFactory::Type());
@@ -326,6 +339,9 @@ namespace AppInstaller::Repository::Microsoft
 
                 if (IsDeltaIndexEnabled())
                 {
+                    UpdateReport report;
+                    UpdateResult result = UpdateResult::Unusable;
+
                     try
                     {
                         auto form = CreateDeltaIndexForm(details);
@@ -335,13 +351,7 @@ namespace AppInstaller::Repository::Microsoft
                         // since an update has no way to write Data back.
                         if (form->DiscoverIdentities(progress))
                         {
-                            UpdateReport report;
-
-                            if (form->Update(*store, isBackground, progress, report))
-                            {
-                                LogUpdate(details, report, isBackground);
-                                return true;
-                            }
+                            result = form->Update(*store, isBackground, progress, report);
                         }
                     }
                     catch (...)
@@ -352,15 +362,24 @@ namespace AppInstaller::Repository::Microsoft
                         }
 
                         LOG_CAUGHT_EXCEPTION_MSG("Delta update failed for source: %hs", details.Name.c_str());
+                        result = UpdateResult::Unusable;
                     }
 
-                    if (progress.IsCancelledBy(CancelReason::Any))
+                    if (result == UpdateResult::Success)
                     {
-                        AICLI_LOG(Repo, Info, << "Cancelling update upon request");
+                        LogUpdate(details, report, isBackground);
+                        return true;
+                    }
+
+                    if (result == UpdateResult::Aborted)
+                    {
+                        // The operation did not complete, so nothing was learned about whether the
+                        // delta would have served. Falling back here would acquire a full index
+                        // that the source may not have needed.
                         return false;
                     }
 
-                    // Every delta failure falls back to the full index; the delta is an
+                    // Only a delta that cannot serve the source falls back; the delta is an
                     // optimization, never a correctness dependency.
                     AICLI_LOG(Repo, Info, << "Falling back to the full index for source: " << details.Name);
                 }
@@ -368,11 +387,11 @@ namespace AppInstaller::Repository::Microsoft
                 auto form = CreateFullIndexForm(details);
 
                 UpdateReport report;
-                bool result = form->Update(*store, isBackground, progress, report);
+                UpdateResult result = form->Update(*store, isBackground, progress, report);
 
                 LogUpdate(details, report, isBackground);
 
-                return result;
+                return result == UpdateResult::Success;
             }
 
             // Whether an update is reported is the form's decision; see UpdateReport::Reportable.

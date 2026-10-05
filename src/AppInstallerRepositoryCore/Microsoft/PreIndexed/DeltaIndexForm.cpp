@@ -103,7 +103,7 @@ namespace AppInstaller::Repository::Microsoft::PreIndexed
                 return store.GetVersion(GetDeltaKey());
             }
 
-            bool Update(IPackageStore& store, bool isBackground, IProgressCallback& progress, UpdateReport& report) override
+            UpdateResult Update(IPackageStore& store, bool isBackground, IProgressCallback& progress, UpdateReport& report) override
             {
                 report.UsedDeltaDownload = true;
 
@@ -142,7 +142,7 @@ namespace AppInstaller::Repository::Microsoft::PreIndexed
 
                             report.PreviousBaselinePublishedAt = Utility::GetTimePointFromVersion(heldBaselineVersion.value());
                             report.NewBaselinePublishedAt = report.PreviousBaselinePublishedAt;
-                            return true;
+                            return UpdateResult::Success;
                         }
                     }
                 }
@@ -154,13 +154,15 @@ namespace AppInstaller::Repository::Microsoft::PreIndexed
                 if (progress.IsCancelledBy(CancelReason::Any))
                 {
                     AICLI_LOG(Repo, Info, << "Cancelling update upon request");
-                    return false;
+                    return UpdateResult::Aborted;
                 }
 
                 auto lock = store.Lock(progress, isBackground);
                 if (!lock)
                 {
-                    return false;
+                    // The delta may well have been usable, so falling back here would acquire a
+                    // full index that the source did not need.
+                    return UpdateResult::Aborted;
                 }
 
                 std::optional<uint64_t> deltaBytes;
@@ -170,7 +172,8 @@ namespace AppInstaller::Repository::Microsoft::PreIndexed
                     auto acquired = store.Acquire(GetDeltaKey(), deltaCheck.PackageLocation(), progress);
                     if (!acquired)
                     {
-                        return false;
+                        // Acquisition reports nothing only when it was cancelled.
+                        return UpdateResult::Aborted;
                     }
 
                     deltaBytes = acquired->DownloadedBytes;
@@ -183,7 +186,7 @@ namespace AppInstaller::Repository::Microsoft::PreIndexed
                 if (!locator)
                 {
                     AICLI_LOG(Repo, Warning, << "Delta for source `" << m_details.Name << "` did not name a baseline");
-                    return false;
+                    return UpdateResult::Unusable;
                 }
 
                 AICLI_LOG(Repo, Info, << "Delta for source `" << m_details.Name << "` names baseline " << locator->Identifier <<
@@ -219,13 +222,14 @@ namespace AppInstaller::Repository::Microsoft::PreIndexed
                     {
                         AICLI_LOG(Repo, Warning, << "Baseline at `" << baselineCheck.PackageLocation() << "` was version " <<
                             baselineCheck.AvailableVersion().ToString() << ", but the delta named " << requiredBaselineVersion.ToString());
-                        return false;
+                        return UpdateResult::Unusable;
                     }
 
                     auto acquired = store.Acquire(GetBaselineKey(), baselineCheck.PackageLocation(), progress);
                     if (!acquired)
                     {
-                        return false;
+                        // Acquisition reports nothing only when it was cancelled.
+                        return UpdateResult::Aborted;
                     }
 
                     baselineBytes = acquired->DownloadedBytes;
@@ -241,7 +245,7 @@ namespace AppInstaller::Repository::Microsoft::PreIndexed
                     report.Reportable = true;
                 }
 
-                return true;
+                return UpdateResult::Success;
             }
 
             SQLiteIndex Open(IPackageStore& store, IProgressCallback& progress) override
@@ -255,21 +259,9 @@ namespace AppInstaller::Repository::Microsoft::PreIndexed
                 }
 
                 // The delta names the baseline it was computed against, and the baseline carries
-                // the identifier it was designated with. A pair that does not agree cannot be
-                // merged, so it is refused here rather than producing a merged view over the
-                // wrong data.
-                {
-                    SQLiteIndex deltaIndex = SQLiteIndex::Open(delta->Path.u8string(), SQLiteIndex::OpenDisposition::Immutable);
-                    auto locator = deltaIndex.GetDeltaBaselineLocator();
-                    THROW_HR_IF(APPINSTALLER_CLI_ERROR_SOURCE_DATA_INTEGRITY_FAILURE, !locator);
-
-                    SQLiteIndex baselineIndex = SQLiteIndex::Open(baseline->Path.u8string(), SQLiteIndex::OpenDisposition::Immutable);
-                    auto baselineIdentifier = baselineIndex.GetBaselineIdentifier();
-                    THROW_HR_IF(APPINSTALLER_CLI_ERROR_SOURCE_DATA_INTEGRITY_FAILURE, !baselineIdentifier);
-
-                    THROW_HR_IF(APPINSTALLER_CLI_ERROR_SOURCE_DATA_INTEGRITY_FAILURE, locator->Identifier != baselineIdentifier.value());
-                }
-
+                // the identifier it was designated with. OpenWithBaseline refuses a pair that does
+                // not agree, and does so against the attached baseline rather than a separate read
+                // of the same path, so it is not checked again here.
                 return SQLiteIndex::OpenWithBaseline(
                     delta->Path.u8string(),
                     baseline->Path.u8string(),

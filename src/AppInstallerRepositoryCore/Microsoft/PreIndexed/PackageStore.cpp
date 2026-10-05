@@ -165,131 +165,15 @@ namespace AppInstaller::Repository::Microsoft::PreIndexed
         return Runtime::IsRunningInPackagedContext();
     }
 
-    namespace anon
-    {
-        // Prefers one mechanism over another, falling back when the preferred one cannot hold a
-        // package at all.
-        //
-        // The direction is one way: an unpackaged process cannot deploy, so the fallback exists
-        // for when deployment is not possible rather than as a general retry. Nothing already
-        // deployed is ever unregistered in favour of a file copy.
-        struct FallbackPackageStore : public IPackageStore
-        {
-            FallbackPackageStore(std::vector<std::unique_ptr<IPackageStore>>&& stores) : m_stores(std::move(stores))
-            {
-                THROW_HR_IF(E_UNEXPECTED, m_stores.empty());
-            }
-
-            std::optional<AcquiredPackage> Acquire(const PackageKey& package, const std::string& location, IProgressCallback& progress) override
-            {
-                return m_stores.front()->Acquire(package, location, progress);
-            }
-
-            void Persist(AcquiredPackage&& package, IProgressCallback& progress) override
-            {
-                if (m_latched)
-                {
-                    m_latched->Persist(std::move(package), progress);
-                    return;
-                }
-
-                for (size_t i = 0; i < m_stores.size(); ++i)
-                {
-                    bool isLast = (i == m_stores.size() - 1);
-
-                    try
-                    {
-                        m_stores[i]->Persist(std::move(package), progress);
-
-                        // The first package of an operation decides where the rest of them go.
-                        // Splitting one index form across two stores would leave a delta and a
-                        // baseline that cannot be opened together, reported through an operation
-                        // that claimed success.
-                        m_latched = m_stores[i].get();
-                        return;
-                    }
-                    catch (...)
-                    {
-                        if (isLast || progress.IsCancelledBy(CancelReason::Any))
-                        {
-                            throw;
-                        }
-
-                        LOG_CAUGHT_EXCEPTION_MSG("Persisting package failed; falling back to the next store");
-                    }
-                }
-            }
-
-            // A source can legitimately be mixed across operations -- deployment may become
-            // impossible after a baseline was already deployed -- so reads consult every store.
-            std::optional<Msix::PackageVersion> GetVersion(const PackageKey& package) const override
-            {
-                for (const auto& store : m_stores)
-                {
-                    auto result = store->GetVersion(package);
-                    if (result)
-                    {
-                        return result;
-                    }
-                }
-
-                return std::nullopt;
-            }
-
-            std::optional<ExtractedIndex> GetIndex(const PackageKey& package, IProgressCallback& progress) override
-            {
-                for (const auto& store : m_stores)
-                {
-                    auto result = store->GetIndex(package, progress);
-                    if (result)
-                    {
-                        return result;
-                    }
-                }
-
-                return std::nullopt;
-            }
-
-            void Remove(const std::vector<PackageKey>& packages, IProgressCallback& progress) override
-            {
-                for (const auto& store : m_stores)
-                {
-                    store->Remove(packages, progress);
-                }
-            }
-
-            // Every store derives its lock name from the source identity, so they are all the
-            // same lock and taking the first one guards them all.
-            Synchronization::CrossProcessLock Lock(IProgressCallback& progress, bool isBackground = false) override
-            {
-                return m_stores.front()->Lock(progress, isBackground);
-            }
-
-            bool AllowsUnlockedRead() const override
-            {
-                return m_stores.front()->AllowsUnlockedRead();
-            }
-
-        private:
-            std::vector<std::unique_ptr<IPackageStore>> m_stores;
-
-            // The store that this operation has committed to. A store object lives for exactly
-            // one factory operation, so this needs no explicit scope.
-            IPackageStore* m_latched = nullptr;
-        };
-    }
-
     std::unique_ptr<IPackageStore> CreateStore(const SourceDetails& details)
     {
-        if (!CanUseDeployedPackage())
-        {
-            return CreateLocalFilePackageStore(details);
-        }
-
-        std::vector<std::unique_ptr<IPackageStore>> stores;
-        stores.emplace_back(CreateDeployedPackageStore(details));
-        stores.emplace_back(CreateLocalFilePackageStore(details));
-
-        return std::make_unique<anon::FallbackPackageStore>(std::move(stores));
+        // There is no fallback between the two mechanisms. A store that has taken a package
+        // cannot hand it to another: Persist consumes the AcquiredPackage, and the move leaves
+        // the caller nothing to retry with. Splitting one index form's packages across two
+        // stores would also leave a delta and a baseline that cannot be opened together.
+        //
+        // Real fallback is more involved than retrying a persist, so it is deliberately absent
+        // rather than approximated here.
+        return CanUseDeployedPackage() ? CreateDeployedPackageStore(details) : CreateLocalFilePackageStore(details);
     }
 }

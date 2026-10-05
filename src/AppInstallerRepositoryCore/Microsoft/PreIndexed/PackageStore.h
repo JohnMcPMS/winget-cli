@@ -72,10 +72,16 @@ namespace AppInstaller::Repository::Microsoft::PreIndexed
     // A package that has been fetched and validated for a key, but is not yet stored anywhere that
     // it can be found again.
     //
-    // Acquisition is entirely store independent, which is what lets a package that one store
-    // refused to persist be handed to another without being fetched a second time. Holding the
-    // validation lock here is what makes that safe: the file cannot be altered between the point
-    // at which it was checked and the point at which a store commits to it.
+    // Acquisition is entirely store independent, which is why it is separated from Persist and
+    // lives on the base rather than on either mechanism. Holding the validation lock here is what
+    // makes committing to it safe: the file cannot be altered between the point at which it was
+    // checked and the point at which a store takes it.
+    //
+    // Note that this does not currently support handing a refused package to another store.
+    // Persist takes the package by rvalue reference and the mechanisms consume it -- the local
+    // file store releases the lock and moves the file -- so a failed Persist leaves the caller
+    // with nothing to retry. Supporting that would need Persist to be defined as leaving the
+    // package untouched on failure, which neither mechanism does today.
     struct AcquiredPackage
     {
         AcquiredPackage() = default;
@@ -170,10 +176,10 @@ namespace AppInstaller::Repository::Microsoft::PreIndexed
         SourceTrustLevel m_trustLevel = SourceTrustLevel::None;
     };
 
-    // Creates the store for a source, preferring deployment where it is possible.
+    // Creates the store for a source.
     std::unique_ptr<IPackageStore> CreateStore(const SourceDetails& details);
 
-    // The individual mechanisms, exposed for the chain that prefers between them.
+    // The individual mechanisms.
     std::unique_ptr<IPackageStore> CreateDeployedPackageStore(const SourceDetails& details);
     std::unique_ptr<IPackageStore> CreateLocalFilePackageStore(const SourceDetails& details);
 
