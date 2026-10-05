@@ -59,7 +59,14 @@ namespace AppInstaller::Repository::Microsoft
         // The delta is the main connection; the baseline is attached and temp views are created
         // so that existing search code operates transparently across both.
         // The disposition applies to both files, because the pair is only meaningful as a unit.
-        static SQLiteIndex OpenWithBaseline(const std::string& deltaFilePath, const std::string& baselineFilePath, OpenDisposition disposition = OpenDisposition::Read);
+        // Both files may be given to be held open for the lifetime of the index, as the caller may
+        // have extracted either of them to a temporary location.
+        static SQLiteIndex OpenWithBaseline(
+            const std::string& deltaFilePath,
+            const std::string& baselineFilePath,
+            OpenDisposition disposition = OpenDisposition::Read,
+            Utility::ManagedFile&& deltaFile = {},
+            Utility::ManagedFile&& baselineFile = {});
 
         // What a delta records about the baseline that it must be paired with.
         using DeltaBaselineLocator = Schema::ISQLiteIndex::DeltaBaselineLocator;
@@ -231,5 +238,12 @@ namespace AppInstaller::Repository::Microsoft
 
         std::unique_ptr<Schema::ISQLiteIndex> m_interface;
         Schema::SQLiteIndexContextData m_contextData;
+
+        // The baseline of a combined index, when the caller extracted it to a temporary location.
+        //
+        // SQLiteStorageBase holds one such file, which the combined form gives to the delta since
+        // that is its main connection. The baseline is attached rather than opened, so there is no
+        // second storage base to hold it and it lives here instead.
+        Utility::ManagedFile m_baselineFile;
     };
 }

@@ -45,7 +45,12 @@ namespace AppInstaller::Repository::Microsoft
         return { filePath, source };
     }
 
-    SQLiteIndex SQLiteIndex::OpenWithBaseline(const std::string& deltaFilePath, const std::string& baselineFilePath, OpenDisposition disposition)
+    SQLiteIndex SQLiteIndex::OpenWithBaseline(
+        const std::string& deltaFilePath,
+        const std::string& baselineFilePath,
+        OpenDisposition disposition,
+        Utility::ManagedFile&& deltaFile,
+        Utility::ManagedFile&& baselineFile)
     {
         AICLI_LOG(Repo, Info, << "Opening delta index [" << deltaFilePath << "] with baseline [" << baselineFilePath << "]");
 
@@ -56,7 +61,11 @@ namespace AppInstaller::Repository::Microsoft
         std::filesystem::path baselinePath{ Utility::ConvertToUTF16(baselineFilePath) };
         THROW_HR_IF(E_INVALIDARG, baselinePath.empty() || baselinePath.is_relative());
 
-        SQLiteIndex result{ SQLite::DatabaseSpecifier{ deltaFilePath, disposition }, {} };
+        SQLiteIndex result{ SQLite::DatabaseSpecifier{ deltaFilePath, disposition }, std::move(deltaFile) };
+
+        // Taken before the attach, so that the file is held for as long as the connection that
+        // will reference it exists -- including if establishing the combined view throws.
+        result.m_baselineFile = std::move(baselineFile);
 
         // The interface for the delta's schema version establishes the combined view.
         result.m_interface->SetupDeltaReadMode(result.m_dbconn, SQLite::DatabaseSpecifier{ baselineFilePath, disposition });
