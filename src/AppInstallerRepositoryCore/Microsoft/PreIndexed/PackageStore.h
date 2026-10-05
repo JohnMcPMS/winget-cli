@@ -186,7 +186,10 @@ namespace AppInstaller::Repository::Microsoft::PreIndexed
     // Whether deployment is available to this process at all.
     //
     // An unpackaged process cannot use the deployed mechanism, because the extension catalog it
-    // would be found through is keyed off our own identity. That is the whole of the difference
-    // between the two mechanisms.
+    // would be found through is keyed off our own identity.
+    //
+    // Neither can a process in a non-interactive session. Deployment is a per-user operation that
+    // the platform performs against a signed-in session, so it is not reliably available to a
+    // service or a scheduled task running in session 0.
     bool CanUseDeployedPackage();
 }

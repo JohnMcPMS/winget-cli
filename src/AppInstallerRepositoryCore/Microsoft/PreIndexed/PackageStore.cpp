@@ -162,7 +162,7 @@ namespace AppInstaller::Repository::Microsoft::PreIndexed
 
     bool CanUseDeployedPackage()
     {
-        return Runtime::IsRunningInPackagedContext();
+        return Runtime::IsRunningInPackagedContext() && Runtime::IsRunningInInteractiveSession();
     }
 
     std::unique_ptr<IPackageStore> CreateStore(const SourceDetails& details)
