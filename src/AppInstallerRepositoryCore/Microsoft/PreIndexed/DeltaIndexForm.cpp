@@ -1,0 +1,364 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
+#include "pch.h"
+#include "Microsoft/PreIndexed/IndexForm.h"
+#include "Microsoft/PreIndexed/RemotePackage.h"
+
+#include <AppInstallerDateTime.h>
+#include <AppInstallerDownloader.h>
+
+namespace AppInstaller::Repository::Microsoft::PreIndexed
+{
+    namespace anon
+    {
+        // A source composed of a delta and the baseline that the delta names.
+        struct DeltaIndexForm : public IIndexForm
+        {
+            DeltaIndexForm(const SourceDetails& details) : m_details(details)
+            {
+                // TODO: Delta acquisition needs a richer SourceDetails::Data syntax, and a
+                //       migration to it. This is the one place that reads Data's syntax, and the
+                //       one place that will have to learn the new one.
+                //
+                //       Data holds exactly one package family name. That was sufficient while a
+                //       source had one package; it is not now. The delta is published under its
+                //       own identity while the baseline keeps the identity that the full index has
+                //       always used, so a delta capable source has two identities to name and Data
+                //       can carry only one of them.
+                //
+                //       The ordering is what makes this awkward. The delta is the package that
+                //       names its baseline, so it must be acquired and opened first -- which means
+                //       the delta's identity is the one needed before any network access, and it
+                //       is precisely the one that Data does not carry.
+                //
+                //       Three things have to be settled before this can be relied upon:
+                //
+                //         1. A syntax for Data that carries both identities and can be
+                //            distinguished from the bare family name that every client written to
+                //            date has stored.
+                //         2. A migration for sources already configured with the old syntax. Our
+                //            own sources can be special cased, since we publish them and know both
+                //            identities, but a third party pre-indexed source cannot be.
+                //         3. A way to persist the new value. Add is the only operation that writes
+                //            Data today: ISourceFactory::Update takes a const SourceDetails&, and
+                //            the update path writes only the metadata fields back afterwards, so a
+                //            value learned during an update is discarded.
+                //
+                //       Until then only the baseline's identity is recovered from the details, and
+                //       the delta's is rediscovered on every operation.
+                m_baselineIdentity = details.Data;
+            }
+
+            std::optional<std::string> DiscoverIdentities(IProgressCallback& progress) override
+            {
+                if (m_deltaIdentity.empty())
+                {
+                    std::optional<std::string> deltaIdentity = ProbeDeltaIdentity(progress);
+
+                    if (!deltaIdentity)
+                    {
+                        // The source publishes no delta. That is an ordinary answer, and the caller
+                        // falls back to the full index rather than treating it as a failure.
+                        return std::nullopt;
+                    }
+
+                    m_deltaIdentity = deltaIdentity.value();
+
+                    if (m_baselineIdentity.empty())
+                    {
+                        // A baseline is a full index that has been designated as one, published under
+                        // the identity that the source has always used, so discovering the full index
+                        // discovers the baseline.
+                        PreIndexedPackageInfo packageInfo(GetFullIndexPackageLocations(m_details), [](const std::string& packageLocation)
+                            {
+                                THROW_HR_IF(APPINSTALLER_CLI_ERROR_SOURCE_NOT_SECURE, Utility::IsUrlRemote(packageLocation) && !Utility::IsUrlSecure(packageLocation));
+                            });
+
+                        THROW_HR_IF(APPINSTALLER_CLI_ERROR_PACKAGE_IS_BUNDLE, packageInfo.MsixInfo().GetIsBundle());
+
+                        m_baselineIdentity = Msix::GetPackageFamilyNameFromFullName(packageInfo.MsixInfo().GetPackageFullName());
+                    }
+                }
+
+                return SerializeIdentities();
+            }
+
+            std::vector<PackageKey> GetPackages() const override
+            {
+                return { GetDeltaKey(), GetBaselineKey() };
+            }
+
+            bool HasIdentities() const override
+            {
+                return !m_deltaIdentity.empty() && !m_baselineIdentity.empty();
+            }
+
+            bool IsHeld(const IPackageStore& store) const override
+            {
+                return store.GetVersion(GetDeltaKey()).has_value() && store.GetVersion(GetBaselineKey()).has_value();
+            }
+
+            std::optional<Msix::PackageVersion> GetHeldVersion(const IPackageStore& store) const override
+            {
+                return store.GetVersion(GetDeltaKey());
+            }
+
+            bool Update(IPackageStore& store, bool isBackground, IProgressCallback& progress, UpdateReport& report) override
+            {
+                report.UsedDeltaDownload = true;
+
+                std::optional<Msix::PackageVersion> currentDeltaVersion = store.GetVersion(GetDeltaKey());
+
+                if (currentDeltaVersion)
+                {
+                    report.PreviousIndexPublishedAt = Utility::GetTimePointFromVersion(currentDeltaVersion.value());
+                }
+
+                // The delta is published at a fixed name beside the full index, and is probed by
+                // exactly the same mechanism.
+                PreIndexedPackageUpdateCheck deltaCheck(GetDeltaPackageLocations(m_details));
+
+                report.NewIndexPublishedAt = Utility::GetTimePointFromVersion(deltaCheck.AvailableVersion());
+
+                bool deltaIsCurrent = currentDeltaVersion && currentDeltaVersion.value() >= deltaCheck.AvailableVersion();
+
+                std::optional<SQLiteIndex::DeltaBaselineLocator> locator;
+
+                if (deltaIsCurrent)
+                {
+                    // The delta we hold is current, but we may still be missing the baseline that
+                    // it names, so being up to date is not on its own a reason to stop.
+                    locator = ReadBaselineLocator(store, progress);
+
+                    if (locator)
+                    {
+                        auto heldBaselineVersion = store.GetVersion(GetBaselineKey());
+
+                        if (heldBaselineVersion && heldBaselineVersion.value() == Msix::PackageVersion{ locator->PackageVersion })
+                        {
+                            AICLI_LOG(Repo, Verbose, << "Remote delta (" << deltaCheck.AvailableVersion().ToString() <<
+                                ") was not newer than existing (" << currentDeltaVersion.value().ToString() <<
+                                ") and its baseline is held, no update needed");
+
+                            report.PreviousBaselinePublishedAt = Utility::GetTimePointFromVersion(heldBaselineVersion.value());
+                            report.NewBaselinePublishedAt = report.PreviousBaselinePublishedAt;
+                            return true;
+                        }
+                    }
+                }
+
+                // Re-acquire the delta when it is not current, and also when we could not read the
+                // one we hold -- in that case what we hold is unusable whatever its version says.
+                bool acquireDelta = !deltaIsCurrent || !locator;
+
+                if (progress.IsCancelledBy(CancelReason::Any))
+                {
+                    AICLI_LOG(Repo, Info, << "Cancelling update upon request");
+                    return false;
+                }
+
+                auto lock = store.Lock(progress, isBackground);
+                if (!lock)
+                {
+                    return false;
+                }
+
+                std::optional<uint64_t> deltaBytes;
+
+                if (acquireDelta)
+                {
+                    auto acquired = store.Acquire(GetDeltaKey(), deltaCheck.PackageLocation(), progress);
+                    if (!acquired)
+                    {
+                        return false;
+                    }
+
+                    deltaBytes = acquired->DownloadedBytes;
+
+                    store.Persist(std::move(acquired.value()), progress);
+
+                    locator = ReadBaselineLocator(store, progress);
+                }
+
+                if (!locator)
+                {
+                    AICLI_LOG(Repo, Warning, << "Delta for source `" << m_details.Name << "` did not name a baseline");
+                    return false;
+                }
+
+                AICLI_LOG(Repo, Info, << "Delta for source `" << m_details.Name << "` names baseline " << locator->Identifier <<
+                    " at `" << locator->RelativeSourcePath << "` version " << locator->PackageVersion);
+
+                Msix::PackageVersion requiredBaselineVersion{ locator->PackageVersion };
+                std::optional<Msix::PackageVersion> currentBaselineVersion = store.GetVersion(GetBaselineKey());
+
+                if (currentBaselineVersion)
+                {
+                    report.PreviousBaselinePublishedAt = Utility::GetTimePointFromVersion(currentBaselineVersion.value());
+                }
+
+                report.NewBaselinePublishedAt = Utility::GetTimePointFromVersion(requiredBaselineVersion);
+
+                std::optional<uint64_t> baselineBytes;
+
+                if (currentBaselineVersion && currentBaselineVersion.value() == requiredBaselineVersion)
+                {
+                    // The common case: the baseline changes far less often than the delta, so most
+                    // updates involve no baseline traffic at all.
+                    AICLI_LOG(Repo, Verbose, << "Already holding baseline version " << requiredBaselineVersion.ToString());
+                }
+                else
+                {
+                    // Probe for the baseline the same way the full index is probed, so that the
+                    // Arg / AlternateArg fallback applies to it as well.
+                    PreIndexedPackageUpdateCheck baselineCheck(GetBaselinePackageLocations(m_details, locator->RelativeSourcePath));
+
+                    // The delta told us which version it was computed against; anything else at
+                    // that location is not the baseline this delta can be paired with.
+                    if (baselineCheck.AvailableVersion() != requiredBaselineVersion)
+                    {
+                        AICLI_LOG(Repo, Warning, << "Baseline at `" << baselineCheck.PackageLocation() << "` was version " <<
+                            baselineCheck.AvailableVersion().ToString() << ", but the delta named " << requiredBaselineVersion.ToString());
+                        return false;
+                    }
+
+                    auto acquired = store.Acquire(GetBaselineKey(), baselineCheck.PackageLocation(), progress);
+                    if (!acquired)
+                    {
+                        return false;
+                    }
+
+                    baselineBytes = acquired->DownloadedBytes;
+
+                    store.Persist(std::move(acquired.value()), progress);
+
+                    report.BaselineUpdated = true;
+                }
+
+                if (deltaBytes || baselineBytes)
+                {
+                    report.DownloadedBytes = deltaBytes.value_or(0) + baselineBytes.value_or(0);
+                    report.Reportable = true;
+                }
+
+                return true;
+            }
+
+            SQLiteIndex Open(IPackageStore& store, IProgressCallback& progress) override
+            {
+                auto delta = store.GetIndex(GetDeltaKey(), progress);
+                auto baseline = store.GetIndex(GetBaselineKey(), progress);
+
+                if (!delta || !baseline)
+                {
+                    THROW_HR(APPINSTALLER_CLI_ERROR_SOURCE_DATA_MISSING);
+                }
+
+                // The delta names the baseline it was computed against, and the baseline carries
+                // the identifier it was designated with. A pair that does not agree cannot be
+                // merged, so it is refused here rather than producing a merged view over the
+                // wrong data.
+                {
+                    SQLiteIndex deltaIndex = SQLiteIndex::Open(delta->Path.u8string(), SQLiteIndex::OpenDisposition::Immutable);
+                    auto locator = deltaIndex.GetDeltaBaselineLocator();
+                    THROW_HR_IF(APPINSTALLER_CLI_ERROR_SOURCE_DATA_INTEGRITY_FAILURE, !locator);
+
+                    SQLiteIndex baselineIndex = SQLiteIndex::Open(baseline->Path.u8string(), SQLiteIndex::OpenDisposition::Immutable);
+                    auto baselineIdentifier = baselineIndex.GetBaselineIdentifier();
+                    THROW_HR_IF(APPINSTALLER_CLI_ERROR_SOURCE_DATA_INTEGRITY_FAILURE, !baselineIdentifier);
+
+                    THROW_HR_IF(APPINSTALLER_CLI_ERROR_SOURCE_DATA_INTEGRITY_FAILURE, locator->Identifier != baselineIdentifier.value());
+                }
+
+                return SQLiteIndex::OpenWithBaseline(
+                    delta->Path.u8string(),
+                    baseline->Path.u8string(),
+                    SQLiteIndex::OpenDisposition::Immutable,
+                    std::move(delta->TemporaryFile),
+                    std::move(baseline->TemporaryFile));
+            }
+
+        private:
+            PackageKey GetDeltaKey() const
+            {
+                THROW_HR_IF(E_NOT_VALID_STATE, m_deltaIdentity.empty());
+                return PackageKey{ PackageSlot::Delta, m_deltaIdentity };
+            }
+
+            PackageKey GetBaselineKey() const
+            {
+                THROW_HR_IF(E_NOT_VALID_STATE, m_baselineIdentity.empty());
+                return PackageKey{ PackageSlot::Baseline, m_baselineIdentity };
+            }
+
+            // See the TODO in the constructor; until the syntax is settled this can only report
+            // what the details already carried.
+            std::string SerializeIdentities() const
+            {
+                return m_baselineIdentity;
+            }
+
+            // Learns the delta's identity by reading the published package.
+            //
+            // Nothing when the source publishes no delta at that location, which is how a source
+            // that is not delta capable is recognized.
+            std::optional<std::string> ProbeDeltaIdentity(IProgressCallback&)
+            {
+                try
+                {
+                    PreIndexedPackageInfo packageInfo(GetDeltaPackageLocations(m_details), [](const std::string& packageLocation)
+                        {
+                            THROW_HR_IF(APPINSTALLER_CLI_ERROR_SOURCE_NOT_SECURE, Utility::IsUrlRemote(packageLocation) && !Utility::IsUrlSecure(packageLocation));
+                        });
+
+                    THROW_HR_IF(APPINSTALLER_CLI_ERROR_PACKAGE_IS_BUNDLE, packageInfo.MsixInfo().GetIsBundle());
+
+                    return Msix::GetPackageFamilyNameFromFullName(packageInfo.MsixInfo().GetPackageFullName());
+                }
+                catch (...)
+                {
+                    LOG_CAUGHT_EXCEPTION_MSG("No delta found for source: %hs", m_details.Name.c_str());
+                    return std::nullopt;
+                }
+            }
+
+            // Reads the baseline that the delta we hold names, from the delta itself.
+            //
+            // Nothing when the delta cannot be read or does not carry a locator; the caller falls
+            // back to the full index rather than guessing at a baseline of its own.
+            std::optional<SQLiteIndex::DeltaBaselineLocator> ReadBaselineLocator(IPackageStore& store, IProgressCallback& progress)
+            {
+                try
+                {
+                    auto extracted = store.GetIndex(GetDeltaKey(), progress);
+                    if (!extracted)
+                    {
+                        return std::nullopt;
+                    }
+
+                    SQLiteIndex deltaIndex = SQLiteIndex::Open(extracted->Path.u8string(), SQLiteIndex::OpenDisposition::Immutable);
+                    return deltaIndex.GetDeltaBaselineLocator();
+                }
+                catch (...)
+                {
+                    if (progress.IsCancelledBy(CancelReason::Any))
+                    {
+                        throw;
+                    }
+
+                    LOG_CAUGHT_EXCEPTION_MSG("Could not read the baseline locator from the held delta");
+                    return std::nullopt;
+                }
+            }
+
+            SourceDetails m_details;
+            std::string m_deltaIdentity;
+            std::string m_baselineIdentity;
+        };
+    }
+
+    std::unique_ptr<IIndexForm> CreateDeltaIndexForm(const SourceDetails& details)
+    {
+        return std::make_unique<anon::DeltaIndexForm>(details);
+    }
+}
