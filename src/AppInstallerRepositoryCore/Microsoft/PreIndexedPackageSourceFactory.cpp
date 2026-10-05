@@ -83,10 +83,6 @@ namespace AppInstaller::Repository::Microsoft
         }
 
         // The locations of the baseline that a delta names.
-        //
-        // The path is relative to the source base location and travels inside the delta, so the
-        // service can version and relocate baselines without a client change, and a client can
-        // never pair a delta with a baseline chosen by a stale assumption of its own.
         std::vector<std::string> GetBaselinePackageLocations(const SourceDetails& details, const std::string& relativeSourcePath)
         {
             THROW_HR_IF(E_INVALIDARG, relativeSourcePath.empty());
@@ -488,11 +484,7 @@ namespace AppInstaller::Repository::Microsoft
                 return std::nullopt;
             }
 
-            // Opened as an index rather than as a bare database so that the schema version selects
-            // the interface that knows what a delta records; reading the metadata here would be
-            // this layer asserting a specific schema version's layout.
             SQLiteIndex deltaIndex = SQLiteIndex::Open(extracted->Path.u8string(), SQLiteIndex::OpenDisposition::Immutable);
-
             return deltaIndex.GetDeltaBaselineLocator();
         }
 
