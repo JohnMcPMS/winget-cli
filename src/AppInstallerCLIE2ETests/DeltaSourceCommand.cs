@@ -27,7 +27,7 @@ namespace AppInstallerCLIE2ETests
         /// <summary>
         /// A package that is in the baseline, and so is not one the delta has to supply.
         /// </summary>
-        private const string BaselinePackageIdentifier = "AppInstallerTest.TestPortableExe";
+        private const string BaselinePackageIdentifier = Constants.PortableExePackageId;
 
         /// <summary>
         /// One time set up.

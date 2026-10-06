@@ -87,7 +87,14 @@ namespace Microsoft.WinGetSourceCreator
         // merged it correctly.
         public void CreateDeltaSource(LocalSource localSource, DeltaSettings delta)
         {
-            // Working files, kept apart from the published tree so that nothing unintended is served.
+            // Where the packages are published, and so what the source's URL resolves to. Preparing
+            // an index also emits a per package version data file under this directory, which the
+            // client fetches relative to that URL for anything beyond a search.
+            string publishDirectory = Path.Combine(this.workingDirectory, delta.RelativeDirectory);
+
+            // The working databases. They are never named by a package, but they do sit under the
+            // static file root and so are reachable; that is already true of the ordinary source's
+            // index.db and costs nothing here.
             string indexDirectory = Path.Combine(this.workingDirectory, "deltaindexes");
             string workingIndexPath = Path.Combine(indexDirectory, "working.db");
             string baselineIndexPath = Path.Combine(indexDirectory, "baseline.db");
@@ -128,6 +135,7 @@ namespace Microsoft.WinGetSourceCreator
             File.Copy(workingIndexPath, baselineIndexPath);
             using (IWinGetSQLiteIndex baselineIndex = factory.SQLiteIndexOpen(baselineIndexPath))
             {
+                baselineIndex.SetProperty(SQLiteIndexProperty.IntermediateFileOutputPath, publishDirectory);
                 baselineIndex.SetProperty(SQLiteIndexProperty.DeltaMarkAsBaseline, "true");
                 baselineIndex.SetProperty(SQLiteIndexProperty.DeltaOutputPath, discardedDeltaPath);
                 baselineIndex.SetProperty(SQLiteIndexProperty.DeltaBaselineRelativeSourcePath, delta.BaselineRelativePath);
@@ -144,6 +152,7 @@ namespace Microsoft.WinGetSourceCreator
             File.Copy(workingIndexPath, fullIndexPath);
             using (IWinGetSQLiteIndex fullIndex = factory.SQLiteIndexOpen(fullIndexPath))
             {
+                fullIndex.SetProperty(SQLiteIndexProperty.IntermediateFileOutputPath, publishDirectory);
                 fullIndex.SetProperty(SQLiteIndexProperty.DeltaBaselineIndexPath, baselineIndexPath);
                 fullIndex.SetProperty(SQLiteIndexProperty.DeltaOutputPath, deltaIndexPath);
                 fullIndex.SetProperty(SQLiteIndexProperty.DeltaBaselineRelativeSourcePath, delta.BaselineRelativePath);
