@@ -17,12 +17,21 @@ namespace AppInstaller::Repository::Microsoft::PreIndexed
 
             void Persist(AcquiredPackage&& package, IProgressCallback& progress) override
             {
+                Deployment::Options options{ IsTrusted() };
+
+                // The baseline is published under the identity the full index has always used, so
+                // the platform may already hold a full index at a higher version than the one the
+                // delta names. The version to deploy is dictated by the delta, not by which is
+                // newer, so the move backward has to be permitted or the pair could never be formed
+                // on a machine that had ever acquired a full index.
+                options.AllowDowngrade = (package.Key.Slot == PackageSlot::Baseline);
+
                 // The file lock is deliberately held across deployment, so that the package the
                 // platform reads is the one that was validated.
                 winrt::Windows::Foundation::Uri uri = winrt::Windows::Foundation::Uri(package.Path.c_str());
                 Deployment::AddPackage(
                     uri,
-                    Deployment::Options{ IsTrusted() },
+                    options,
                     progress);
 
                 // Nothing further needs the file; it is removed when the package goes out of scope.
