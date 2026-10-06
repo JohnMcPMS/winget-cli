@@ -15,12 +15,6 @@ namespace AppInstaller::Repository::Microsoft::PreIndexed
 {
     using namespace std::string_view_literals;
 
-    // The remote half of a preindexed source: where its packages are published, and how to learn
-    // about one without downloading it.
-    //
-    // This is neither local storage nor a statement about how the index is composed, so it is
-    // shared by both of those concerns rather than belonging to either.
-
     // The full index, published under two names so that a client too old to read the current
     // format can still find one that it understands.
     static constexpr std::string_view s_PackageFileName = "source.msix"sv;

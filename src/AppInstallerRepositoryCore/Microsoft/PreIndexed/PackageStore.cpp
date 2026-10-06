@@ -74,8 +74,8 @@ namespace AppInstaller::Repository::Microsoft::PreIndexed
         //
         // The cross process lock name and the local state directory are both derived from this,
         // which is why it must be stable: changing either one orphans an existing source's local
-        // state, and -- worse -- lets an old and a new client take different locks over the same
-        // data.
+        // state, and -- worse -- lets an old and a new client take different locks over the same data.
+        // 
         // The fallback exists because Identifier was not always stored; a source written by an old
         // enough client has only Data, and the base identity is the value such a client would have
         // put in Identifier.
@@ -196,13 +196,6 @@ namespace AppInstaller::Repository::Microsoft::PreIndexed
 
     std::unique_ptr<IPackageStore> CreateStore(const SourceDetails& details)
     {
-        // There is no fallback between the two mechanisms. A store that has taken a package
-        // cannot hand it to another: Persist consumes the AcquiredPackage, and the move leaves
-        // the caller nothing to retry with. Splitting one index form's packages across two
-        // stores would also leave a delta and a baseline that cannot be opened together.
-        //
-        // Real fallback is more involved than retrying a persist, so it is deliberately absent
-        // rather than approximated here.
         return CanUseDeployedPackage() ? CreateDeployedPackageStore(details) : CreateLocalFilePackageStore(details);
     }
 }

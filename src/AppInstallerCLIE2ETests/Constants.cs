@@ -54,7 +54,7 @@ namespace AppInstallerCLIE2ETests
         // The delta capable test source. It is published separately from the source above so that a
         // client that knows nothing about deltas keeps seeing exactly what it saw before.
         public const string DeltaTestSourceName = @"TestDeltaSource";
-        public const string DeltaTestSourceDirectory = @"deltasource";
+        public const string DeltaTestSourceDirectory = @"deltaSource";
         public const string DeltaTestSourceUrl = @"https://localhost:5001/TestKit/" + DeltaTestSourceDirectory;
         public const string DeltaTestSourceIdentityName = @"WingetE2EDelta.Tests";
         public const string DeltaTestSourceDeltaIdentityName = @"WingetE2EDelta.Tests.Delta";

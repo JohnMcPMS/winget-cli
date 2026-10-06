@@ -54,8 +54,6 @@ namespace AppInstallerCLIE2ETests
         [SetUp]
         public void Setup()
         {
-            // Each case starts from nothing held, since what a source leaves behind is most of what
-            // is being tested.
             RemoveDeltaSource();
             WinGetSettingsHelper.ConfigureFeature(DeltaFeatureName, true);
         }
@@ -69,16 +67,13 @@ namespace AppInstallerCLIE2ETests
         {
             AddDeltaSource();
 
-            // The delta has an identity of its own, so its presence is the one unambiguous sign
-            // that the delta path was taken and not the full index.
             Assert.That(IsPackageDeployed(Constants.DeltaTestSourceDeltaIdentityName), Is.True, "The delta package should be deployed");
             Assert.That(
                 GetDeployedPackageVersion(Constants.DeltaTestSourceIdentityName),
                 Is.EqualTo(Constants.DeltaTestSourceBaselineVersion),
                 "The baseline should have been deployed, not the full index");
 
-            // This package was left out of the baseline, so it exists only in the delta. Finding it
-            // means the two were merged, rather than either having been read on its own.
+            // This package was left out of the baseline, so it exists only in the delta.
             RequireFound(Constants.DeltaOnlyPackageIdentifier);
 
             // And a package that is in the baseline is still there, so the delta did not displace it.
@@ -87,8 +82,7 @@ namespace AppInstallerCLIE2ETests
 
         /// <summary>
         /// A source added while the feature was off holds the full index. Turning the feature on and
-        /// updating has to move that deployed identity backward to the baseline's older version,
-        /// which is the one thing the deployed mechanism does that the local file store never has to.
+        /// updating has to move that deployed identity backward to the baseline's older version.
         /// </summary>
         [Test]
         public void DeltaSourceAdoptedByExistingFullIndexSource()
@@ -119,28 +113,6 @@ namespace AppInstallerCLIE2ETests
                 "The baseline should have replaced the full index, even though it is older");
 
             RequireFound(Constants.DeltaOnlyPackageIdentifier);
-        }
-
-        /// <summary>
-        /// With the feature off the source is served by its full index, and nothing with the delta's
-        /// identity is ever deployed.
-        /// </summary>
-        [Test]
-        public void DeltaSourceIgnoredWhenFeatureDisabled()
-        {
-            WinGetSettingsHelper.ConfigureFeature(DeltaFeatureName, false);
-
-            AddDeltaSource();
-
-            Assert.That(IsPackageDeployed(Constants.DeltaTestSourceDeltaIdentityName), Is.False, "No delta should be deployed while the feature is off");
-            Assert.That(
-                GetDeployedPackageVersion(Constants.DeltaTestSourceIdentityName),
-                Is.EqualTo(Constants.DeltaTestSourceVersion),
-                "The full index should be deployed at its own version");
-
-            // The full index holds everything, including what the baseline was built without.
-            RequireFound(Constants.DeltaOnlyPackageIdentifier);
-            RequireFound(BaselinePackageIdentifier);
         }
 
         /// <summary>

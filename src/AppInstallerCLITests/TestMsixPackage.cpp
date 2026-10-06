@@ -5,13 +5,6 @@
 
 #include <AppInstallerMsixInfo.h>
 
-#include <AppxPackaging.h>
-#include <urlmon.h>
-#include <wrl/client.h>
-
-#include <fstream>
-#include <vector>
-
 #pragma comment(lib, "urlmon.lib")
 
 using namespace Microsoft::WRL;

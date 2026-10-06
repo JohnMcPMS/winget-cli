@@ -13,9 +13,6 @@
 namespace AppInstaller::Repository::Microsoft::PreIndexed
 {
     // What an update did, in the terms that the telemetry event is defined in.
-    //
-    // The form fills this in because the form is what knows which packages moved and why; the
-    // factory keeps the single call site, so that there is one place where an update is reported.
     struct UpdateReport
     {
         std::optional<std::chrono::system_clock::time_point> PreviousIndexPublishedAt;
@@ -29,20 +26,10 @@ namespace AppInstaller::Repository::Microsoft::PreIndexed
         std::optional<uint64_t> DownloadedBytes;
 
         // Whether this update is one that should be reported.
-        //
-        // The two forms differ here, and deliberately so: a full index update has always been
-        // reported whenever it got as far as acquiring, including when it moved no bytes because
-        // the source was local, while a delta update reports only when something was transferred.
         bool Reportable = false;
     };
 
     // What an attempt to update a form concluded.
-    //
-    // A bool cannot express this: the caller has to tell "this form cannot serve the source, try
-    // another" apart from "the operation did not complete", and only the first of those is a
-    // reason to fall back. Failing to take the lock is the case that makes the distinction
-    // necessary -- the delta may well have been usable, and falling back would acquire a full
-    // index that the source did not need.
     enum class UpdateResult
     {
         // The store now holds this form, up to date with the source.
@@ -73,8 +60,7 @@ namespace AppInstaller::Repository::Microsoft::PreIndexed
         // configured before this form existed is not silently migrated onto it.
         //
         // Returns the value that should be written to SourceDetails::Data, or nothing when the
-        // source does not publish the packages that this form needs -- which is an ordinary
-        // answer rather than an error, and is how a source that publishes no delta is recognized.
+        // source does not publish the packages that this form needs.
         virtual std::optional<std::string> DiscoverIdentities(IProgressCallback& progress) = 0;
 
         // The packages that make up this form.

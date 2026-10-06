@@ -13,9 +13,6 @@ namespace AppInstaller::Repository::Microsoft::PreIndexed
     namespace anon
     {
         // A source composed of a single package holding the complete index.
-        //
-        // This is the form that every source has used to date, and the one that every other form
-        // falls back to.
         struct FullIndexForm : public IIndexForm
         {
             FullIndexForm(const SourceDetails& details) : m_details(details)

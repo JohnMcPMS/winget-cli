@@ -24,11 +24,6 @@ namespace AppInstaller::Repository::Microsoft::PreIndexed
     static constexpr std::string_view s_IndexFilePath = "Public\\index.db"sv;
 
     // The packages that a source can hold locally.
-    //
-    // A delta and the baseline it names must both be present at the same time, so each of these
-    // occupies its own slot rather than replacing another. In particular the baseline is kept
-    // apart from the full index even though the two are the same format: falling back to a full
-    // index update must not overwrite the baseline that an already acquired delta is paired with.
     enum class PackageSlot
     {
         // The complete index, as acquired by a client that is not using a delta.
@@ -48,8 +43,7 @@ namespace AppInstaller::Repository::Microsoft::PreIndexed
     //
     // The two fields are the two ways that a store can find a package, and which one it uses is
     // the store's business: the local file store names its own files and so keys on the slot,
-    // while the platform keys deployed packages on their identity. The index form supplies both,
-    // because the form is what knows how the source's packages relate.
+    // while the platform keys deployed packages on their identity.
     struct PackageKey
     {
         PackageSlot Slot = PackageSlot::FullIndex;
@@ -190,12 +184,5 @@ namespace AppInstaller::Repository::Microsoft::PreIndexed
     std::unique_ptr<IPackageStore> CreateLocalFilePackageStore(const SourceDetails& details);
 
     // Whether deployment is available to this process at all.
-    //
-    // An unpackaged process cannot use the deployed mechanism, because the extension catalog it
-    // would be found through is keyed off our own identity.
-    //
-    // Neither can a process in a non-interactive session. Deployment is a per-user operation that
-    // the platform performs against a signed-in session, so it is not reliably available to a
-    // service or a scheduled task running in session 0.
     bool CanUseDeployedPackage();
 }

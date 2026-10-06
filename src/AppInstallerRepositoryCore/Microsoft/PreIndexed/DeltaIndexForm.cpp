@@ -119,9 +119,6 @@ namespace AppInstaller::Repository::Microsoft::PreIndexed
 
                         if (heldBaselineVersion && heldBaselineVersion.value() == Msix::PackageVersion{ locator->PackageVersion })
                         {
-                            // See the baseline acquisition below for why matching versions means
-                            // we are holding the designated baseline rather than merely something
-                            // at the same version.
                             AICLI_LOG(Repo, Verbose, << "Remote delta (" << deltaCheck.AvailableVersion().ToString() <<
                                 ") was not newer than existing (" << currentDeltaVersion.value().ToString() <<
                                 ") and its baseline is held, no update needed");
@@ -192,22 +189,10 @@ namespace AppInstaller::Repository::Microsoft::PreIndexed
 
                 if (currentBaselineVersion && currentBaselineVersion.value() == requiredBaselineVersion)
                 {
-                    // The common case: the baseline changes far less often than the delta, so most
-                    // updates involve no baseline traffic at all.
-                    //
-                    // The version comparison is also a content comparison, and deliberately so. MSIX
-                    // forbids publishing different content under one identity and version, so a
-                    // source that publishes a baseline at this version must publish the full index
-                    // at this version as that same designated baseline. What we hold is therefore
-                    // the baseline whether it was acquired as one or not, and a client that already
-                    // had the full index at a version that later becomes a baseline downloads
-                    // nothing at all.
                     AICLI_LOG(Repo, Verbose, << "Already holding baseline version " << requiredBaselineVersion.ToString());
                 }
                 else
                 {
-                    // Probe for the baseline the same way the full index is probed, so that the
-                    // Arg / AlternateArg fallback applies to it as well.
                     PreIndexedPackageUpdateCheck baselineCheck(GetBaselinePackageLocations(m_details, locator->RelativeSourcePath));
 
                     // The delta told us which version it was computed against; anything else at
@@ -252,10 +237,6 @@ namespace AppInstaller::Repository::Microsoft::PreIndexed
                     THROW_HR(APPINSTALLER_CLI_ERROR_SOURCE_DATA_MISSING);
                 }
 
-                // The delta names the baseline it was computed against, and the baseline carries
-                // the identifier it was designated with. OpenWithBaseline refuses a pair that does
-                // not agree, and does so against the attached baseline rather than a separate read
-                // of the same path, so it is not checked again here.
                 return SQLiteIndex::OpenWithBaseline(
                     delta->Path.u8string(),
                     baseline->Path.u8string(),
