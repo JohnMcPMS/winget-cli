@@ -3,6 +3,7 @@
 #include "pch.h"
 #include "Microsoft/PreIndexed/IndexForm.h"
 #include "Microsoft/PreIndexed/RemotePackage.h"
+#include "Microsoft/PreIndexed/SourceData.h"
 
 #include <AppInstallerDateTime.h>
 #include <AppInstallerDownloader.h>
@@ -19,8 +20,7 @@ namespace AppInstaller::Repository::Microsoft::PreIndexed
         {
             FullIndexForm(const SourceDetails& details) : m_details(details)
             {
-                // Data has only ever held the full index's package family name.
-                m_identity = details.Data;
+                m_identity = SourceData{ details.Data }.BaseIdentity();
             }
 
             std::optional<std::string> DiscoverIdentities(IProgressCallback&) override

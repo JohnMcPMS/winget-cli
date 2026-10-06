@@ -8,6 +8,7 @@
 #include <AppInstallerRuntime.h>
 #include <AppInstallerStrings.h>
 #include <Microsoft/PreIndexedPackageSourceFactory.h>
+#include <Microsoft/PreIndexed/SourceData.h>
 #include <winget/Settings.h>
 
 using namespace std::string_literals;
@@ -225,4 +226,76 @@ TEST_CASE("PIPS_Remove", "[pips]")
     {
         UninstallCertFromSignedPackage(index);
     }
+}
+
+using namespace AppInstaller::Repository::Microsoft::PreIndexed;
+
+TEST_CASE("PreIndexedSourceData_BareIdentity", "[pips][sourcedata]")
+{
+    SourceData data{ "Microsoft.Winget.Source_8wekyb3d8bbwe"sv };
+
+    REQUIRE(data.BaseIdentity() == "Microsoft.Winget.Source_8wekyb3d8bbwe");
+    REQUIRE(!data.HasDeltaIdentity());
+
+    // A source with no delta round trips to exactly what it was read from, so that the stored
+    // value does not churn for sources that are not delta capable.
+    REQUIRE(data.Serialize() == "Microsoft.Winget.Source_8wekyb3d8bbwe");
+}
+
+TEST_CASE("PreIndexedSourceData_Empty", "[pips][sourcedata]")
+{
+    SourceData data{ ""sv };
+
+    REQUIRE(!data.HasBaseIdentity());
+    REQUIRE(!data.HasDeltaIdentity());
+    REQUIRE(data.Serialize().empty());
+}
+
+TEST_CASE("PreIndexedSourceData_RoundTrip", "[pips][sourcedata]")
+{
+    SourceData original;
+    original.BaseIdentity("Base_8wekyb3d8bbwe");
+    original.DeltaIdentity("Delta_8wekyb3d8bbwe");
+
+    std::string serialized = original.Serialize();
+    INFO(serialized);
+
+    SourceData parsed{ serialized };
+
+    REQUIRE(parsed.BaseIdentity() == "Base_8wekyb3d8bbwe");
+    REQUIRE(parsed.DeltaIdentity() == "Delta_8wekyb3d8bbwe");
+    REQUIRE(parsed.Serialize() == serialized);
+}
+
+TEST_CASE("PreIndexedSourceData_UnknownMembersIgnored", "[pips][sourcedata]")
+{
+    // A newer client may add to this value; an older one must still be able to use the source.
+    SourceData data{ R"({"baseIdentity":"Base_8wekyb3d8bbwe","somethingNew":42})"sv };
+
+    REQUIRE(data.BaseIdentity() == "Base_8wekyb3d8bbwe");
+    REQUIRE(!data.HasDeltaIdentity());
+}
+
+TEST_CASE("PreIndexedSourceData_Malformed", "[pips][sourcedata]")
+{
+    // A value that is structured but unreadable is an error, not a package family name.
+    std::string truncated = R"({"baseIdentity":)";
+    std::string noBase = R"({"deltaIdentity":"Delta_8wekyb3d8bbwe"})";
+    std::string wrongType = R"({"baseIdentity":42})";
+
+    REQUIRE_THROWS(SourceData{ truncated });
+    REQUIRE_THROWS(SourceData{ noBase });
+    REQUIRE_THROWS(SourceData{ wrongType });
+}
+
+TEST_CASE("PreIndexedSourceData_WellKnownWinGetSourceNamesADelta", "[pips][sourcedata]")
+{
+    SourceData data{ GetWellKnownSourceDetails(WellKnownSource::WinGet).Data };
+
+    REQUIRE(data.BaseIdentity() == "Microsoft.Winget.Source_8wekyb3d8bbwe");
+    REQUIRE(data.HasDeltaIdentity());
+
+    // The source's own identity has to stay the one it has always been known by, since the local
+    // state directory and the cross process lock are derived from it.
+    REQUIRE(GetWellKnownSourceDetails(WellKnownSource::WinGet).Identifier == data.BaseIdentity());
 }

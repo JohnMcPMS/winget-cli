@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 #include "pch.h"
 #include "Microsoft/PreIndexed/PackageStore.h"
+#include "Microsoft/PreIndexed/SourceData.h"
 #include "Microsoft/PreIndexedPackageSourceFactory.h"
 
 #include <AppInstallerDownloader.h>
@@ -75,7 +76,10 @@ namespace AppInstaller::Repository::Microsoft::PreIndexed
         // which is why it must be stable: changing either one orphans an existing source's local
         // state, and -- worse -- lets an old and a new client take different locks over the same
         // data.
-        m_sourceIdentity = details.Identifier.empty() ? details.Data : details.Identifier;
+        // The fallback exists because Identifier was not always stored; a source written by an old
+        // enough client has only Data, and the base identity is the value such a client would have
+        // put in Identifier.
+        m_sourceIdentity = details.Identifier.empty() ? SourceData{ details.Data }.BaseIdentity() : details.Identifier;
         THROW_HR_IF(E_UNEXPECTED, m_sourceIdentity.empty());
     }
 

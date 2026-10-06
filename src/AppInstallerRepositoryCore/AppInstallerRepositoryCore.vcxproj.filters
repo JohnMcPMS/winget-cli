@@ -192,6 +192,9 @@
     <ClInclude Include="Microsoft\PreIndexed\RemotePackage.h">
       <Filter>Microsoft\PreIndexed</Filter>
     </ClInclude>
+    <ClInclude Include="Microsoft\PreIndexed\SourceData.h">
+      <Filter>Microsoft\PreIndexed</Filter>
+    </ClInclude>
     <ClInclude Include="Microsoft\PreIndexedPackageSourceFactory.h">
       <Filter>Microsoft</Filter>
     </ClInclude>
@@ -588,6 +591,9 @@
       <Filter>Microsoft\PreIndexed</Filter>
     </ClCompile>
     <ClCompile Include="Microsoft\PreIndexed\RemotePackage.cpp">
+      <Filter>Microsoft\PreIndexed</Filter>
+    </ClCompile>
+    <ClCompile Include="Microsoft\PreIndexed\SourceData.cpp">
       <Filter>Microsoft\PreIndexed</Filter>
     </ClCompile>
     <ClCompile Include="Microsoft\PreIndexedPackageSourceFactory.cpp">

@@ -68,6 +68,10 @@ namespace AppInstaller::Repository::Microsoft::PreIndexed
         // Determines the identities of this form's packages, probing the source where the details
         // do not already record them.
         //
+        // Probing is confined to the add path: it is the only operation that can persist what it
+        // learns. A form whose details are already populated reports what they say, so a source
+        // configured before this form existed is not silently migrated onto it.
+        //
         // Returns the value that should be written to SourceDetails::Data, or nothing when the
         // source does not publish the packages that this form needs -- which is an ordinary
         // answer rather than an error, and is how a source that publishes no delta is recognized.

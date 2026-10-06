@@ -4,6 +4,7 @@
 #include "Microsoft/PreIndexedPackageSourceFactory.h"
 #include "Microsoft/PreIndexed/IndexForm.h"
 #include "Microsoft/PreIndexed/PackageStore.h"
+#include "Microsoft/PreIndexed/SourceData.h"
 #include "Microsoft/SQLiteIndexSource.h"
 #include "SourceUpdateChecks.h"
 
@@ -77,7 +78,7 @@ namespace AppInstaller::Repository::Microsoft
                 {
                     // We didn't use to store the source identifier, so we compute it here in case
                     // it's missing from the details.
-                    m_details.Identifier = m_details.Data;
+                    m_details.Identifier = SourceData{ m_details.Data }.BaseIdentity();
                 }
             }
 
@@ -327,8 +328,11 @@ namespace AppInstaller::Repository::Microsoft
             static void WriteDiscoveredIdentities(SourceDetails& details, const std::string& data)
             {
                 details.Data = data;
-                // TODO: Perform proper identifier extraction once delta Data model is worked out
-                details.Identifier = data;
+
+                // The source's own identity is the one it has always been known by, not the
+                // delta's; it has to stay stable across a source becoming delta capable, since
+                // the local state directory and the cross process lock are derived from it.
+                details.Identifier = SourceData{ data }.BaseIdentity();
             }
 
             bool UpdateBase(const SourceDetails& details, bool isBackground, IProgressCallback& progress)
@@ -346,10 +350,10 @@ namespace AppInstaller::Repository::Microsoft
                     {
                         auto form = CreateDeltaIndexForm(details);
 
-                        // Updating is a forward looking question, so the source is probed for a
-                        // delta even when the details do not record one -- which they cannot yet,
-                        // since an update has no way to write Data back.
-                        if (form->DiscoverIdentities(progress))
+                        // An update never probes for a delta: the details say whether the source
+                        // has one. A source configured with only a base identity names no delta
+                        // and uses the full index, which is what it did before deltas existed.
+                        if (form->HasIdentities())
                         {
                             result = form->Update(*store, isBackground, progress, report);
                         }

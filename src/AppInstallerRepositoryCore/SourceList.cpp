@@ -4,6 +4,7 @@
 #include "SourceList.h"
 #include "SourcePolicy.h"
 #include "Microsoft/PreIndexedPackageSourceFactory.h"
+#include "Microsoft/PreIndexed/SourceData.h"
 #include "Rest/RestSourceFactory.h"
 
 #include <winget/AdminSettings.h>
@@ -38,8 +39,18 @@ namespace AppInstaller::Repository
 
         constexpr std::string_view s_Source_WingetCommunityDefault_Name = "winget"sv;
         constexpr std::string_view s_Source_WingetCommunityDefault_Arg = "https://cdn.winget.microsoft.com/cache"sv;
-        constexpr std::string_view s_Source_WingetCommunityDefault_Data = "Microsoft.Winget.Source_8wekyb3d8bbwe"sv;
+        constexpr std::string_view s_Source_WingetCommunityDefault_MainIdentity = "Microsoft.Winget.Source_8wekyb3d8bbwe"sv;
+        constexpr std::string_view s_Source_WingetCommunityDefault_DeltaIdentity = "Microsoft.Winget.Source.Delta_8wekyb3d8bbwe"sv;
         constexpr std::string_view s_Source_WingetCommunityDefault_Identifier = "Microsoft.Winget.Source_8wekyb3d8bbwe"sv;
+
+        // The Data of the built in winget source, which names its delta as well as its base.
+        std::string GetWingetCommunityDefaultData()
+        {
+            Microsoft::PreIndexed::SourceData data;
+            data.BaseIdentity(std::string{ s_Source_WingetCommunityDefault_MainIdentity });
+            data.DeltaIdentity(std::string{ s_Source_WingetCommunityDefault_DeltaIdentity });
+            return data.Serialize();
+        }
 
         constexpr std::string_view s_Source_MSStoreDefault_Name = "msstore"sv;
         constexpr std::string_view s_Source_MSStoreDefault_Arg = "https://storeedgefd.dsx.mp.microsoft.com/v9.0"sv;
@@ -348,7 +359,7 @@ namespace AppInstaller::Repository
             details.Name = s_Source_WingetCommunityDefault_Name;
             details.Type = Microsoft::PreIndexedPackageSourceFactory::Type();
             details.Arg = s_Source_WingetCommunityDefault_Arg;
-            details.Data = s_Source_WingetCommunityDefault_Data;
+            details.Data = GetWingetCommunityDefaultData();
             details.Identifier = s_Source_WingetCommunityDefault_Identifier;
             details.TrustLevel = SourceTrustLevel::Trusted | SourceTrustLevel::StoreOrigin;
             return details;

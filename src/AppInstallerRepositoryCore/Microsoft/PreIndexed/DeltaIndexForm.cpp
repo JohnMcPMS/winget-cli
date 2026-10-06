@@ -3,6 +3,7 @@
 #include "pch.h"
 #include "Microsoft/PreIndexed/IndexForm.h"
 #include "Microsoft/PreIndexed/RemotePackage.h"
+#include "Microsoft/PreIndexed/SourceData.h"
 
 #include <AppInstallerDateTime.h>
 #include <AppInstallerDownloader.h>
@@ -16,43 +17,28 @@ namespace AppInstaller::Repository::Microsoft::PreIndexed
         {
             DeltaIndexForm(const SourceDetails& details) : m_details(details)
             {
-                // TODO: Delta acquisition needs a richer SourceDetails::Data syntax, and a
-                //       migration to it. This is the one place that reads Data's syntax, and the
-                //       one place that will have to learn the new one.
-                //
-                //       Data holds exactly one package family name. That was sufficient while a
-                //       source had one package; it is not now. The delta is published under its
-                //       own identity while the baseline keeps the identity that the full index has
-                //       always used, so a delta capable source has two identities to name and Data
-                //       can carry only one of them.
-                //
-                //       The ordering is what makes this awkward. The delta is the package that
-                //       names its baseline, so it must be acquired and opened first -- which means
-                //       the delta's identity is the one needed before any network access, and it
-                //       is precisely the one that Data does not carry.
-                //
-                //       Three things have to be settled before this can be relied upon:
-                //
-                //         1. A syntax for Data that carries both identities and can be
-                //            distinguished from the bare family name that every client written to
-                //            date has stored.
-                //         2. A migration for sources already configured with the old syntax. Our
-                //            own sources can be special cased, since we publish them and know both
-                //            identities, but a third party pre-indexed source cannot be.
-                //         3. A way to persist the new value. Add is the only operation that writes
-                //            Data today: ISourceFactory::Update takes a const SourceDetails&, and
-                //            the update path writes only the metadata fields back afterwards, so a
-                //            value learned during an update is discarded.
-                //
-                //       Until then only the baseline's identity is recovered from the details, and
-                //       the delta's is rediscovered on every operation.
-                m_baselineIdentity = details.Data;
+                SourceData data{ details.Data };
+                m_baselineIdentity = data.BaseIdentity();
+                m_deltaIdentity = data.DeltaIdentity();
             }
 
             std::optional<std::string> DiscoverIdentities(IProgressCallback& progress) override
             {
                 if (m_deltaIdentity.empty())
                 {
+                    if (!m_baselineIdentity.empty())
+                    {
+                        // The source is already configured, and what it is configured with names
+                        // no delta. Probing here would be a migration, which is deliberately not
+                        // performed: the identity a probe found could not be written back anyway,
+                        // since an update is given a const SourceDetails and only the metadata
+                        // fields are persisted afterwards. A third party source that starts
+                        // publishing a delta can be re-added.
+                        return std::nullopt;
+                    }
+
+                    // Nothing is known about this source yet, so it is being added. That is the
+                    // one operation that can both probe for a delta and store what it finds.
                     std::optional<std::string> deltaIdentity = ProbeDeltaIdentity(progress);
 
                     if (!deltaIdentity)
@@ -64,20 +50,17 @@ namespace AppInstaller::Repository::Microsoft::PreIndexed
 
                     m_deltaIdentity = deltaIdentity.value();
 
-                    if (m_baselineIdentity.empty())
-                    {
-                        // A baseline is a full index that has been designated as one, published under
-                        // the identity that the source has always used, so discovering the full index
-                        // discovers the baseline.
-                        PreIndexedPackageInfo packageInfo(GetFullIndexPackageLocations(m_details), [](const std::string& packageLocation)
-                            {
-                                THROW_HR_IF(APPINSTALLER_CLI_ERROR_SOURCE_NOT_SECURE, Utility::IsUrlRemote(packageLocation) && !Utility::IsUrlSecure(packageLocation));
-                            });
+                    // A baseline is a full index that has been designated as one, published under
+                    // the identity that the source has always used, so discovering the full index
+                    // discovers the baseline.
+                    PreIndexedPackageInfo packageInfo(GetFullIndexPackageLocations(m_details), [](const std::string& packageLocation)
+                        {
+                            THROW_HR_IF(APPINSTALLER_CLI_ERROR_SOURCE_NOT_SECURE, Utility::IsUrlRemote(packageLocation) && !Utility::IsUrlSecure(packageLocation));
+                        });
 
-                        THROW_HR_IF(APPINSTALLER_CLI_ERROR_PACKAGE_IS_BUNDLE, packageInfo.MsixInfo().GetIsBundle());
+                    THROW_HR_IF(APPINSTALLER_CLI_ERROR_PACKAGE_IS_BUNDLE, packageInfo.MsixInfo().GetIsBundle());
 
-                        m_baselineIdentity = Msix::GetPackageFamilyNameFromFullName(packageInfo.MsixInfo().GetPackageFullName());
-                    }
+                    m_baselineIdentity = Msix::GetPackageFamilyNameFromFullName(packageInfo.MsixInfo().GetPackageFullName());
                 }
 
                 return SerializeIdentities();
@@ -283,11 +266,12 @@ namespace AppInstaller::Repository::Microsoft::PreIndexed
                 return PackageKey{ PackageSlot::Baseline, m_baselineIdentity };
             }
 
-            // See the TODO in the constructor; until the syntax is settled this can only report
-            // what the details already carried.
             std::string SerializeIdentities() const
             {
-                return m_baselineIdentity;
+                SourceData data;
+                data.BaseIdentity(m_baselineIdentity);
+                data.DeltaIdentity(m_deltaIdentity);
+                return data.Serialize();
             }
 
             // Learns the delta's identity by reading the published package.
