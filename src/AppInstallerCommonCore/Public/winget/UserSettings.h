@@ -102,7 +102,7 @@ namespace AppInstaller::Settings
         EFDirectMSI,
         EFResume,
         EFFonts,
-        EFSourcePriority,
+        EFInteractivePackageSelection,
         EFDeltaIndex,
         // Telemetry
         TelemetryDisable,
@@ -196,7 +196,7 @@ namespace AppInstaller::Settings
         SETTINGMAPPING_SPECIALIZATION(Setting::EFDirectMSI, bool, bool, false, ".experimentalFeatures.directMSI"sv);
         SETTINGMAPPING_SPECIALIZATION(Setting::EFResume, bool, bool, false, ".experimentalFeatures.resume"sv);
         SETTINGMAPPING_SPECIALIZATION(Setting::EFFonts, bool, bool, false, ".experimentalFeatures.fonts"sv);
-        SETTINGMAPPING_SPECIALIZATION(Setting::EFSourcePriority, bool, bool, false, ".experimentalFeatures.sourcePriority"sv);
+        SETTINGMAPPING_SPECIALIZATION(Setting::EFInteractivePackageSelection, bool, bool, false, ".experimentalFeatures.interactivePackageSelection"sv);
         SETTINGMAPPING_SPECIALIZATION(Setting::EFDeltaIndex, bool, bool, false, ".experimentalFeatures.deltaIndex"sv);
         // Telemetry
         SETTINGMAPPING_SPECIALIZATION(Setting::TelemetryDisable, bool, bool, false, ".telemetry.disable"sv);

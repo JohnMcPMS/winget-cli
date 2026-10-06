@@ -25,7 +25,7 @@ namespace AppInstaller::Settings
             DirectMSI = 0x1,
             Resume = 0x2,
             Font = 0x4,
-            SourcePriority = 0x8,
+            InteractivePackageSelection = 0x8,
             DeltaIndex = 0x10,
             Max, // This MUST always be after all experimental features
 
