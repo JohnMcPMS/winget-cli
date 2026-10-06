@@ -168,6 +168,12 @@ namespace AppInstaller::Repository::Microsoft::PreIndexed
         // Whether a package may be deployed without being explicitly trusted.
         bool IsTrusted() const;
 
+        // Whether a source package is trusted enough to be used.
+        //
+        // Every store validates the same way, and this is the single point at which it happens, so
+        // that no mechanism can diverge on what it accepts.
+        bool ValidateTrust(const Msix::WriteLockedMsixFile& package) const;
+
         std::string m_sourceName;
 
         // The identity of the source itself, which every store derives its storage location from.

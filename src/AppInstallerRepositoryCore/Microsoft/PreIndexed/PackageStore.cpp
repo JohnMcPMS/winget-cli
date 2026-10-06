@@ -93,6 +93,31 @@ namespace AppInstaller::Repository::Microsoft::PreIndexed
         return WI_IsFlagSet(m_trustLevel, SourceTrustLevel::Trusted);
     }
 
+#ifndef AICLI_DISABLE_TEST_HOOKS
+    static bool* s_SourcePackageTrustValidation_TestHook_Override = nullptr;
+
+    void TestHook_SetSourcePackageTrustValidation_Override(bool* result)
+    {
+        s_SourcePackageTrustValidation_TestHook_Override = result;
+    }
+#endif
+
+    bool PackageStoreBase::ValidateTrust(const Msix::WriteLockedMsixFile& package) const
+    {
+#ifndef AICLI_DISABLE_TEST_HOOKS
+        // Source packages must be signed, which makes every store path untestable without
+        // installing a certificate. Overriding the answer here lets the stores be driven against
+        // packages built on the fly, so that the tests can choose the identities and versions that
+        // the delta pairing logic turns on.
+        if (s_SourcePackageTrustValidation_TestHook_Override)
+        {
+            return *s_SourcePackageTrustValidation_TestHook_Override;
+        }
+#endif
+
+        return package.ValidateTrustInfo(RequireStoreOrigin());
+    }
+
     std::optional<AcquiredPackage> PackageStoreBase::Acquire(const PackageKey& package, const std::string& location, IProgressCallback& progress)
     {
         AcquiredPackage result;
@@ -136,7 +161,7 @@ namespace AppInstaller::Repository::Microsoft::PreIndexed
         // A package whose identity is not the one that was asked for is an integrity failure.
         THROW_HR_IF(APPINSTALLER_CLI_ERROR_SOURCE_DATA_INTEGRITY_FAILURE, package.Identity != packageFamilyName);
 
-        if (!fileLock.ValidateTrustInfo(RequireStoreOrigin()))
+        if (!ValidateTrust(fileLock))
         {
             AICLI_LOG(Repo, Error, << "Source update failed. Source package failed trust validation.");
             THROW_HR(APPINSTALLER_CLI_ERROR_SOURCE_DATA_INTEGRITY_FAILURE);

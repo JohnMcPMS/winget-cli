@@ -55,6 +55,11 @@ namespace AppInstaller
         void TestHook_SetGetFontRegistryRootFunc(GetFontRegistryRootFunc value);
     }
 
+    namespace Repository::Microsoft::PreIndexed
+    {
+        void TestHook_SetSourcePackageTrustValidation_Override(bool* result);
+    }
+
     namespace Logging
     {
         void TestHook_SetTelemetryOverride(std::shared_ptr<TelemetryTraceLogger> ttl);
@@ -149,6 +154,24 @@ namespace TestHook
         ~SetScanArchiveResult_Override()
         {
             AppInstaller::Archive::TestHook_SetScanArchiveResult_Override(nullptr);
+        }
+
+    private:
+        bool m_status;
+    };
+
+    // Makes every source package validate as trusted, so that the pre-indexed stores can be driven
+    // against packages built by the test rather than against signed test data.
+    struct SetSourcePackageTrustValidation_Override
+    {
+        SetSourcePackageTrustValidation_Override(bool status = true) : m_status(status)
+        {
+            AppInstaller::Repository::Microsoft::PreIndexed::TestHook_SetSourcePackageTrustValidation_Override(&m_status);
+        }
+
+        ~SetSourcePackageTrustValidation_Override()
+        {
+            AppInstaller::Repository::Microsoft::PreIndexed::TestHook_SetSourcePackageTrustValidation_Override(nullptr);
         }
 
     private:

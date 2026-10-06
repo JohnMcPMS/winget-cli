@@ -93,7 +93,7 @@ namespace AppInstaller::Repository::Microsoft::PreIndexed
                 {
                     // If we already have a trusted index package, use it to determine if we need to update or not.
                     Msix::WriteLockedMsixFile indexPackage{ packagePath };
-                    if (indexPackage.ValidateTrustInfo(RequireStoreOrigin()))
+                    if (ValidateTrust(indexPackage))
                     {
                         Msix::MsixInfo msixInfo{ packagePath };
                         auto manifest = msixInfo.GetAppPackageManifests();
@@ -122,7 +122,7 @@ namespace AppInstaller::Repository::Microsoft::PreIndexed
                 Msix::WriteLockedMsixFile indexPackage{ packagePath };
 
                 // Validate index package trust info.
-                THROW_HR_IF(APPINSTALLER_CLI_ERROR_SOURCE_DATA_INTEGRITY_FAILURE, !indexPackage.ValidateTrustInfo(RequireStoreOrigin()));
+                THROW_HR_IF(APPINSTALLER_CLI_ERROR_SOURCE_DATA_INTEGRITY_FAILURE, !ValidateTrust(indexPackage));
 
                 // Create a temp lock exclusive index file.
                 auto tempIndexFilePath = Runtime::GetNewTempFilePath();
