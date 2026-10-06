@@ -25,24 +25,35 @@ namespace AppInstaller::Repository::Microsoft
             return Settings::ExperimentalFeature::IsEnabled(Settings::ExperimentalFeature::Feature::DeltaIndex);
         }
 
-        // Selects the form to use when opening a source.
+        // Selects the forms to try when opening a source, in preference order.
         //
         // This is a backward looking question -- whichever form the source actually holds is the
         // one that can be opened -- so it never probes the remote source and never considers a
         // form whose packages the details do not already name.
-        std::unique_ptr<IIndexForm> SelectFormForOpen(const SourceDetails& details, const IPackageStore& store)
+        //
+        // More than one can be returned because the delta is an optimization and never a
+        // correctness dependency, so a pair that will not open falls back to the full index rather
+        // than failing the source. That is reachable in practice: with the deployed mechanism the
+        // baseline and the full index share an identity, so a full index acquired while the
+        // feature was off occupies the baseline's slot, and the delta that is still held cannot be
+        // paired with it.
+        std::vector<std::unique_ptr<IIndexForm>> SelectFormsForOpen(const SourceDetails& details, const IPackageStore& store)
         {
+            std::vector<std::unique_ptr<IIndexForm>> result;
+
             if (IsDeltaIndexEnabled())
             {
                 auto deltaForm = CreateDeltaIndexForm(details);
 
                 if (deltaForm->HasIdentities() && deltaForm->IsHeld(store))
                 {
-                    return deltaForm;
+                    result.emplace_back(std::move(deltaForm));
                 }
             }
 
-            return CreateFullIndexForm(details);
+            result.emplace_back(CreateFullIndexForm(details));
+
+            return result;
         }
 
         // Measures how long opening a source took, and which path got there.
@@ -56,10 +67,12 @@ namespace AppInstaller::Repository::Microsoft
             {
                 const auto totalMs = std::chrono::duration_cast<std::chrono::milliseconds>(clock::now() - m_start).count();
                 AICLI_LOG(Repo, Info, << "Packaged source open for '" << m_sourceName << "' " << (m_succeeded ? "succeeded" : "failed") <<
-                    " in " << totalMs << " ms [mode=" << (m_usedLockFallback ? "fallbackLocked" : "optimistic") << "]");
+                    " in " << totalMs << " ms [mode=" << (m_usedLockFallback ? "fallbackLocked" : "optimistic") <<
+                    " form=" << (m_usedFormFallback ? "fallbackFullIndex" : "preferred") << "]");
             }
 
             void MarkFallbackLocked() { m_usedLockFallback = true; }
+            void MarkFormFallback() { m_usedFormFallback = true; }
             void MarkSucceeded() { m_succeeded = true; }
 
         private:
@@ -67,6 +80,7 @@ namespace AppInstaller::Repository::Microsoft
             clock::time_point m_start;
             bool m_succeeded = false;
             bool m_usedLockFallback = false;
+            bool m_usedFormFallback = false;
         };
 
         // A reference to a preindexed package source.
@@ -89,8 +103,8 @@ namespace AppInstaller::Repository::Microsoft
             bool ShouldUpdateBeforeOpen(const std::optional<TimeSpan>& requestedUpdateInterval) override
             {
                 auto store = CreateStore(m_details);
-                auto form = SelectFormForOpen(m_details, *store);
-                auto currentVersion = form->GetHeldVersion(*store);
+                auto forms = SelectFormsForOpen(m_details, *store);
+                auto currentVersion = forms.front()->GetHeldVersion(*store);
 
                 // If we can't find a good package, then we have to update to operate
                 if (!currentVersion)
@@ -123,40 +137,41 @@ namespace AppInstaller::Repository::Microsoft
                 SourceOpenTimer openTimer{ m_details.Name };
 
                 auto store = CreateStore(m_details);
-                auto form = SelectFormForOpen(m_details, *store);
+                auto forms = SelectFormsForOpen(m_details, *store);
 
                 std::optional<SQLiteIndex> index;
 
-                if (store->AllowsUnlockedRead())
+                for (size_t i = 0; i < forms.size() && !index; ++i)
                 {
-                    // The optimistic open reads in place, so it is attempted without the lock and
-                    // retried under it only when that fails.
+                    bool isLastForm = (i + 1 == forms.size());
+
+                    if (i != 0)
+                    {
+                        openTimer.MarkFormFallback();
+                    }
+
                     try
                     {
-                        index.emplace(form->Open(*store, progress));
+                        auto opened = OpenForm(*store, *forms[i], progress, openTimer);
+
+                        if (!opened)
+                        {
+                            // The lock could not be taken. That says nothing about the form, so
+                            // there is nothing to be gained by trying another one.
+                            return {};
+                        }
+
+                        index = std::move(opened);
                     }
                     catch (...)
                     {
-                        if (progress.IsCancelledBy(CancelReason::Any))
+                        if (isLastForm || progress.IsCancelledBy(CancelReason::Any))
                         {
                             throw;
                         }
 
-                        LOG_CAUGHT_EXCEPTION_MSG("Optimistic packaged source open failed, retrying under lock for source: %hs", m_details.Name.c_str());
+                        LOG_CAUGHT_EXCEPTION_MSG("Preferred form failed to open, falling back for source: %hs", m_details.Name.c_str());
                     }
-                }
-
-                if (!index)
-                {
-                    openTimer.MarkFallbackLocked();
-
-                    auto lock = store->Lock(progress);
-                    if (!lock)
-                    {
-                        return {};
-                    }
-
-                    index.emplace(form->Open(*store, progress));
                 }
 
                 if (progress.IsCancelledBy(CancelReason::Any))
@@ -170,6 +185,40 @@ namespace AppInstaller::Repository::Microsoft
             }
 
         private:
+            // Opens one form, optimistically where the store allows it.
+            // Nothing when the lock could not be taken.
+            std::optional<SQLiteIndex> OpenForm(IPackageStore& store, IIndexForm& form, IProgressCallback& progress, SourceOpenTimer& openTimer)
+            {
+                if (store.AllowsUnlockedRead())
+                {
+                    // The optimistic open reads in place, so it is attempted without the lock and
+                    // retried under it only when that fails.
+                    try
+                    {
+                        return form.Open(store, progress);
+                    }
+                    catch (...)
+                    {
+                        if (progress.IsCancelledBy(CancelReason::Any))
+                        {
+                            throw;
+                        }
+
+                        LOG_CAUGHT_EXCEPTION_MSG("Optimistic packaged source open failed, retrying under lock for source: %hs", m_details.Name.c_str());
+                    }
+                }
+
+                openTimer.MarkFallbackLocked();
+
+                auto lock = store.Lock(progress);
+                if (!lock)
+                {
+                    return std::nullopt;
+                }
+
+                return form.Open(store, progress);
+            }
+
             SourceDetails m_details;
         };
 
