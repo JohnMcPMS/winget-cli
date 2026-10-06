@@ -117,7 +117,7 @@ namespace AppInstaller::Repository::Microsoft::PreIndexed
                     {
                         auto heldBaselineVersion = store.GetVersion(GetBaselineKey());
 
-                        if (HoldsBaselineNamedBy(store, locator.value(), progress))
+                        if (heldBaselineVersion && heldBaselineVersion.value() == Msix::PackageVersion{ locator->PackageVersion })
                         {
                             AICLI_LOG(Repo, Verbose, << "Remote delta (" << deltaCheck.AvailableVersion().ToString() <<
                                 ") was not newer than existing (" << currentDeltaVersion.value().ToString() <<
@@ -187,7 +187,7 @@ namespace AppInstaller::Repository::Microsoft::PreIndexed
 
                 std::optional<uint64_t> baselineBytes;
 
-                if (HoldsBaselineNamedBy(store, locator.value(), progress))
+                if (currentBaselineVersion && currentBaselineVersion.value() == requiredBaselineVersion)
                 {
                     // The common case: the baseline changes far less often than the delta, so most
                     // updates involve no baseline traffic at all.
@@ -272,66 +272,6 @@ namespace AppInstaller::Repository::Microsoft::PreIndexed
                 data.BaseIdentity(m_baselineIdentity);
                 data.DeltaIdentity(m_deltaIdentity);
                 return data.Serialize();
-            }
-
-            // Whether the store already holds the exact baseline that the delta names.
-            //
-            // Version equality is not sufficient on its own. The baseline is published under the
-            // identity that the full index has always used, so with the deployed mechanism the two
-            // occupy the same slot: a full index acquired while the feature was off sits exactly
-            // where the baseline would. If its version happened to match the one the delta names,
-            // trusting the version alone would skip the acquisition and leave the pair permanently
-            // unopenable -- OpenWithBaseline rejects a baseline that was never designated as one,
-            // and every subsequent update would go on reporting that the right baseline was held.
-            //
-            // The designation identifier is what distinguishes them, so it is what is compared.
-            bool HoldsBaselineNamedBy(IPackageStore& store, const SQLiteIndex::DeltaBaselineLocator& locator, IProgressCallback& progress)
-            {
-                auto heldVersion = store.GetVersion(GetBaselineKey());
-
-                if (!heldVersion || heldVersion.value() != Msix::PackageVersion{ locator.PackageVersion })
-                {
-                    return false;
-                }
-
-                try
-                {
-                    auto extracted = store.GetIndex(GetBaselineKey(), progress);
-
-                    if (!extracted)
-                    {
-                        return false;
-                    }
-
-                    SQLiteIndex baseline = SQLiteIndex::Open(extracted->Path.u8string(), SQLiteIndex::OpenDisposition::Immutable);
-                    std::optional<std::string> identifier = baseline.GetBaselineIdentifier();
-
-                    if (!identifier)
-                    {
-                        AICLI_LOG(Repo, Info, << "Held package for source `" << m_details.Name << "` is not a baseline");
-                        return false;
-                    }
-
-                    if (identifier.value() != locator.Identifier)
-                    {
-                        AICLI_LOG(Repo, Info, << "Held baseline for source `" << m_details.Name << "` is " << identifier.value() <<
-                            ", but the delta names " << locator.Identifier);
-                        return false;
-                    }
-
-                    return true;
-                }
-                catch (...)
-                {
-                    if (progress.IsCancelledBy(CancelReason::Any))
-                    {
-                        throw;
-                    }
-
-                    // Whatever is held could not be read, so it cannot be the baseline we need.
-                    LOG_CAUGHT_EXCEPTION_MSG("Could not read the held baseline for source: %hs", m_details.Name.c_str());
-                    return false;
-                }
             }
 
             // Learns the delta's identity by reading the published package.
