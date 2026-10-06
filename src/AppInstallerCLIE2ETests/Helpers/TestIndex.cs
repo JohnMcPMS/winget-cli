@@ -192,6 +192,19 @@ namespace AppInstallerCLIE2ETests.Helpers
                 {
                     CertFile = testParams.PackageCertificatePath,
                 },
+                Delta = new ()
+                {
+                    RelativeDirectory = Constants.DeltaTestSourceDirectory,
+                    IdentityName = Constants.DeltaTestSourceIdentityName,
+                    DeltaIdentityName = Constants.DeltaTestSourceDeltaIdentityName,
+                    Version = Constants.DeltaTestSourceVersion,
+                    BaselineVersion = Constants.DeltaTestSourceBaselineVersion,
+                    BaselineRelativePath = Constants.DeltaTestSourceBaselineRelativePath,
+                    ManifestsNotInBaseline = new ()
+                    {
+                        Constants.DeltaOnlyManifestFileName,
+                    },
+                },
             };
 
             WinGetLocalSource.CreateLocalSource(e2eSource);
