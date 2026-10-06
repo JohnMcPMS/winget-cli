@@ -457,9 +457,11 @@ namespace TestHook
 
     struct SetSingleExperimentalFeature_Override
     {
-        SetSingleExperimentalFeature_Override(AppInstaller::Settings::ExperimentalFeature::Feature feature)
+        // Forcing a feature off matters as much as forcing it on, so that a test of the behavior
+        // behind a disabled feature does not depend on the settings of the machine running it.
+        SetSingleExperimentalFeature_Override(AppInstaller::Settings::ExperimentalFeature::Feature feature, bool enabled = true)
         {
-            m_overrides[feature] = true;
+            m_overrides[feature] = enabled;
             AppInstaller::Settings::SetExperimentalFeatureOverride(&m_overrides);
         }
 

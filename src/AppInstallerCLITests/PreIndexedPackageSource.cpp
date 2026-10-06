@@ -564,6 +564,9 @@ namespace
 
 TEST_CASE("PIPS_LocalFile_FullIndex", "[pips][local_file]")
 {
+    // Held off explicitly, so that this guards the behavior of a source that is not delta capable
+    // rather than whatever the machine running the test happens to have enabled.
+    TestHook::SetSingleExperimentalFeature_Override deltaDisabled{ ExperimentalFeature::Feature::DeltaIndex, false };
     TestHook::SetSourcePackageTrustValidation_Override trustOverride;
 
     TestPreIndexedSource source{ { MakeIndexFields(s_Package1Id), MakeIndexFields(s_Package2Id) } };
@@ -603,7 +606,7 @@ TEST_CASE("PIPS_LocalFile_FullIndex", "[pips][local_file]")
 
 TEST_CASE("PIPS_LocalFile_Delta_Add", "[pips][local_file][delta]")
 {
-    auto settings = TestUserSettings::EnableExperimentalFeature(ExperimentalFeature::Feature::DeltaIndex);
+    TestHook::SetSingleExperimentalFeature_Override deltaEnabled{ ExperimentalFeature::Feature::DeltaIndex };
     TestHook::SetSourcePackageTrustValidation_Override trustOverride;
 
     TestPreIndexedSource source{ { MakeIndexFields(s_Package1Id), MakeIndexFields(s_Package2Id) } };
@@ -645,7 +648,7 @@ TEST_CASE("PIPS_LocalFile_Delta_Add", "[pips][local_file][delta]")
 
 TEST_CASE("PIPS_LocalFile_Delta_UpdateKeepsBaseline", "[pips][local_file][delta]")
 {
-    auto settings = TestUserSettings::EnableExperimentalFeature(ExperimentalFeature::Feature::DeltaIndex);
+    TestHook::SetSingleExperimentalFeature_Override deltaEnabled{ ExperimentalFeature::Feature::DeltaIndex };
     TestHook::SetSourcePackageTrustValidation_Override trustOverride;
 
     TestPreIndexedSource source{ { MakeIndexFields(s_Package1Id) } };
@@ -679,7 +682,7 @@ TEST_CASE("PIPS_LocalFile_Delta_UpdateKeepsBaseline", "[pips][local_file][delta]
 
 TEST_CASE("PIPS_LocalFile_Delta_FallsBackWhenNoDeltaPublished", "[pips][local_file][delta]")
 {
-    auto settings = TestUserSettings::EnableExperimentalFeature(ExperimentalFeature::Feature::DeltaIndex);
+    TestHook::SetSingleExperimentalFeature_Override deltaEnabled{ ExperimentalFeature::Feature::DeltaIndex };
     TestHook::SetSourcePackageTrustValidation_Override trustOverride;
 
     TestPreIndexedSource source{ { MakeIndexFields(s_Package1Id) } };
@@ -707,7 +710,7 @@ TEST_CASE("PIPS_LocalFile_Delta_FallsBackWhenNoDeltaPublished", "[pips][local_fi
 
 TEST_CASE("PIPS_LocalFile_Delta_FallsBackWhenBaselineVersionDiffers", "[pips][local_file][delta]")
 {
-    auto settings = TestUserSettings::EnableExperimentalFeature(ExperimentalFeature::Feature::DeltaIndex);
+    TestHook::SetSingleExperimentalFeature_Override deltaEnabled{ ExperimentalFeature::Feature::DeltaIndex };
     TestHook::SetSourcePackageTrustValidation_Override trustOverride;
 
     TestPreIndexedSource source{ { MakeIndexFields(s_Package1Id) } };
@@ -740,7 +743,7 @@ TEST_CASE("PIPS_LocalFile_Delta_FallsBackWhenBaselineVersionDiffers", "[pips][lo
 
 TEST_CASE("PIPS_LocalFile_Delta_RemoveClearsEverySlot", "[pips][local_file][delta]")
 {
-    auto settings = TestUserSettings::EnableExperimentalFeature(ExperimentalFeature::Feature::DeltaIndex);
+    TestHook::SetSingleExperimentalFeature_Override deltaEnabled{ ExperimentalFeature::Feature::DeltaIndex };
     TestHook::SetSourcePackageTrustValidation_Override trustOverride;
 
     TestPreIndexedSource source{ { MakeIndexFields(s_Package1Id) } };
