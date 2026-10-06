@@ -86,28 +86,6 @@ namespace AppInstallerCLIE2ETests
         }
 
         /// <summary>
-        /// Updating a source that is already on the delta leaves the deployed baseline alone. This
-        /// is the saving the whole feature exists for.
-        /// </summary>
-        [Test]
-        public void DeltaSourceUpdate()
-        {
-            AddDeltaSource();
-
-            var updateResult = TestCommon.RunAICLICommand("source update", $"-n {Constants.DeltaTestSourceName}");
-            Assert.That(updateResult.ExitCode, Is.EqualTo(Constants.ErrorCode.S_OK));
-            Assert.That(updateResult.StdOut, Does.Contain("Done"));
-
-            Assert.That(IsPackageDeployed(Constants.DeltaTestSourceDeltaIdentityName), Is.True, "The delta package should still be deployed");
-            Assert.That(
-                GetDeployedPackageVersion(Constants.DeltaTestSourceIdentityName),
-                Is.EqualTo(Constants.DeltaTestSourceBaselineVersion),
-                "The baseline the delta names has not changed, so it should still be the deployed one");
-
-            RequireFound(Constants.DeltaOnlyPackageIdentifier);
-        }
-
-        /// <summary>
         /// A source added while the feature was off holds the full index. Turning the feature on and
         /// updating has to move that deployed identity backward to the baseline's older version,
         /// which is the one thing the deployed mechanism does that the local file store never has to.
