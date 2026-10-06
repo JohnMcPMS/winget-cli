@@ -234,16 +234,26 @@ TEST_CASE("PIPS_Remove", "[pips]")
 
 using namespace AppInstaller::Repository::Microsoft::PreIndexed;
 
+namespace
+{
+    // The identity that the built-in source has always been known by.
+    constexpr std::string_view s_WinGetSourceIdentity = "Microsoft.Winget.Source_8wekyb3d8bbwe"sv;
+
+    // Stand in identities for the data format cases, which care only that a value survives.
+    constexpr std::string_view s_BaseIdentity = "Base_8wekyb3d8bbwe"sv;
+    constexpr std::string_view s_DeltaIdentity = "Delta_8wekyb3d8bbwe"sv;
+}
+
 TEST_CASE("PreIndexedSourceData_BareIdentity", "[pips][source_data]")
 {
-    SourceData data{ "Microsoft.Winget.Source_8wekyb3d8bbwe"sv };
+    SourceData data{ s_WinGetSourceIdentity };
 
-    REQUIRE(data.BaseIdentity() == "Microsoft.Winget.Source_8wekyb3d8bbwe");
+    REQUIRE(data.BaseIdentity() == s_WinGetSourceIdentity);
     REQUIRE(!data.HasDeltaIdentity());
 
     // A source with no delta round trips to exactly what it was read from, so that the stored
     // value does not churn for sources that are not delta capable.
-    REQUIRE(data.Serialize() == "Microsoft.Winget.Source_8wekyb3d8bbwe");
+    REQUIRE(data.Serialize() == s_WinGetSourceIdentity);
 }
 
 TEST_CASE("PreIndexedSourceData_Empty", "[pips][source_data]")
@@ -258,25 +268,27 @@ TEST_CASE("PreIndexedSourceData_Empty", "[pips][source_data]")
 TEST_CASE("PreIndexedSourceData_RoundTrip", "[pips][source_data]")
 {
     SourceData original;
-    original.BaseIdentity("Base_8wekyb3d8bbwe");
-    original.DeltaIdentity("Delta_8wekyb3d8bbwe");
+    original.BaseIdentity(std::string{ s_BaseIdentity });
+    original.DeltaIdentity(std::string{ s_DeltaIdentity });
 
     std::string serialized = original.Serialize();
     INFO(serialized);
 
     SourceData parsed{ serialized };
 
-    REQUIRE(parsed.BaseIdentity() == "Base_8wekyb3d8bbwe");
-    REQUIRE(parsed.DeltaIdentity() == "Delta_8wekyb3d8bbwe");
+    REQUIRE(parsed.BaseIdentity() == s_BaseIdentity);
+    REQUIRE(parsed.DeltaIdentity() == s_DeltaIdentity);
     REQUIRE(parsed.Serialize() == serialized);
 }
 
 TEST_CASE("PreIndexedSourceData_UnknownMembersIgnored", "[pips][source_data]")
 {
     // A newer client may add to this value; an older one must still be able to use the source.
-    SourceData data{ R"({"baseIdentity":"Base_8wekyb3d8bbwe","somethingNew":42})"sv };
+    std::string withUnknown = R"({"baseIdentity":")" + std::string{ s_BaseIdentity } + R"(","somethingNew":42})";
 
-    REQUIRE(data.BaseIdentity() == "Base_8wekyb3d8bbwe");
+    SourceData data{ withUnknown };
+
+    REQUIRE(data.BaseIdentity() == s_BaseIdentity);
     REQUIRE(!data.HasDeltaIdentity());
 }
 
@@ -284,7 +296,7 @@ TEST_CASE("PreIndexedSourceData_Malformed", "[pips][source_data]")
 {
     // A value that is structured but unreadable is an error, not a package family name.
     std::string truncated = R"({"baseIdentity":)";
-    std::string noBase = R"({"deltaIdentity":"Delta_8wekyb3d8bbwe"})";
+    std::string noBase = R"({"deltaIdentity":")" + std::string{ s_DeltaIdentity } + R"("})";
     std::string wrongType = R"({"baseIdentity":42})";
 
     REQUIRE_THROWS(SourceData{ truncated });
@@ -296,7 +308,7 @@ TEST_CASE("PreIndexedSourceData_WellKnownWinGetSourceNamesDelta", "[pips][source
 {
     SourceData data{ GetWellKnownSourceDetails(WellKnownSource::WinGet).Data };
 
-    REQUIRE(data.BaseIdentity() == "Microsoft.Winget.Source_8wekyb3d8bbwe");
+    REQUIRE(data.BaseIdentity() == s_WinGetSourceIdentity);
     REQUIRE(data.HasDeltaIdentity());
 
     // The source's own identity has to stay the one it has always been known by, since the local
@@ -316,17 +328,32 @@ namespace
 
     // Where the source publishes its baseline, and the version it publishes there. The delta
     // records both, and the client checks the second before downloading anything.
-    constexpr std::string_view s_BaselineRelativePath = "baselines/1.2.3.4/baseline.msix"sv;
+    constexpr std::string_view s_BaselineRelativePath = "baselines/current/baseline.msix"sv;
     constexpr std::string_view s_BaselineVersion = "1.2.3.4"sv;
 
     constexpr std::string_view s_DeltaMsixName = "delta.msix"sv;
     constexpr std::string_view s_BaselineMsixName = "baseline.msix"sv;
 
-    IndexFields MakeIndexFields(const std::string& id, std::string name)
+    // The versions that the source publishes its full index and delta at, in the order that the
+    // cases publish them.
+    constexpr std::string_view s_FirstVersion = "1.0.0.0"sv;
+    constexpr std::string_view s_SecondVersion = "2.0.0.0"sv;
+    constexpr std::string_view s_ThirdVersion = "3.0.0.0"sv;
+
+    // A baseline version that no delta names, used to stand in for a baseline that has moved on.
+    constexpr std::string_view s_UnexpectedBaselineVersion = "9.9.9.9"sv;
+
+    // The packages that the cases publish. Each identifier is written into an index and then read
+    // back out of the source, so it is named rather than repeated at both ends.
+    const std::string s_Package1Id = "Publisher1.Id";
+    const std::string s_Package2Id = "Publisher2.Id";
+    const std::string s_Package3Id = "Publisher3.Id";
+
+    IndexFields MakeIndexFields(const std::string& id)
     {
         return IndexFields{
             id,
-            std::move(name),
+            id + " Name",
             "moniker"s,
             "1.0"s,
             ""s,
@@ -442,7 +469,10 @@ namespace
 
         // Prepares a copy of the working index and publishes it as the source's full index,
         // optionally publishing the delta that preparing produces alongside it.
-        void Publish(std::string_view fullVersion, std::optional<std::string_view> deltaVersion = {})
+        //
+        // The delta is published at the same version as the full index, since the two describe the
+        // same contents. Nothing in the client requires that, but there is no reason to differ.
+        void Publish(std::string_view version, bool publishDelta = false)
         {
             TempFile prepared{ "pips_prepared"s, ".db"s };
             TempFile delta{ "pips_delta"s, ".db"s };
@@ -452,7 +482,7 @@ namespace
             {
                 SQLiteIndex index = SQLiteIndex::Open(prepared.GetPath().u8string(), SQLiteStorageBase::OpenDisposition::ReadWrite);
 
-                if (deltaVersion)
+                if (publishDelta)
                 {
                     index.SetProperty(SQLiteIndex::Property::DeltaBaselineIndexPath, BaselineFile.GetPath().u8string());
                     index.SetProperty(SQLiteIndex::Property::DeltaOutputPath, delta.GetPath().u8string());
@@ -463,11 +493,11 @@ namespace
                 index.PrepareForPackaging();
             }
 
-            BaseFamilyName = PublishPackage(prepared.GetPath(), "source2.msix"sv, BaseIdentityName, std::string{ fullVersion });
+            BaseFamilyName = PublishPackage(prepared.GetPath(), "source2.msix"sv, BaseIdentityName, std::string{ version });
 
-            if (deltaVersion)
+            if (publishDelta)
             {
-                DeltaFamilyName = PublishPackage(delta.GetPath(), s_DeltaMsixName, DeltaIdentityName, std::string{ deltaVersion.value() });
+                DeltaFamilyName = PublishPackage(delta.GetPath(), s_DeltaMsixName, DeltaIdentityName, std::string{ version });
             }
         }
 
@@ -532,12 +562,12 @@ namespace
     }
 }
 
-TEST_CASE("PIPS_LocalFile_FullIndex", "[pips][localfile]")
+TEST_CASE("PIPS_LocalFile_FullIndex", "[pips][local_file]")
 {
     TestHook::SetSourcePackageTrustValidation_Override trustOverride;
 
-    TestPreIndexedSource source{ { MakeIndexFields("Publisher1.Id", "Package 1"), MakeIndexFields("Publisher2.Id", "Package 2") } };
-    source.Publish("1.0.0.0"sv);
+    TestPreIndexedSource source{ { MakeIndexFields(s_Package1Id), MakeIndexFields(s_Package2Id) } };
+    source.Publish(s_FirstVersion);
 
     CleanSourcesFor(source.BaseFamilyName);
 
@@ -553,11 +583,11 @@ TEST_CASE("PIPS_LocalFile_FullIndex", "[pips][localfile]")
     REQUIRE(!fs::exists(state / s_DeltaMsixName));
     REQUIRE(!fs::exists(state / s_BaselineMsixName));
 
-    REQUIRE(GetSourcePackageIds(details.Name) == std::set<std::string>{ "Publisher1.Id", "Publisher2.Id" });
+    REQUIRE(GetSourcePackageIds(details.Name) == std::set<std::string>{ s_Package1Id, s_Package2Id });
 
     // A newer full index is acquired and replaces what is held.
-    source.AddPackage(MakeIndexFields("Publisher3.Id", "Package 3"));
-    source.Publish("2.0.0.0"sv);
+    source.AddPackage(MakeIndexFields(s_Package3Id));
+    source.Publish(s_SecondVersion);
 
     bool progressCalled = false;
     callback.m_OnProgress = [&](uint64_t, uint64_t, ProgressType) { progressCalled = true; };
@@ -565,22 +595,22 @@ TEST_CASE("PIPS_LocalFile_FullIndex", "[pips][localfile]")
     REQUIRE(UpdateSource(details.Name, callback));
     REQUIRE(progressCalled);
 
-    REQUIRE(GetSourcePackageIds(details.Name) == std::set<std::string>{ "Publisher1.Id", "Publisher2.Id", "Publisher3.Id" });
+    REQUIRE(GetSourcePackageIds(details.Name) == std::set<std::string>{ s_Package1Id, s_Package2Id, s_Package3Id });
 
     REQUIRE(RemoveSource(details.Name, callback));
     REQUIRE(!fs::exists(state));
 }
 
-TEST_CASE("PIPS_LocalFile_Delta_Add", "[pips][localfile][delta]")
+TEST_CASE("PIPS_LocalFile_Delta_Add", "[pips][local_file][delta]")
 {
     auto settings = TestUserSettings::EnableExperimentalFeature(ExperimentalFeature::Feature::DeltaIndex);
     TestHook::SetSourcePackageTrustValidation_Override trustOverride;
 
-    TestPreIndexedSource source{ { MakeIndexFields("Publisher1.Id", "Package 1"), MakeIndexFields("Publisher2.Id", "Package 2") } };
+    TestPreIndexedSource source{ { MakeIndexFields(s_Package1Id), MakeIndexFields(s_Package2Id) } };
     source.PublishBaseline();
 
-    source.AddPackage(MakeIndexFields("Publisher3.Id", "Package 3"));
-    source.Publish("2.0.0.0"sv, "2.0.0.0"sv);
+    source.AddPackage(MakeIndexFields(s_Package3Id));
+    source.Publish(s_SecondVersion, true);
 
     CleanSourcesFor(source.BaseFamilyName);
 
@@ -610,19 +640,19 @@ TEST_CASE("PIPS_LocalFile_Delta_Add", "[pips][localfile][delta]")
 
     // The package added after the baseline was captured is only in the delta, so finding it proves
     // that the two were merged rather than that either was read on its own.
-    REQUIRE(GetSourcePackageIds(details.Name) == std::set<std::string>{ "Publisher1.Id", "Publisher2.Id", "Publisher3.Id" });
+    REQUIRE(GetSourcePackageIds(details.Name) == std::set<std::string>{ s_Package1Id, s_Package2Id, s_Package3Id });
 }
 
-TEST_CASE("PIPS_LocalFile_Delta_UpdateKeepsBaseline", "[pips][localfile][delta]")
+TEST_CASE("PIPS_LocalFile_Delta_UpdateKeepsBaseline", "[pips][local_file][delta]")
 {
     auto settings = TestUserSettings::EnableExperimentalFeature(ExperimentalFeature::Feature::DeltaIndex);
     TestHook::SetSourcePackageTrustValidation_Override trustOverride;
 
-    TestPreIndexedSource source{ { MakeIndexFields("Publisher1.Id", "Package 1") } };
+    TestPreIndexedSource source{ { MakeIndexFields(s_Package1Id) } };
     source.PublishBaseline();
 
-    source.AddPackage(MakeIndexFields("Publisher2.Id", "Package 2"));
-    source.Publish("2.0.0.0"sv, "2.0.0.0"sv);
+    source.AddPackage(MakeIndexFields(s_Package2Id));
+    source.Publish(s_SecondVersion, true);
 
     CleanSourcesFor(source.BaseFamilyName);
 
@@ -637,23 +667,23 @@ TEST_CASE("PIPS_LocalFile_Delta_UpdateKeepsBaseline", "[pips][localfile][delta]"
 
     // A newer delta against the same baseline. This is the common case, and the saving it buys is
     // that no baseline traffic occurs at all.
-    source.AddPackage(MakeIndexFields("Publisher3.Id", "Package 3"));
-    source.Publish("3.0.0.0"sv, "3.0.0.0"sv);
+    source.AddPackage(MakeIndexFields(s_Package3Id));
+    source.Publish(s_ThirdVersion, true);
 
     REQUIRE(UpdateSource(details.Name, callback));
 
     REQUIRE(fs::last_write_time(baselinePackage) == baselineWriteTime);
 
-    REQUIRE(GetSourcePackageIds(details.Name) == std::set<std::string>{ "Publisher1.Id", "Publisher2.Id", "Publisher3.Id" });
+    REQUIRE(GetSourcePackageIds(details.Name) == std::set<std::string>{ s_Package1Id, s_Package2Id, s_Package3Id });
 }
 
-TEST_CASE("PIPS_LocalFile_Delta_FallsBackWhenNoDeltaPublished", "[pips][localfile][delta]")
+TEST_CASE("PIPS_LocalFile_Delta_FallsBackWhenNoDeltaPublished", "[pips][local_file][delta]")
 {
     auto settings = TestUserSettings::EnableExperimentalFeature(ExperimentalFeature::Feature::DeltaIndex);
     TestHook::SetSourcePackageTrustValidation_Override trustOverride;
 
-    TestPreIndexedSource source{ { MakeIndexFields("Publisher1.Id", "Package 1") } };
-    source.Publish("1.0.0.0"sv);
+    TestPreIndexedSource source{ { MakeIndexFields(s_Package1Id) } };
+    source.Publish(s_FirstVersion);
 
     CleanSourcesFor(source.BaseFamilyName);
 
@@ -672,23 +702,23 @@ TEST_CASE("PIPS_LocalFile_Delta_FallsBackWhenNoDeltaPublished", "[pips][localfil
     REQUIRE(fs::exists(state / s_IndexMsixName));
     REQUIRE(!fs::exists(state / s_DeltaMsixName));
 
-    REQUIRE(GetSourcePackageIds(details.Name) == std::set<std::string>{ "Publisher1.Id" });
+    REQUIRE(GetSourcePackageIds(details.Name) == std::set<std::string>{ s_Package1Id });
 }
 
-TEST_CASE("PIPS_LocalFile_Delta_FallsBackWhenBaselineVersionDiffers", "[pips][localfile][delta]")
+TEST_CASE("PIPS_LocalFile_Delta_FallsBackWhenBaselineVersionDiffers", "[pips][local_file][delta]")
 {
     auto settings = TestUserSettings::EnableExperimentalFeature(ExperimentalFeature::Feature::DeltaIndex);
     TestHook::SetSourcePackageTrustValidation_Override trustOverride;
 
-    TestPreIndexedSource source{ { MakeIndexFields("Publisher1.Id", "Package 1") } };
+    TestPreIndexedSource source{ { MakeIndexFields(s_Package1Id) } };
     source.PublishBaseline();
 
-    source.AddPackage(MakeIndexFields("Publisher2.Id", "Package 2"));
-    source.Publish("2.0.0.0"sv, "2.0.0.0"sv);
+    source.AddPackage(MakeIndexFields(s_Package2Id));
+    source.Publish(s_SecondVersion, true);
 
     // Whatever is at the location the delta names is not the baseline it was computed against, and
     // the version header says so before anything is downloaded.
-    source.RepublishBaselineAtVersion("9.9.9.9"sv);
+    source.RepublishBaselineAtVersion(s_UnexpectedBaselineVersion);
 
     CleanSourcesFor(source.BaseFamilyName);
 
@@ -705,19 +735,19 @@ TEST_CASE("PIPS_LocalFile_Delta_FallsBackWhenBaselineVersionDiffers", "[pips][lo
     SourceData data{ GetStoredDetails(details.Name).Data };
     REQUIRE(!data.HasDeltaIdentity());
 
-    REQUIRE(GetSourcePackageIds(details.Name) == std::set<std::string>{ "Publisher1.Id", "Publisher2.Id" });
+    REQUIRE(GetSourcePackageIds(details.Name) == std::set<std::string>{ s_Package1Id, s_Package2Id });
 }
 
-TEST_CASE("PIPS_LocalFile_Delta_RemoveClearsEverySlot", "[pips][localfile][delta]")
+TEST_CASE("PIPS_LocalFile_Delta_RemoveClearsEverySlot", "[pips][local_file][delta]")
 {
     auto settings = TestUserSettings::EnableExperimentalFeature(ExperimentalFeature::Feature::DeltaIndex);
     TestHook::SetSourcePackageTrustValidation_Override trustOverride;
 
-    TestPreIndexedSource source{ { MakeIndexFields("Publisher1.Id", "Package 1") } };
+    TestPreIndexedSource source{ { MakeIndexFields(s_Package1Id) } };
     source.PublishBaseline();
 
-    source.AddPackage(MakeIndexFields("Publisher2.Id", "Package 2"));
-    source.Publish("2.0.0.0"sv, "2.0.0.0"sv);
+    source.AddPackage(MakeIndexFields(s_Package2Id));
+    source.Publish(s_SecondVersion, true);
 
     CleanSourcesFor(source.BaseFamilyName);
 
