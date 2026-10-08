@@ -8,7 +8,7 @@
 
 namespace AppInstaller::Repository::Microsoft::PreIndexed
 {
-    namespace
+    namespace anon
     {
         // Holds a source's packages by registering them with the platform.
         struct DeployedPackageStore : public PackageStoreBase
@@ -109,6 +109,6 @@ namespace AppInstaller::Repository::Microsoft::PreIndexed
 
     std::unique_ptr<IPackageStore> CreateDeployedPackageStore(const SourceDetails& details)
     {
-        return std::make_unique<DeployedPackageStore>(details);
+        return std::make_unique<anon::DeployedPackageStore>(details);
     }
 }
