@@ -79,6 +79,7 @@ Buf
 buildtransitive
 buildtrees
 cancelledbyuser
+CAA
 casemap
 casemappings
 ccc
@@ -539,6 +540,7 @@ sancov
 SARL
 savepoint
 sawgc
+Schannel
 schematab
 Scm
 sddl
