@@ -77,8 +77,7 @@ namespace AppInstaller::Repository::Microsoft::PreIndexed
         // state, and -- worse -- lets an old and a new client take different locks over the same data.
         // 
         // The fallback exists because Identifier was not always stored; a source written by an old
-        // enough client has only Data, and the base identity is the value such a client would have
-        // put in Identifier.
+        // enough client has only Data, which is the value such a client would have put there.
         m_sourceIdentity = details.Identifier.empty() ? SourceData{ details.Data }.BaseIdentity() : details.Identifier;
         THROW_HR_IF(E_UNEXPECTED, m_sourceIdentity.empty());
     }
