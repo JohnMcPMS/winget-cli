@@ -11,6 +11,7 @@
 #include <AppInstallerRuntime.h>
 #include <AppInstallerStrings.h>
 #include <Microsoft/PreIndexedPackageSourceFactory.h>
+#include <Microsoft/PreIndexed/PackageStore.h>
 #include <Microsoft/PreIndexed/SourceData.h>
 #include <Microsoft/SQLiteIndex.h>
 #include <winget/Settings.h>
@@ -371,11 +372,23 @@ namespace
         return result;
     }
 
+    // A deployed package is held outside of our local state entirely, so the store that stands in
+    // for that mechanism holds its packages under an identity of its own. That keeps the two as
+    // separate as the real ones are.
+    constexpr std::string_view s_DeployedIdentitySuffix = ".Deployed"sv;
+
+    // Where the stand in for the deployed store keeps a source's packages.
+    fs::path GetDeployedStatePathFor(const std::string& sourceIdentity)
+    {
+        return GetStatePathFor(sourceIdentity + std::string{ s_DeployedIdentitySuffix });
+    }
+
     void CleanSourcesFor(const std::string& sourceIdentity)
     {
         RemoveSetting(Stream::UserSources);
         RemoveSetting(Stream::SourcesMetadata);
         fs::remove_all(GetStatePathFor(sourceIdentity));
+        fs::remove_all(GetDeployedStatePathFor(sourceIdentity));
     }
 
     // AddSource takes the details by const reference, so what a source actually recorded has to be
@@ -522,6 +535,13 @@ namespace
             return GetStatePathFor(BaseFamilyName);
         }
 
+        // Where the stand in for the deployed store holds this source's packages.
+        fs::path DeployedStatePath() const
+        {
+            REQUIRE(!BaseFamilyName.empty());
+            return GetDeployedStatePathFor(BaseFamilyName);
+        }
+
     private:
         std::string PublishPackage(
             const fs::path& indexFile,
@@ -559,6 +579,66 @@ namespace
         }
 
         return result;
+    }
+
+    // Stands in for the deployed package store.
+    //
+    // Packages are held as files, as the local file store does, but under an identity of their
+    // own so that the two mechanisms are as separate as the real ones are. Reads are reported as
+    // allowed without the lock, which is what the deployed store reports and what the composite
+    // store has to carry through correctly.
+    struct TestDeployedPackageStore : public IPackageStore
+    {
+        TestDeployedPackageStore(const SourceDetails& details)
+        {
+            std::string identity = details.Identifier.empty() ? SourceData{ details.Data }.BaseIdentity() : details.Identifier;
+            REQUIRE(!identity.empty());
+
+            SourceDetails deployedDetails = details;
+            deployedDetails.Identifier = identity + std::string{ s_DeployedIdentitySuffix };
+
+            m_inner = CreateLocalFilePackageStore(deployedDetails);
+        }
+
+        std::optional<AcquiredPackage> Acquire(const PackageKey& package, const std::string& location, IProgressCallback& progress) override
+        {
+            return m_inner->Acquire(package, location, progress);
+        }
+
+        void Persist(AcquiredPackage&& package, IProgressCallback& progress) override
+        {
+            m_inner->Persist(std::move(package), progress);
+        }
+
+        std::optional<Msix::PackageVersion> GetVersion(const PackageKey& package) const override
+        {
+            return m_inner->GetVersion(package);
+        }
+
+        std::optional<ExtractedIndex> GetIndex(const PackageKey& package, IProgressCallback& progress) override
+        {
+            return m_inner->GetIndex(package, progress);
+        }
+
+        void Remove(const std::vector<PackageKey>& packages, IProgressCallback& progress) override
+        {
+            m_inner->Remove(packages, progress);
+        }
+
+        Synchronization::CrossProcessLock Lock(IProgressCallback& progress, bool isBackground = false) override
+        {
+            return m_inner->Lock(progress, isBackground);
+        }
+
+        bool AllowsUnlockedRead() const override { return true; }
+
+    private:
+        std::unique_ptr<IPackageStore> m_inner;
+    };
+
+    std::unique_ptr<IPackageStore> CreateTestDeployedPackageStore(const SourceDetails& details)
+    {
+        return std::make_unique<TestDeployedPackageStore>(details);
     }
 }
 
@@ -766,4 +846,169 @@ TEST_CASE("PIPS_LocalFile_Delta_RemoveClearsEverySlot", "[pips][local_file][delt
     REQUIRE(RemoveSource(details.Name, callback));
 
     REQUIRE(!fs::exists(state));
+}
+
+// The cases below cover a source moving between the two stores it can be held in. Which store a
+// process writes to is decided by whether it is running for an interactively logged on user, so
+// the same source on the same machine can legitimately be maintained in both: an interactive
+// winget deploys, while a scheduled task cannot and falls back to our own local state.
+
+namespace
+{
+    // A source added by a process that can deploy, holding the overrides that make both stores
+    // reachable for as long as the test needs them.
+    struct StoreSwapTest
+    {
+        // Held off explicitly, so that these cover the stores rather than whatever the machine
+        // running the test happens to have enabled.
+        TestHook::SetSingleExperimentalFeature_Override DeltaDisabled{ ExperimentalFeature::Feature::DeltaIndex, false };
+        TestHook::SetSourcePackageTrustValidation_Override TrustOverride;
+        TestHook::SetDeployedPackageStore_Override DeployedStore{ CreateTestDeployedPackageStore };
+        TestHook::SetIsRunningAsInteractiveUser_Override Interactive{ true };
+
+        TestPreIndexedSource Source{ { MakeIndexFields(s_Package1Id) } };
+        SourceDetails Details;
+        TestProgress Callback;
+
+        StoreSwapTest()
+        {
+            Source.Publish(s_FirstVersion);
+
+            CleanSourcesFor(Source.BaseFamilyName);
+
+            Details = Source.MakeDetails();
+            REQUIRE(AddSource(Details, Callback));
+        }
+
+        // Publishes a full index at a new version, holding one more package than the last one did.
+        void PublishNewVersion(std::string_view version, const std::string& addedPackageId)
+        {
+            Source.AddPackage(MakeIndexFields(addedPackageId));
+            Source.Publish(version);
+        }
+
+        bool Update()
+        {
+            return UpdateSource(Details.Name, Callback);
+        }
+
+        std::set<std::string> PackageIds()
+        {
+            return GetSourcePackageIds(Details.Name);
+        }
+    };
+}
+
+TEST_CASE("PIPS_StoreSwap_WriteFollowsInteractiveUser", "[pips][local_file][store_swap]")
+{
+    StoreSwapTest test;
+
+    // An interactively logged on user can deploy, so the source is held in the deployed store and
+    // our own local state is not used at all.
+    fs::path deployedIndex = test.Source.DeployedStatePath() / s_IndexMsixName;
+    REQUIRE(fs::exists(deployedIndex));
+    REQUIRE(!fs::exists(test.Source.StatePath()));
+
+    std::string deployedContents = GetContents(deployedIndex);
+
+    // A process that cannot deploy maintains the same source in the local file store instead,
+    // without disturbing what the other store holds.
+    test.PublishNewVersion(s_SecondVersion, s_Package2Id);
+    test.Interactive.Set(false);
+
+    REQUIRE(test.Update());
+
+    fs::path localIndex = test.Source.StatePath() / s_IndexMsixName;
+    REQUIRE(fs::exists(localIndex));
+    REQUIRE(GetContents(deployedIndex) == deployedContents);
+    REQUIRE(GetContents(localIndex) != deployedContents);
+}
+
+TEST_CASE("PIPS_StoreSwap_ReadFindsFreshestStore", "[pips][local_file][store_swap]")
+{
+    StoreSwapTest test;
+
+    // The local file store moves ahead of the deployed one.
+    test.PublishNewVersion(s_SecondVersion, s_Package2Id);
+    test.Interactive.Set(false);
+    REQUIRE(test.Update());
+
+    REQUIRE(test.PackageIds() == std::set<std::string>{ s_Package1Id, s_Package2Id });
+
+    // A process that can deploy would write to the deployed store, which holds the older copy.
+    // The read follows the newer one rather than the one that this process maintains.
+    test.Interactive.Set(true);
+
+    REQUIRE(test.PackageIds() == std::set<std::string>{ s_Package1Id, s_Package2Id });
+
+    // The same in the other direction: the deployed store moves ahead, and a process that cannot
+    // deploy reads it rather than the copy that it maintains itself.
+    test.PublishNewVersion(s_ThirdVersion, s_Package3Id);
+    REQUIRE(test.Update());
+
+    test.Interactive.Set(false);
+
+    REQUIRE(test.PackageIds() == std::set<std::string>{ s_Package1Id, s_Package2Id, s_Package3Id });
+}
+
+TEST_CASE("PIPS_StoreSwap_ReadKeepsOwnStoreWhenEqual", "[pips][local_file][store_swap]")
+{
+    StoreSwapTest test;
+
+    // Both stores are brought to the same version, so neither one is newer than the other.
+    test.Interactive.Set(false);
+    REQUIRE(test.Update());
+
+    REQUIRE(fs::exists(test.Source.StatePath() / s_IndexMsixName));
+    REQUIRE(fs::exists(test.Source.DeployedStatePath() / s_IndexMsixName));
+
+    SourceDetails stored = GetStoredDetails(test.Details.Name);
+
+    PackageKey key;
+    key.Slot = PackageSlot::FullIndex;
+    key.Identity = test.Source.BaseFamilyName;
+
+    Msix::PackageVersion expectedVersion{ std::string{ s_FirstVersion } };
+
+    // Which store answered is not something a source exposes, so these ask the store directly.
+    // Whether a read can be served without the lock is the difference between the two mechanisms,
+    // and the composite has to report the answer of the store it resolved to rather than its own.
+    {
+        // A process that cannot deploy stays on the local file store that it maintains, and that
+        // store has to extract from the held file, so it cannot serve a read unlocked.
+        auto store = CreateCompositeStore(stored);
+
+        REQUIRE(store->GetVersion(key) == expectedVersion);
+        REQUIRE(!store->AllowsUnlockedRead());
+    }
+
+    test.Interactive.Set(true);
+
+    {
+        // A process that can deploy stays on the deployed store for the same reason, and that one
+        // is read in place.
+        auto store = CreateCompositeStore(stored);
+
+        REQUIRE(store->GetVersion(key) == expectedVersion);
+        REQUIRE(store->AllowsUnlockedRead());
+    }
+}
+
+TEST_CASE("PIPS_StoreSwap_RemoveClearsBothStores", "[pips][local_file][store_swap]")
+{
+    StoreSwapTest test;
+
+    test.PublishNewVersion(s_SecondVersion, s_Package2Id);
+    test.Interactive.Set(false);
+    REQUIRE(test.Update());
+
+    REQUIRE(fs::exists(test.Source.DeployedStatePath()));
+    REQUIRE(fs::exists(test.Source.StatePath()));
+
+    REQUIRE(RemoveSource(test.Details.Name, test.Callback));
+
+    // Clearing only the store that this process writes to would leave a copy behind that a later
+    // read would still find and answer from.
+    REQUIRE(!fs::exists(test.Source.StatePath()));
+    REQUIRE(!fs::exists(test.Source.DeployedStatePath()));
 }

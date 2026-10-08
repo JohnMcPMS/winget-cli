@@ -189,13 +189,42 @@ namespace AppInstaller::Repository::Microsoft::PreIndexed
         return result;
     }
 
-    bool CanUseDeployedPackage()
+#ifndef AICLI_DISABLE_TEST_HOOKS
+    static std::function<std::unique_ptr<IPackageStore>(const SourceDetails&)>* s_DeployedPackageStore_TestHook_Override = nullptr;
+
+    void TestHook_SetDeployedPackageStore_Override(std::function<std::unique_ptr<IPackageStore>(const SourceDetails&)>* value)
     {
-        return Runtime::IsRunningInPackagedContext() && Runtime::IsRunningAsInteractiveUser();
+        s_DeployedPackageStore_TestHook_Override = value;
     }
+#endif
 
     namespace anon
     {
+        // Whether this process can reach a deployed package.
+        bool CanReachDeployedPackage()
+        {
+#ifndef AICLI_DISABLE_TEST_HOOKS
+            if (s_DeployedPackageStore_TestHook_Override)
+            {
+                return true;
+            }
+#endif
+
+            return Runtime::IsRunningInPackagedContext();
+        }
+
+        std::unique_ptr<IPackageStore> CreateDeployedStore(const SourceDetails& details)
+        {
+#ifndef AICLI_DISABLE_TEST_HOOKS
+            if (s_DeployedPackageStore_TestHook_Override)
+            {
+                return (*s_DeployedPackageStore_TestHook_Override)(details);
+            }
+#endif
+
+            return CreateDeployedPackageStore(details);
+        }
+
         // A store over every store that this process can reach a source's packages through.
         //
         // Reading answers from whichever of them holds the most recently published copy, and
@@ -210,15 +239,15 @@ namespace AppInstaller::Repository::Microsoft::PreIndexed
                 // recent copy keeps a read on the store that it maintains itself.
                 if (CanUseDeployedPackage())
                 {
-                    m_stores.emplace_back(CreateDeployedPackageStore(details));
+                    m_stores.emplace_back(CreateDeployedStore(details));
                     m_stores.emplace_back(CreateLocalFilePackageStore(details));
                 }
                 else
                 {
                     m_stores.emplace_back(CreateLocalFilePackageStore(details));
-                    if (Runtime::IsRunningInPackagedContext())
+                    if (CanReachDeployedPackage())
                     {
-                        m_stores.emplace_back(CreateDeployedPackageStore(details));
+                        m_stores.emplace_back(CreateDeployedStore(details));
                     }
                 }
             }
@@ -318,9 +347,14 @@ namespace AppInstaller::Repository::Microsoft::PreIndexed
         };
     }
 
+    bool CanUseDeployedPackage()
+    {
+        return anon::CanReachDeployedPackage() && Runtime::IsRunningAsInteractiveUser();
+    }
+
     std::unique_ptr<IPackageStore> CreateStore(const SourceDetails& details)
     {
-        return CanUseDeployedPackage() ? CreateDeployedPackageStore(details) : CreateLocalFilePackageStore(details);
+        return CanUseDeployedPackage() ? anon::CreateDeployedStore(details) : CreateLocalFilePackageStore(details);
     }
 
     std::unique_ptr<IPackageStore> CreateCompositeStore(const SourceDetails& details)
