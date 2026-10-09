@@ -11,7 +11,7 @@ namespace WinGetSourceCreator.Model
     {
         // Directory, relative to the working directory, that the delta source is published under.
         // This is also what a client is pointed at, so everything the source offers lives below it.
-        public string RelativeDirectory { get; set; } = "deltasource";
+        public string RelativeDirectory { get; set; } = "deltaSource";
 
         // Identity name carried by both the full index and the baseline. MSIX forbids publishing
         // different content under one identity and version, so they are separated by version

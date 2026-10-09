@@ -39,8 +39,6 @@ namespace TestCommon
         {
             ComPtr<IStream> result;
 
-            // A global memory stream rather than a file stream, so that nothing here depends on
-            // shlwapi and no intermediate files need cleaning up.
             THROW_IF_FAILED(CreateStreamOnHGlobal(nullptr, TRUE, &result));
 
             if (size)

@@ -95,7 +95,7 @@ namespace Microsoft.WinGetSourceCreator
             // The working databases. They are never named by a package, but they do sit under the
             // static file root and so are reachable; that is already true of the ordinary source's
             // index.db and costs nothing here.
-            string indexDirectory = Path.Combine(this.workingDirectory, "deltaindexes");
+            string indexDirectory = Path.Combine(this.workingDirectory, "delta_indexes");
             string workingIndexPath = Path.Combine(indexDirectory, "working.db");
             string baselineIndexPath = Path.Combine(indexDirectory, "baseline.db");
             string fullIndexPath = Path.Combine(indexDirectory, "full.db");

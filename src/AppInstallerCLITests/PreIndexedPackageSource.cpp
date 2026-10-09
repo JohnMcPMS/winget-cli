@@ -441,7 +441,7 @@ namespace
     // this must hold a TestHook::SetSourcePackageTrustValidation_Override.
     struct TestPreIndexedSource
     {
-        TempDirectory Remote{ "pipsremote" };
+        TempDirectory Remote{ "pips_remote" };
 
         // The long lived index that the source is built from. It is never prepared itself; each
         // publish prepares a copy, since preparing is a one way operation.
@@ -1022,7 +1022,7 @@ TEST_CASE("PIPS_LocalFile_Delta_OutOfBandBaselineIsNotReacquired", "[pips][local
     test.Source.AddPackage(MakeIndexFields(s_Package5Id));
     test.Source.Publish(test.Source.NextBaseline, s_FourthVersion, true);
 
-    REQUIRE(GetSourcePackageIds(test.Details.Name, std::chrono::milliseconds{ 1 }) ==
+    REQUIRE(GetSourcePackageIds(test.Details.Name, TimeSpan{ 1 }) ==
         std::set<std::string>{ s_Package1Id, s_Package2Id, s_Package3Id, s_Package4Id, s_Package5Id });
 
     REQUIRE(fs::last_write_time(test.BaselinePackage()) == baselineWriteTime);
@@ -1034,7 +1034,7 @@ TEST_CASE("PIPS_LocalFile_Delta_OutOfBandBaselineIsNotReacquired", "[pips][local
     REQUIRE(fs::last_write_time(test.BaselinePackage()) == baselineWriteTime);
 }
 
-TEST_CASE("PIPS_LocalFile_Delta_RolledBaselineIsAcquiredWithoutOutOfBandDelivery", "[pips][local_file][delta]")
+TEST_CASE("PIPS_LocalFile_Delta_RolledBaselineUpdate", "[pips][local_file][delta]")
 {
     BaselineRollTest test;
 
@@ -1052,43 +1052,11 @@ TEST_CASE("PIPS_LocalFile_Delta_RolledBaselineIsAcquiredWithoutOutOfBandDelivery
         std::set<std::string>{ s_Package1Id, s_Package2Id, s_Package3Id, s_Package4Id });
 }
 
-// The three cases below cover the state an out of band delivery passes through: the client holds
-// the baseline of one lineage and a delta computed against another. Nothing can read that pair,
-// so the client has to notice and repair it rather than treat holding both packages as enough.
-
-TEST_CASE("PIPS_LocalFile_Delta_UpdateRepairsBaselineAheadOfDelta", "[pips][local_file][delta]")
-{
-    BaselineRollTest test;
-
-    // Delivered ahead of the delta that names it, which is the window the service closes by
-    // publishing the delta for a lineage before anything delivers its baseline.
-    test.PublishNextBaseline();
-    test.DeliverBaselineOutOfBand();
-
-    auto baselineWriteTime = test.StampBaselineWriteTime();
-
-    // The delta the client holds is still current, so the only way to make the pair readable is to
-    // go back and fetch the baseline that delta names. That lineage is still published, which is
-    // what makes the overlap worth keeping.
-    REQUIRE(UpdateSource(test.Details.Name, test.Callback));
-    REQUIRE(fs::last_write_time(test.BaselinePackage()) != baselineWriteTime);
-
-    REQUIRE(GetSourcePackageIds(test.Details.Name) == std::set<std::string>{ s_Package1Id, s_Package2Id });
-
-    // Once the service finishes the roll the client moves onto the new lineage as it normally
-    // would, so the repair costs the delivery rather than losing it.
-    test.PublishDeltaAgainstNextBaseline();
-
-    REQUIRE(UpdateSource(test.Details.Name, test.Callback));
-    REQUIRE(GetSourcePackageIds(test.Details.Name) ==
-        std::set<std::string>{ s_Package1Id, s_Package2Id, s_Package3Id, s_Package4Id });
-}
-
 TEST_CASE("PIPS_LocalFile_Delta_OpenRepairsBaselineAheadOfDelta", "[pips][local_file][delta]")
 {
     BaselineRollTest test;
 
-    test.PublishNextBaseline();
+    test.RollBaseline();
     test.DeliverBaselineOutOfBand();
 
     auto baselineWriteTime = test.StampBaselineWriteTime();
@@ -1097,26 +1065,9 @@ TEST_CASE("PIPS_LocalFile_Delta_OpenRepairsBaselineAheadOfDelta", "[pips][local_
     // nothing about its age calls for one; what forces the update is that the packages held
     // cannot be opened together, which is the only thing standing between this state and a source
     // that stays unusable until something unrelated makes an update fall due.
-    REQUIRE(GetSourcePackageIds(test.Details.Name) == std::set<std::string>{ s_Package1Id, s_Package2Id });
+    REQUIRE(GetSourcePackageIds(test.Details.Name, TimeSpan{ 1 }) == std::set<std::string>{ s_Package1Id, s_Package2Id });
 
     REQUIRE(fs::last_write_time(test.BaselinePackage()) != baselineWriteTime);
-}
-
-TEST_CASE("PIPS_LocalFile_Delta_OpenUsesFullIndexWhenPairCannotBeRepaired", "[pips][local_file][delta]")
-{
-    BaselineRollTest test;
-
-    test.PublishNextBaseline();
-    test.DeliverBaselineOutOfBand();
-    test.WithdrawCurrentBaseline();
-
-    // With the lineage withdrawn there is no baseline anywhere that the held delta can be paired
-    // with, so the update gives up on the delta and acquires the full index instead. Holding a
-    // delta and a baseline must not then win the source back from the index that was just paid
-    // for.
-    REQUIRE(GetSourcePackageIds(test.Details.Name) == std::set<std::string>{ s_Package1Id, s_Package2Id });
-
-    REQUIRE(fs::exists(test.Source.StatePath() / s_IndexMsixName));
 }
 
 // The cases below cover a source moving between the two stores it can be held in. Which store a

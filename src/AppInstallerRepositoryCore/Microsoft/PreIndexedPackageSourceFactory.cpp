@@ -26,21 +26,15 @@ namespace AppInstaller::Repository::Microsoft
         }
 
         // Selects the form to use when opening a source.
-        //
-        // This is a backward looking question -- whichever form the source actually holds is the
-        // one that can be opened -- so it never probes the remote source and never considers a
-        // form whose packages the details do not already name.
-        //
-        // A form that holds its packages but cannot open them is passed over as well. The caller
-        // then sees a form with no data, which is already its signal that the source must be
-        // updated before it can be used, and that update is what repairs the held packages.
-        std::unique_ptr<IIndexForm> SelectFormForOpen(const SourceDetails& details, IPackageStore& store, IProgressCallback& progress)
+        std::unique_ptr<IIndexForm> SelectFormForOpen(const SourceDetails& details)
         {
             if (IsDeltaIndexEnabled())
             {
                 auto deltaForm = CreateDeltaIndexForm(details);
 
-                if (deltaForm->HasIdentities() && deltaForm->IsHeld(store) && deltaForm->IsUsable(store, progress))
+                // While experimental, lock on to delta if we have the bare minimum.
+                // Falling back to the full form is quite complex and may result in hiding issues.
+                if (deltaForm->HasIdentities())
                 {
                     return deltaForm;
                 }
@@ -84,6 +78,8 @@ namespace AppInstaller::Repository::Microsoft
                     // it's missing from the details.
                     m_details.Identifier = SourceData{ m_details.Data }.BaseIdentity();
                 }
+
+                m_form = SelectFormForOpen(m_details);
             }
 
             std::string GetIdentifier() override { return m_details.Identifier; }
@@ -97,13 +93,19 @@ namespace AppInstaller::Repository::Microsoft
                 ProgressCallback progress;
 
                 auto store = CreateCompositeStore(m_details);
-                auto form = SelectFormForOpen(m_details, *store, progress);
-                auto currentVersion = form->GetHeldVersion(*store);
+                auto currentVersion = m_form->GetHeldVersion(*store);
 
                 // If we can't find a good package, then we have to update to operate
                 if (!currentVersion)
                 {
                     AICLI_LOG(Repo, Verbose, << "Source `" << m_details.Name << "` has no data");
+                    return true;
+                }
+
+                // Check that the form is consistent with itself
+                if (!m_form->IsUsable(*store, progress))
+                {
+                    AICLI_LOG(Repo, Verbose, << "Source `" << m_details.Name << "` is not currently usable");
                     return true;
                 }
 
@@ -131,7 +133,6 @@ namespace AppInstaller::Repository::Microsoft
                 SourceOpenTimer openTimer{ m_details.Name };
 
                 auto store = CreateCompositeStore(m_details);
-                auto form = SelectFormForOpen(m_details, *store, progress);
 
                 std::optional<SQLiteIndex> index;
 
@@ -141,7 +142,7 @@ namespace AppInstaller::Repository::Microsoft
                     // retried under it only when that fails.
                     try
                     {
-                        index.emplace(form->Open(*store, progress));
+                        index.emplace(m_form->Open(*store, progress));
                     }
                     catch (...)
                     {
@@ -164,7 +165,7 @@ namespace AppInstaller::Repository::Microsoft
                         return {};
                     }
 
-                    index.emplace(form->Open(*store, progress));
+                    index.emplace(m_form->Open(*store, progress));
                 }
 
                 if (progress.IsCancelledBy(CancelReason::Any))
@@ -179,6 +180,7 @@ namespace AppInstaller::Repository::Microsoft
 
         private:
             SourceDetails m_details;
+            std::unique_ptr<IIndexForm> m_form;
         };
 
         // The factory for a preindexed package source.
@@ -354,27 +356,22 @@ namespace AppInstaller::Repository::Microsoft
                     UpdateReport report;
                     UpdateResult result = UpdateResult::Unusable;
 
-                    try
-                    {
-                        auto form = CreateDeltaIndexForm(details);
+                    auto form = CreateDeltaIndexForm(details);
 
-                        // An update never probes for a delta: the details say whether the source
-                        // has one. A source configured with only a base identity names no delta
-                        // and uses the full index, which is what it did before deltas existed.
-                        if (form->HasIdentities())
-                        {
-                            result = form->Update(*store, isBackground, progress, report);
-                        }
-                    }
-                    catch (...)
+                    // An update never probes for a delta: the details say whether the source
+                    // has one. A source configured with only a base identity names no delta
+                    // and uses the full index, which is what it did before deltas existed.
+                    if (form->HasIdentities())
                     {
-                        if (progress.IsCancelledBy(CancelReason::Any))
-                        {
-                            throw;
-                        }
+                        result = form->Update(*store, isBackground, progress, report);
 
-                        LOG_CAUGHT_EXCEPTION_MSG("Delta update failed for source: %hs", details.Name.c_str());
-                        result = UpdateResult::Unusable;
+                        // While the feature is experimental, fail if things are not as they are expected
+                        // When moving off of experimental, consider if we should support fallback.
+                        // Fallback complicates the open side considerably.
+                        if (IsDeltaIndexEnabled())
+                        {
+                            THROW_HR_IF(APPINSTALLER_CLI_ERROR_SOURCE_DATA_INTEGRITY_FAILURE, result == UpdateResult::Unusable);
+                        }
                     }
 
                     if (result == UpdateResult::Success)
