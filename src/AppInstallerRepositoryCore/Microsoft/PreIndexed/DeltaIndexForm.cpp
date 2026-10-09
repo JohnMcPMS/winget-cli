@@ -194,9 +194,6 @@ namespace AppInstaller::Repository::Microsoft::PreIndexed
 
                     store.Persist(std::move(acquired.value()), progress);
 
-                    // What we hold is not what we read before, so anything kept from it is stale.
-                    DiscardDeltaIndex();
-
                     locator = ReadBaselineLocator(store, progress);
                 }
 
@@ -263,7 +260,7 @@ namespace AppInstaller::Repository::Microsoft::PreIndexed
 
             SQLiteIndex Open(IPackageStore& store, IProgressCallback& progress) override
             {
-                auto& delta = GetDeltaIndex(store, progress);
+                auto delta = store.GetIndex(GetDeltaKey(), progress);
                 auto baseline = store.GetIndex(GetBaselineKey(), progress);
 
                 if (!delta || !baseline)
@@ -271,15 +268,11 @@ namespace AppInstaller::Repository::Microsoft::PreIndexed
                     THROW_HR(APPINSTALLER_CLI_ERROR_SOURCE_DATA_MISSING);
                 }
 
-                // The index takes the extraction over, so what we kept is no longer ours to hand out.
-                ExtractedIndex deltaIndex = std::move(delta.value());
-                DiscardDeltaIndex();
-
                 return SQLiteIndex::OpenWithBaseline(
-                    deltaIndex.Path.u8string(),
+                    delta->Path.u8string(),
                     baseline->Path.u8string(),
                     SQLiteIndex::OpenDisposition::Immutable,
-                    std::move(deltaIndex.TemporaryFile),
+                    std::move(delta->TemporaryFile),
                     std::move(baseline->TemporaryFile));
             }
 
@@ -336,7 +329,7 @@ namespace AppInstaller::Repository::Microsoft::PreIndexed
             {
                 try
                 {
-                    auto& extracted = GetDeltaIndex(store, progress);
+                    auto extracted = store.GetIndex(GetDeltaKey(), progress);
                     if (!extracted)
                     {
                         return std::nullopt;
@@ -357,30 +350,9 @@ namespace AppInstaller::Repository::Microsoft::PreIndexed
                 }
             }
 
-            // Makes the held delta's index readable, keeping the result for the next caller.
-            //
-            // Opening a source reads the delta twice: once to check that the baseline held is the
-            // one it names, and once to open it. Extraction is not cheap, so the first read keeps
-            // what it produced. Anything that replaces the held delta must discard it.
-            std::optional<ExtractedIndex>& GetDeltaIndex(IPackageStore& store, IProgressCallback& progress)
-            {
-                if (!m_deltaIndex)
-                {
-                    m_deltaIndex = store.GetIndex(GetDeltaKey(), progress);
-                }
-
-                return m_deltaIndex;
-            }
-
-            void DiscardDeltaIndex()
-            {
-                m_deltaIndex.reset();
-            }
-
             SourceDetails m_details;
             std::string m_deltaIdentity;
             std::string m_baselineIdentity;
-            std::optional<ExtractedIndex> m_deltaIndex;
         };
     }
 
