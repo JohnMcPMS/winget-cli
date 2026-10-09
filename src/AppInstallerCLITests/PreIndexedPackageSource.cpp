@@ -1061,13 +1061,17 @@ TEST_CASE("PIPS_LocalFile_Delta_OpenRepairsBaselineAheadOfDelta", "[pips][local_
 
     auto baselineWriteTime = test.StampBaselineWriteTime();
 
-    // No update is asked for here. The delta the client holds was published moments ago, so
-    // nothing about its age calls for one; what forces the update is that the packages held
-    // cannot be opened together, which is the only thing standing between this state and a source
-    // that stays unusable until something unrelated makes an update fall due.
-    REQUIRE(GetSourcePackageIds(test.Details.Name, TimeSpan{ 1 }) == std::set<std::string>{ s_Package1Id, s_Package2Id });
+    // The delivery put the next lineage's baseline in place while the delta held still names the
+    // previous one, so what the client holds cannot be opened as a pair. Nothing asks for an
+    // update here; the open itself has to bring the delta forward. The third package is only in
+    // the new baseline and the fourth only in the new delta, so finding both proves that the
+    // delivered baseline was paired with the delta that the open acquired.
+    REQUIRE(GetSourcePackageIds(test.Details.Name, TimeSpan{ 1 }) ==
+        std::set<std::string>{ s_Package1Id, s_Package2Id, s_Package3Id, s_Package4Id });
 
-    REQUIRE(fs::last_write_time(test.BaselinePackage()) != baselineWriteTime);
+    // Only the delta was missing. The baseline that the delivery left behind is the one the delta
+    // names, so it is neither probed nor downloaded again.
+    REQUIRE(fs::last_write_time(test.BaselinePackage()) == baselineWriteTime);
 }
 
 // The cases below cover a source moving between the two stores it can be held in. Which store a
