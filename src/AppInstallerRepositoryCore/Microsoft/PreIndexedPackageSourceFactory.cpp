@@ -30,13 +30,17 @@ namespace AppInstaller::Repository::Microsoft
         // This is a backward looking question -- whichever form the source actually holds is the
         // one that can be opened -- so it never probes the remote source and never considers a
         // form whose packages the details do not already name.
-        std::unique_ptr<IIndexForm> SelectFormForOpen(const SourceDetails& details, const IPackageStore& store)
+        //
+        // A form that holds its packages but cannot open them is passed over as well. The caller
+        // then sees a form with no data, which is already its signal that the source must be
+        // updated before it can be used, and that update is what repairs the held packages.
+        std::unique_ptr<IIndexForm> SelectFormForOpen(const SourceDetails& details, IPackageStore& store, IProgressCallback& progress)
         {
             if (IsDeltaIndexEnabled())
             {
                 auto deltaForm = CreateDeltaIndexForm(details);
 
-                if (deltaForm->HasIdentities() && deltaForm->IsHeld(store))
+                if (deltaForm->HasIdentities() && deltaForm->IsHeld(store) && deltaForm->IsUsable(store, progress))
                 {
                     return deltaForm;
                 }
@@ -88,8 +92,12 @@ namespace AppInstaller::Repository::Microsoft
 
             bool ShouldUpdateBeforeOpen(const std::optional<TimeSpan>& requestedUpdateInterval) override
             {
+                // Nothing here reports progress, but deciding whether the source holds usable data
+                // can require reading what it holds.
+                ProgressCallback progress;
+
                 auto store = CreateCompositeStore(m_details);
-                auto form = SelectFormForOpen(m_details, *store);
+                auto form = SelectFormForOpen(m_details, *store, progress);
                 auto currentVersion = form->GetHeldVersion(*store);
 
                 // If we can't find a good package, then we have to update to operate
@@ -123,7 +131,7 @@ namespace AppInstaller::Repository::Microsoft
                 SourceOpenTimer openTimer{ m_details.Name };
 
                 auto store = CreateCompositeStore(m_details);
-                auto form = SelectFormForOpen(m_details, *store);
+                auto form = SelectFormForOpen(m_details, *store, progress);
 
                 std::optional<SQLiteIndex> index;
 

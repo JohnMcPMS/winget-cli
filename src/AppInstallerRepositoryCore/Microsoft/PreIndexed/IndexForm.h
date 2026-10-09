@@ -74,6 +74,13 @@ namespace AppInstaller::Repository::Microsoft::PreIndexed
         // Whether the store holds every package that this form needs.
         virtual bool IsHeld(const IPackageStore& store) const = 0;
 
+        // Whether the packages that the store holds for this form can be opened together.
+        //
+        // IsHeld only asks whether each package is present. A form whose packages have to agree
+        // with one another can hold a set that does not, and that cannot be answered without
+        // reading them, so it is a separate and more expensive question.
+        virtual bool IsUsable(IPackageStore& store, IProgressCallback& progress) = 0;
+
         // The published version of the held index, which is what staleness is judged from.
         virtual std::optional<Msix::PackageVersion> GetHeldVersion(const IPackageStore& store) const = 0;
 

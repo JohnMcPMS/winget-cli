@@ -332,6 +332,11 @@ namespace
     constexpr std::string_view s_BaselineRelativePath = "baselines/current/baseline.msix"sv;
     constexpr std::string_view s_BaselineVersion = "1.2.3.4"sv;
 
+    // The next baseline lineage. The service chooses where its baselines live, so a new one is
+    // published beside the old rather than over it, and the two overlap for a time.
+    constexpr std::string_view s_NextBaselineRelativePath = "baselines/next/baseline.msix"sv;
+    constexpr std::string_view s_NextBaselineVersion = "5.6.7.8"sv;
+
     constexpr std::string_view s_DeltaMsixName = "delta.msix"sv;
     constexpr std::string_view s_BaselineMsixName = "baseline.msix"sv;
 
@@ -340,6 +345,7 @@ namespace
     constexpr std::string_view s_FirstVersion = "1.0.0.0"sv;
     constexpr std::string_view s_SecondVersion = "2.0.0.0"sv;
     constexpr std::string_view s_ThirdVersion = "3.0.0.0"sv;
+    constexpr std::string_view s_FourthVersion = "4.0.0.0"sv;
 
     // A baseline version that no delta names, used to stand in for a baseline that has moved on.
     constexpr std::string_view s_UnexpectedBaselineVersion = "9.9.9.9"sv;
@@ -349,6 +355,8 @@ namespace
     const std::string s_Package1Id = "Publisher1.Id";
     const std::string s_Package2Id = "Publisher2.Id";
     const std::string s_Package3Id = "Publisher3.Id";
+    const std::string s_Package4Id = "Publisher4.Id";
+    const std::string s_Package5Id = "Publisher5.Id";
 
     IndexFields MakeIndexFields(const std::string& id)
     {
@@ -407,6 +415,25 @@ namespace
         return {};
     }
 
+    // A baseline that the source publishes, and the location and version that a delta computed
+    // against it names.
+    //
+    // The service chooses where its baselines live, so there can be more than one at a time; a
+    // newly published lineage overlaps the one it is replacing rather than overwriting it.
+    struct PublishedBaseline
+    {
+        PublishedBaseline(std::string_view relativePath, std::string_view version) :
+            RelativePath(relativePath), Version(version) {}
+
+        // The designated baseline, and the empty delta that designating it produces. Nothing
+        // reads the latter; it exists because designation and delta generation are one prepare.
+        TempFile IndexFile{ "pips_baseline"s, ".db"s };
+        TempFile DesignationDelta{ "pips_baseline_delta"s, ".db"s };
+
+        std::string RelativePath;
+        std::string Version;
+    };
+
     // A pre-indexed source published into a local directory.
     //
     // The packages are built here rather than checked in, so that a test can choose the identities
@@ -420,9 +447,10 @@ namespace
         // publish prepares a copy, since preparing is a one way operation.
         TempFile WorkingFile{ "pips_working"s, ".db"s };
 
-        // The designated baseline, and the empty delta that designating it produces.
-        TempFile BaselineFile{ "pips_baseline"s, ".db"s };
-        TempFile BaselineDeltaFile{ "pips_baseline_delta"s, ".db"s };
+        // The baseline that the source's deltas are computed against, and the lineage that the
+        // service moves to when it rolls the baseline.
+        PublishedBaseline Baseline{ s_BaselineRelativePath, s_BaselineVersion };
+        PublishedBaseline NextBaseline{ s_NextBaselineRelativePath, s_NextBaselineVersion };
 
         // The full index and the delta are published under different identities, since the client
         // has to be able to ask for one without getting the other. The baseline keeps the identity
@@ -461,23 +489,28 @@ namespace
 
         // Prepares a copy of the working index, designating it as a baseline in the same prepare,
         // and publishes it where the delta will say it is. Everything the working index does after
-        // this is what a delta will describe.
+        // this is what a delta against that baseline will describe.
         void PublishBaseline()
         {
-            fs::copy_file(WorkingFile.GetPath(), BaselineFile.GetPath(), fs::copy_options::overwrite_existing);
+            PublishBaseline(Baseline);
+        }
+
+        void PublishBaseline(PublishedBaseline& baseline)
+        {
+            fs::copy_file(WorkingFile.GetPath(), baseline.IndexFile.GetPath(), fs::copy_options::overwrite_existing);
 
             {
-                SQLiteIndex index = SQLiteIndex::Open(BaselineFile.GetPath().u8string(), SQLiteStorageBase::OpenDisposition::ReadWrite);
+                SQLiteIndex index = SQLiteIndex::Open(baseline.IndexFile.GetPath().u8string(), SQLiteStorageBase::OpenDisposition::ReadWrite);
 
                 index.SetProperty(SQLiteIndex::Property::DeltaMarkAsBaseline, "true");
-                index.SetProperty(SQLiteIndex::Property::DeltaOutputPath, BaselineDeltaFile.GetPath().u8string());
-                index.SetProperty(SQLiteIndex::Property::DeltaBaselineRelativeSourcePath, std::string{ s_BaselineRelativePath });
-                index.SetProperty(SQLiteIndex::Property::DeltaBaselinePackageVersion, std::string{ s_BaselineVersion });
+                index.SetProperty(SQLiteIndex::Property::DeltaOutputPath, baseline.DesignationDelta.GetPath().u8string());
+                index.SetProperty(SQLiteIndex::Property::DeltaBaselineRelativeSourcePath, baseline.RelativePath);
+                index.SetProperty(SQLiteIndex::Property::DeltaBaselinePackageVersion, baseline.Version);
 
                 index.PrepareForPackaging();
             }
 
-            BaseFamilyName = PublishPackage(BaselineFile.GetPath(), s_BaselineRelativePath, BaseIdentityName, std::string{ s_BaselineVersion });
+            BaseFamilyName = PublishPackage(baseline.IndexFile.GetPath(), baseline.RelativePath, BaseIdentityName, baseline.Version);
         }
 
         // Prepares a copy of the working index and publishes it as the source's full index,
@@ -486,6 +519,11 @@ namespace
         // The delta is published at the same version as the full index, since the two describe the
         // same contents. Nothing in the client requires that, but there is no reason to differ.
         void Publish(std::string_view version, bool publishDelta = false)
+        {
+            Publish(Baseline, version, publishDelta);
+        }
+
+        void Publish(const PublishedBaseline& baseline, std::string_view version, bool publishDelta)
         {
             TempFile prepared{ "pips_prepared"s, ".db"s };
             TempFile delta{ "pips_delta"s, ".db"s };
@@ -497,10 +535,10 @@ namespace
 
                 if (publishDelta)
                 {
-                    index.SetProperty(SQLiteIndex::Property::DeltaBaselineIndexPath, BaselineFile.GetPath().u8string());
+                    index.SetProperty(SQLiteIndex::Property::DeltaBaselineIndexPath, baseline.IndexFile.GetPath().u8string());
                     index.SetProperty(SQLiteIndex::Property::DeltaOutputPath, delta.GetPath().u8string());
-                    index.SetProperty(SQLiteIndex::Property::DeltaBaselineRelativeSourcePath, std::string{ s_BaselineRelativePath });
-                    index.SetProperty(SQLiteIndex::Property::DeltaBaselinePackageVersion, std::string{ s_BaselineVersion });
+                    index.SetProperty(SQLiteIndex::Property::DeltaBaselineRelativeSourcePath, baseline.RelativePath);
+                    index.SetProperty(SQLiteIndex::Property::DeltaBaselinePackageVersion, baseline.Version);
                 }
 
                 index.PrepareForPackaging();
@@ -517,7 +555,13 @@ namespace
         // Replaces the published baseline with one at a version the delta does not name.
         void RepublishBaselineAtVersion(std::string_view version)
         {
-            PublishPackage(BaselineFile.GetPath(), s_BaselineRelativePath, BaseIdentityName, std::string{ version });
+            PublishPackage(Baseline.IndexFile.GetPath(), Baseline.RelativePath, BaseIdentityName, std::string{ version });
+        }
+
+        // Where a published baseline package sits on the "remote".
+        fs::path RemotePathFor(const PublishedBaseline& baseline) const
+        {
+            return Remote.GetPath() / baseline.RelativePath;
         }
 
         SourceDetails MakeDetails(std::string name = "TestName") const
@@ -565,9 +609,18 @@ namespace
 
     // The identifiers the named source presents, read back through the source itself rather than
     // out of the files, so that what is asserted is what a user would see.
-    std::set<std::string> GetSourcePackageIds(std::string_view sourceName)
+    //
+    // A background update interval may be supplied to let the open itself decide that an update is
+    // due. It has to be non zero, since zero means that the source is never updated automatically.
+    std::set<std::string> GetSourcePackageIds(std::string_view sourceName, std::optional<TimeSpan> backgroundUpdateInterval = {})
     {
         Source source{ sourceName };
+
+        if (backgroundUpdateInterval)
+        {
+            source.SetBackgroundUpdateInterval(backgroundUpdateInterval.value());
+        }
+
         TestProgress callback;
         source.Open(callback);
 
@@ -846,6 +899,224 @@ TEST_CASE("PIPS_LocalFile_Delta_RemoveClearsEverySlot", "[pips][local_file][delt
     REQUIRE(RemoveSource(details.Name, callback));
 
     REQUIRE(!fs::exists(state));
+}
+
+// The two cases below cover the service rolling its baseline onto a new lineage, which it is free
+// to do because the delta names the location and version of the baseline it was computed against.
+//
+// They are the two halves of a proposed scheme in which the service keeps two overlapping baseline
+// lineages so that a baseline can be delivered to a client out of band, ahead of the client ever
+// asking for it. Only what exists today is modelled: a baseline carries no link to its own delta
+// and no expiration, so what is covered is that a client which already holds the baseline a delta
+// names does not acquire it again, and that one which does not acquires it through the ordinary
+// flow.
+
+namespace
+{
+    // A delta capable source holding two packages, published and added to the client, ready for
+    // the service to roll its baseline.
+    struct BaselineRollTest
+    {
+        TestHook::SetSingleExperimentalFeature_Override DeltaEnabled{ ExperimentalFeature::Feature::DeltaIndex };
+        TestHook::SetSourcePackageTrustValidation_Override TrustOverride;
+
+        TestPreIndexedSource Source{ { MakeIndexFields(s_Package1Id) } };
+        SourceDetails Details;
+        TestProgress Callback;
+
+        BaselineRollTest()
+        {
+            Source.PublishBaseline();
+
+            Source.AddPackage(MakeIndexFields(s_Package2Id));
+            Source.Publish(s_SecondVersion, true);
+
+            CleanSourcesFor(Source.BaseFamilyName);
+
+            Details = Source.MakeDetails();
+            REQUIRE(AddSource(Details, Callback));
+
+            REQUIRE(fs::exists(BaselinePackage()));
+            REQUIRE(GetSourcePackageIds(Details.Name) == std::set<std::string>{ s_Package1Id, s_Package2Id });
+        }
+
+        // Publishes the next baseline lineage beside the current one. The previous lineage stays
+        // published, as it would while the two overlap.
+        void PublishNextBaseline()
+        {
+            Source.AddPackage(MakeIndexFields(s_Package3Id));
+            Source.PublishBaseline(Source.NextBaseline);
+        }
+
+        // Recomputes the delta at the fixed name against the next baseline, which is what moves
+        // the client onto that lineage.
+        void PublishDeltaAgainstNextBaseline()
+        {
+            Source.AddPackage(MakeIndexFields(s_Package4Id));
+            Source.Publish(Source.NextBaseline, s_ThirdVersion, true);
+        }
+
+        void RollBaseline()
+        {
+            PublishNextBaseline();
+            PublishDeltaAgainstNextBaseline();
+        }
+
+        // Retires the lineage the client is on, so that the baseline its delta names can no longer
+        // be acquired and the delta it holds can never be made to pair with anything.
+        void WithdrawCurrentBaseline()
+        {
+            fs::remove(Source.RemotePathFor(Source.Baseline));
+        }
+
+        // Puts the next baseline into the client's state without going through the source update
+        // flow at all, which is what an out of band delivery channel would do.
+        void DeliverBaselineOutOfBand()
+        {
+            fs::copy_file(Source.RemotePathFor(Source.NextBaseline), BaselinePackage(), fs::copy_options::overwrite_existing);
+        }
+
+        // Marks the held baseline so that a later acquisition of it is detectable.
+        //
+        // A write time carried over from the file as it was found is not enough on its own: the
+        // store persists a local source by copying, and a copy preserves the time, so re-acquiring
+        // the very same published package would reproduce it exactly. Stamping a time that no
+        // published package has removes that coincidence.
+        fs::file_time_type StampBaselineWriteTime() const
+        {
+            fs::file_time_type stamp = fs::file_time_type::clock::now() - std::chrono::hours{ 48 };
+            fs::last_write_time(BaselinePackage(), stamp);
+            return fs::last_write_time(BaselinePackage());
+        }
+
+        fs::path BaselinePackage() const
+        {
+            return Source.StatePath() / s_BaselineMsixName;
+        }
+    };
+}
+
+TEST_CASE("PIPS_LocalFile_Delta_OutOfBandBaselineIsNotReacquired", "[pips][local_file][delta]")
+{
+    BaselineRollTest test;
+
+    test.RollBaseline();
+    test.DeliverBaselineOutOfBand();
+
+    auto baselineWriteTime = test.StampBaselineWriteTime();
+
+    // The delta that this acquires names the baseline the client already holds, so the baseline is
+    // never probed and never downloaded.
+    REQUIRE(UpdateSource(test.Details.Name, test.Callback));
+    REQUIRE(fs::last_write_time(test.BaselinePackage()) == baselineWriteTime);
+
+    // The third package is only in the new baseline and the fourth only in the delta, so finding
+    // both proves that the out of band baseline was paired with the new delta rather than that
+    // either was read on its own. An open against the previous baseline would have been refused
+    // outright, since the delta names the identifier of the one it was computed against.
+    REQUIRE(GetSourcePackageIds(test.Details.Name) ==
+        std::set<std::string>{ s_Package1Id, s_Package2Id, s_Package3Id, s_Package4Id });
+
+    // The same again for an update that the open itself decides is due, rather than an explicit
+    // one.
+    test.Source.AddPackage(MakeIndexFields(s_Package5Id));
+    test.Source.Publish(test.Source.NextBaseline, s_FourthVersion, true);
+
+    REQUIRE(GetSourcePackageIds(test.Details.Name, std::chrono::milliseconds{ 1 }) ==
+        std::set<std::string>{ s_Package1Id, s_Package2Id, s_Package3Id, s_Package4Id, s_Package5Id });
+
+    REQUIRE(fs::last_write_time(test.BaselinePackage()) == baselineWriteTime);
+
+    // And an open with nothing new to acquire still leaves it alone.
+    REQUIRE(GetSourcePackageIds(test.Details.Name) ==
+        std::set<std::string>{ s_Package1Id, s_Package2Id, s_Package3Id, s_Package4Id, s_Package5Id });
+
+    REQUIRE(fs::last_write_time(test.BaselinePackage()) == baselineWriteTime);
+}
+
+TEST_CASE("PIPS_LocalFile_Delta_RolledBaselineIsAcquiredWithoutOutOfBandDelivery", "[pips][local_file][delta]")
+{
+    BaselineRollTest test;
+
+    test.RollBaseline();
+
+    auto baselineWriteTime = test.StampBaselineWriteTime();
+
+    // Nothing delivered the new baseline, so the update has to acquire it through the ordinary
+    // flow. This is the window that an out of band delivery exists to close, and it is what makes
+    // the case above non vacuous: without the delivery the baseline really does move.
+    REQUIRE(UpdateSource(test.Details.Name, test.Callback));
+    REQUIRE(fs::last_write_time(test.BaselinePackage()) != baselineWriteTime);
+
+    REQUIRE(GetSourcePackageIds(test.Details.Name) ==
+        std::set<std::string>{ s_Package1Id, s_Package2Id, s_Package3Id, s_Package4Id });
+}
+
+// The three cases below cover the state an out of band delivery passes through: the client holds
+// the baseline of one lineage and a delta computed against another. Nothing can read that pair,
+// so the client has to notice and repair it rather than treat holding both packages as enough.
+
+TEST_CASE("PIPS_LocalFile_Delta_UpdateRepairsBaselineAheadOfDelta", "[pips][local_file][delta]")
+{
+    BaselineRollTest test;
+
+    // Delivered ahead of the delta that names it, which is the window the service closes by
+    // publishing the delta for a lineage before anything delivers its baseline.
+    test.PublishNextBaseline();
+    test.DeliverBaselineOutOfBand();
+
+    auto baselineWriteTime = test.StampBaselineWriteTime();
+
+    // The delta the client holds is still current, so the only way to make the pair readable is to
+    // go back and fetch the baseline that delta names. That lineage is still published, which is
+    // what makes the overlap worth keeping.
+    REQUIRE(UpdateSource(test.Details.Name, test.Callback));
+    REQUIRE(fs::last_write_time(test.BaselinePackage()) != baselineWriteTime);
+
+    REQUIRE(GetSourcePackageIds(test.Details.Name) == std::set<std::string>{ s_Package1Id, s_Package2Id });
+
+    // Once the service finishes the roll the client moves onto the new lineage as it normally
+    // would, so the repair costs the delivery rather than losing it.
+    test.PublishDeltaAgainstNextBaseline();
+
+    REQUIRE(UpdateSource(test.Details.Name, test.Callback));
+    REQUIRE(GetSourcePackageIds(test.Details.Name) ==
+        std::set<std::string>{ s_Package1Id, s_Package2Id, s_Package3Id, s_Package4Id });
+}
+
+TEST_CASE("PIPS_LocalFile_Delta_OpenRepairsBaselineAheadOfDelta", "[pips][local_file][delta]")
+{
+    BaselineRollTest test;
+
+    test.PublishNextBaseline();
+    test.DeliverBaselineOutOfBand();
+
+    auto baselineWriteTime = test.StampBaselineWriteTime();
+
+    // No update is asked for here. The delta the client holds was published moments ago, so
+    // nothing about its age calls for one; what forces the update is that the packages held
+    // cannot be opened together, which is the only thing standing between this state and a source
+    // that stays unusable until something unrelated makes an update fall due.
+    REQUIRE(GetSourcePackageIds(test.Details.Name) == std::set<std::string>{ s_Package1Id, s_Package2Id });
+
+    REQUIRE(fs::last_write_time(test.BaselinePackage()) != baselineWriteTime);
+}
+
+TEST_CASE("PIPS_LocalFile_Delta_OpenUsesFullIndexWhenPairCannotBeRepaired", "[pips][local_file][delta]")
+{
+    BaselineRollTest test;
+
+    test.PublishNextBaseline();
+    test.DeliverBaselineOutOfBand();
+    test.WithdrawCurrentBaseline();
+
+    // With the lineage withdrawn there is no baseline anywhere that the held delta can be paired
+    // with, so the update gives up on the delta and acquires the full index instead. Holding a
+    // delta and a baseline must not then win the source back from the index that was just paid
+    // for.
+    REQUIRE(GetSourcePackageIds(test.Details.Name) == std::set<std::string>{ s_Package1Id, s_Package2Id });
+
+    REQUIRE(fs::exists(test.Source.StatePath() / s_IndexMsixName));
 }
 
 // The cases below cover a source moving between the two stores it can be held in. Which store a

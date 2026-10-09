@@ -59,6 +59,12 @@ namespace AppInstaller::Repository::Microsoft::PreIndexed
                 return GetHeldVersion(store).has_value();
             }
 
+            bool IsUsable(IPackageStore& store, IProgressCallback&) override
+            {
+                // There is only one package, so there is nothing for it to disagree with.
+                return IsHeld(store);
+            }
+
             std::optional<Msix::PackageVersion> GetHeldVersion(const IPackageStore& store) const override
             {
                 return store.GetVersion(GetKey());
