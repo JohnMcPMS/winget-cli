@@ -8,12 +8,15 @@
 #include <AppInstallerRuntime.h>
 #include <winrt/Microsoft.Management.Configuration.h>
 #include <winrt/Microsoft.Management.Configuration.SetProcessorFactory.h>
+#include <WinGetDeploymentClient.h>
 #include "AppInstallerDownloader.h"
 #include <AppInstallerErrors.h>
 #include "Sixel.h"
 #include <winget/Certificates.h>
 #include <winget/HttpClientHelper.h>
 #include <winget/RepositorySource.h>
+#include <appmodel.h>
+#include <wil/token_helpers.h>
 
 using namespace AppInstaller::CLI::Execution;
 
@@ -72,6 +75,7 @@ namespace AppInstaller::CLI
             std::make_unique<LogViewerTestCommand>(FullName()),
             std::make_unique<DebugDscResourceCommand>(FullName()),
             std::make_unique<ValidateStorePinningCommand>(FullName()),
+            std::make_unique<LimitedCOMCommand>(FullName()),
         });
     }
 
@@ -88,6 +92,57 @@ namespace AppInstaller::CLI
     void DebugCommand::ExecuteInternal(Execution::Context& context) const
     {
         OutputHelp(context.Reporter);
+    }
+
+    Resource::LocString LimitedCOMCommand::ShortDescription() const
+    {
+        return Utility::LocIndString("Activate a package-internal limited-token COM server"sv);
+    }
+
+    Resource::LocString LimitedCOMCommand::LongDescription() const
+    {
+        return Utility::LocIndString("Creates PackageManager through package-local WinRT activation without lower-trust registration discovery."sv);
+    }
+
+    void LimitedCOMCommand::ExecuteInternal(Execution::Context& context) const
+    {
+        if (!Runtime::IsRunningInPackagedContext())
+        {
+            context.Reporter.Error() << "This playground requires the deployed WinGet development package." << std::endl;
+            AICLI_TERMINATE_CONTEXT(HRESULT_FROM_WIN32(APPMODEL_ERROR_NO_PACKAGE));
+        }
+
+        const auto tokenTypeName = [](TOKEN_ELEVATION_TYPE type) -> std::string_view
+        {
+            switch (type)
+            {
+            case TokenElevationTypeDefault:
+                return "Default";
+            case TokenElevationTypeFull:
+                return "Full";
+            case TokenElevationTypeLimited:
+                return "Limited";
+            default:
+                THROW_HR(E_UNEXPECTED);
+            }
+        };
+
+        const auto callerType = wil::get_token_information<TOKEN_ELEVATION_TYPE>(GetCurrentProcessToken());
+        context.Reporter.Info()
+            << "Caller PID: " << GetCurrentProcessId() << '\n'
+            << "Caller token: " << tokenTypeName(callerType) << std::endl;
+
+        Deployment::Client::RunPackageManagerActivationPlayground(
+            [&](std::wstring_view runtimeClassName, const std::vector<GUID>& interfaceIds)
+            {
+                context.Reporter.Info() << "Activated class: " << Utility::ConvertToUTF8(runtimeClassName) << std::endl;
+                for (const auto& interfaceId : interfaceIds)
+                {
+                    context.Reporter.Info() << "Interface: " << winrt::guid{ interfaceId } << std::endl;
+                }
+            });
+
+        context.Reporter.Info() << "Package-internal PackageManager activation succeeded. Server PID and token type are in the server log." << std::endl;
     }
 
     Resource::LocString DumpProxyStubRegistrationsCommand::ShortDescription() const

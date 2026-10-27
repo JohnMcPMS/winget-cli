@@ -102,7 +102,7 @@
       <SubSystem>Windows</SubSystem>
       <GenerateWindowsMetadata>false</GenerateWindowsMetadata>
       <AdditionalLibraryDirectories>$(OutDir)..\Microsoft.Management.Deployment;$(OutDir)..\AppInstallerCLICore;$(OutDir)..\AppInstallerRepositoryCore;$(OutDir)..\YamlCppLib;$(OutDir)..\AppInstallerCommonCore;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>Rpcrt4.lib;Advapi32.lib;Shell32.lib;Ole32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>Rpcrt4.lib;Advapi32.lib;Shell32.lib;Ole32.lib;RuntimeObject.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <CETCompat Condition="'$(Platform)'=='Win32' Or '$(Platform)'=='x64'">true</CETCompat>
     </Link>
     <Manifest>

@@ -122,6 +122,8 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "WinGetUtilInterop.UnitTests
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "WindowsPackageManager", "WindowsPackageManager\WindowsPackageManager.vcxproj", "{2046B5AF-666D-4CE8-8D3E-C32C57908A56}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "WinGetDeploymentClient", "WinGetDeploymentClient\WinGetDeploymentClient.vcxproj", "{2E9EB4B9-A7FB-4C8C-9163-CFBC1FD43FDF}"
+EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "COMServer", "COMServer\COMServer.vcxitems", "{409CD681-22A4-469D-88AE-CB5E4836E07A}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Microsoft.Management.Deployment.InProc", "Microsoft.Management.Deployment.InProc\Microsoft.Management.Deployment.InProc.vcxproj", "{9AC3C6A4-1875-4D3E-BF9C-C31E81EFF6B4}"
@@ -628,6 +630,27 @@ Global
 		{2046B5AF-666D-4CE8-8D3E-C32C57908A56}.ReleaseStatic|x64.Build.0 = ReleaseStatic|x64
 		{2046B5AF-666D-4CE8-8D3E-C32C57908A56}.ReleaseStatic|x86.ActiveCfg = ReleaseStatic|Win32
 		{2046B5AF-666D-4CE8-8D3E-C32C57908A56}.ReleaseStatic|x86.Build.0 = ReleaseStatic|Win32
+		{2E9EB4B9-A7FB-4C8C-9163-CFBC1FD43FDF}.Debug|ARM64.ActiveCfg = Debug|ARM64
+		{2E9EB4B9-A7FB-4C8C-9163-CFBC1FD43FDF}.Debug|ARM64.Build.0 = Debug|ARM64
+		{2E9EB4B9-A7FB-4C8C-9163-CFBC1FD43FDF}.Debug|x64.ActiveCfg = Debug|x64
+		{2E9EB4B9-A7FB-4C8C-9163-CFBC1FD43FDF}.Debug|x64.Build.0 = Debug|x64
+		{2E9EB4B9-A7FB-4C8C-9163-CFBC1FD43FDF}.Debug|x86.ActiveCfg = Debug|Win32
+		{2E9EB4B9-A7FB-4C8C-9163-CFBC1FD43FDF}.Debug|x86.Build.0 = Debug|Win32
+		{2E9EB4B9-A7FB-4C8C-9163-CFBC1FD43FDF}.Fuzzing|ARM64.ActiveCfg = Release|ARM64
+		{2E9EB4B9-A7FB-4C8C-9163-CFBC1FD43FDF}.Fuzzing|x64.ActiveCfg = Release|x64
+		{2E9EB4B9-A7FB-4C8C-9163-CFBC1FD43FDF}.Fuzzing|x86.ActiveCfg = Release|Win32
+		{2E9EB4B9-A7FB-4C8C-9163-CFBC1FD43FDF}.Release|ARM64.ActiveCfg = Release|ARM64
+		{2E9EB4B9-A7FB-4C8C-9163-CFBC1FD43FDF}.Release|ARM64.Build.0 = Release|ARM64
+		{2E9EB4B9-A7FB-4C8C-9163-CFBC1FD43FDF}.Release|x64.ActiveCfg = Release|x64
+		{2E9EB4B9-A7FB-4C8C-9163-CFBC1FD43FDF}.Release|x64.Build.0 = Release|x64
+		{2E9EB4B9-A7FB-4C8C-9163-CFBC1FD43FDF}.Release|x86.ActiveCfg = Release|Win32
+		{2E9EB4B9-A7FB-4C8C-9163-CFBC1FD43FDF}.Release|x86.Build.0 = Release|Win32
+		{2E9EB4B9-A7FB-4C8C-9163-CFBC1FD43FDF}.ReleaseStatic|ARM64.ActiveCfg = ReleaseStatic|ARM64
+		{2E9EB4B9-A7FB-4C8C-9163-CFBC1FD43FDF}.ReleaseStatic|ARM64.Build.0 = ReleaseStatic|ARM64
+		{2E9EB4B9-A7FB-4C8C-9163-CFBC1FD43FDF}.ReleaseStatic|x64.ActiveCfg = ReleaseStatic|x64
+		{2E9EB4B9-A7FB-4C8C-9163-CFBC1FD43FDF}.ReleaseStatic|x64.Build.0 = ReleaseStatic|x64
+		{2E9EB4B9-A7FB-4C8C-9163-CFBC1FD43FDF}.ReleaseStatic|x86.ActiveCfg = ReleaseStatic|Win32
+		{2E9EB4B9-A7FB-4C8C-9163-CFBC1FD43FDF}.ReleaseStatic|x86.Build.0 = ReleaseStatic|Win32
 		{9AC3C6A4-1875-4D3E-BF9C-C31E81EFF6B4}.Debug|ARM64.ActiveCfg = Debug|ARM64
 		{9AC3C6A4-1875-4D3E-BF9C-C31E81EFF6B4}.Debug|ARM64.Build.0 = Debug|ARM64
 		{9AC3C6A4-1875-4D3E-BF9C-C31E81EFF6B4}.Debug|x64.ActiveCfg = Debug|x64
@@ -1136,6 +1159,7 @@ Global
 		WinGetSchemas\WinGetSchemas.vcxitems*{1c6e0108-2860-4b17-9f7e-fa5c6c1f3d3d}*SharedItemsImports = 4
 		COMServer\COMServer.vcxitems*{1cc41a9a-ae66-459d-9210-1e572dd7be69}*SharedItemsImports = 4
 		binver\binver.vcxitems*{2046b5af-666d-4ce8-8d3e-c32c57908a56}*SharedItemsImports = 4
+		binver\binver.vcxitems*{2e9eb4b9-a7fb-4c8c-9163-cfbc1fd43fdf}*SharedItemsImports = 4
 		CertificateResources\CertificateResources.vcxitems*{2046b5af-666d-4ce8-8d3e-c32c57908a56}*SharedItemsImports = 4
 		COMServer\COMServer.vcxitems*{2046b5af-666d-4ce8-8d3e-c32c57908a56}*SharedItemsImports = 4
 		ManifestSchema\ManifestSchema.vcxitems*{2046b5af-666d-4ce8-8d3e-c32c57908a56}*SharedItemsImports = 4

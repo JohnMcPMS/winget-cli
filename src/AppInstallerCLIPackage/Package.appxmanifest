@@ -113,6 +113,14 @@
     </Application>
   </Applications>
   <Extensions>
+    <Extension Category="windows.activatableClass.outOfProcessServer">
+      <OutOfProcessServer ServerName="WinGetInternalPackageManager" uap5:RunFullTrust="true" uap5:IdentityType="activateAsPackage">
+        <Path>WinGetServer\WindowsPackageManagerServer.exe</Path>
+        <Arguments>--internalPackageManager</Arguments>
+        <Instancing>singleInstance</Instancing>
+        <ActivatableClass ActivatableClassId="Microsoft.Management.Deployment.PackageManager" />
+      </OutOfProcessServer>
+    </Extension>
     <Extension Category="windows.activatableClass.proxyStub">
       <ProxyStub ClassId="00000355-0000-0000-C000-000000000046">
         <Path>Microsoft.Management.Configuration.winmd</Path>

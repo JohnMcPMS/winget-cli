@@ -247,9 +247,9 @@
       <ModuleDefinitionFile Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Source.def</ModuleDefinitionFile>
       <ModuleDefinitionFile Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Source.def</ModuleDefinitionFile>
       <ModuleDefinitionFile Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">Source.def</ModuleDefinitionFile>
-      <AdditionalDependencies Condition="'$(Configuration)'=='Debug'">wininet.lib;shell32.lib;winsqlite3.lib;shlwapi.lib;icuuc.lib;icuin.lib;urlmon.lib;Advapi32.lib;winhttp.lib;onecoreuap.lib;msi.lib;gdi32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies Condition="'$(Configuration)'=='Debug'">wininet.lib;shell32.lib;winsqlite3.lib;shlwapi.lib;icuuc.lib;icuin.lib;urlmon.lib;Advapi32.lib;winhttp.lib;onecoreuap.lib;msi.lib;gdi32.lib;delayimp.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <CETCompat Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</CETCompat>
-      <DelayLoadDLLs Condition="'$(Configuration)'=='Debug'">gdi32.dll</DelayLoadDLLs>
+      <DelayLoadDLLs Condition="'$(Configuration)'=='Debug'">gdi32.dll;WinGetDeploymentClient.dll</DelayLoadDLLs>
     </Link>
     <Manifest>
       <AdditionalManifestFiles Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">$(ProjectDir)..\manifest\shared.manifest %(AdditionalManifestFiles)</AdditionalManifestFiles>
@@ -426,6 +426,10 @@
     </ProjectReference>
     <ProjectReference Include="..\Microsoft.Management.Deployment\Microsoft.Management.Deployment.vcxproj">
       <Project>{1cc41a9a-ae66-459d-9210-1e572dd7be69}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\WinGetDeploymentClient\WinGetDeploymentClient.vcxproj">
+      <Project>{2e9eb4b9-a7fb-4c8c-9163-cfbc1fd43fdf}</Project>
+      <Private>false</Private>
     </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

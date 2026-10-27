@@ -22,6 +22,17 @@ namespace AppInstaller::CLI
         void ExecuteInternal(Execution::Context& context) const override;
     };
 
+    struct LimitedCOMCommand final : public Command
+    {
+        LimitedCOMCommand(std::string_view parent) : Command("limited-com", {}, parent) {}
+
+        Resource::LocString ShortDescription() const override;
+        Resource::LocString LongDescription() const override;
+
+    protected:
+        void ExecuteInternal(Execution::Context& context) const override;
+    };
+
     // Outputs the proxy stub registrations for the manifest.
     struct DumpProxyStubRegistrationsCommand final : public Command
     {

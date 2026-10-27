@@ -4,6 +4,7 @@
 #include "PackageManager.g.h"
 #include "Public/ComClsids.h"
 #include <winget/ModuleCountBase.h>
+#include <wil/cppwinrt_wrl.h>
 
 #if !defined(INCLUDE_ONLY_INTERFACE_METHODS)
 // Forward declaration
@@ -65,7 +66,7 @@ namespace winrt::Microsoft::Management::Deployment::implementation
 #if !defined(INCLUDE_ONLY_INTERFACE_METHODS)
 namespace winrt::Microsoft::Management::Deployment::factory_implementation
 {
-    struct PackageManager : PackageManagerT<PackageManager, implementation::PackageManager>, AppInstaller::WinRT::ModuleCountBase
+    struct PackageManager : PackageManagerT<PackageManager, wil::details::module_count_wrapper<implementation::PackageManager>>, AppInstaller::WinRT::ModuleCountBase
     {
     };
 }

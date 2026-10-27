@@ -131,10 +131,10 @@
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateWindowsMetadata>false</GenerateWindowsMetadata>
-      <AdditionalDependencies Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">wininet.lib;shell32.lib;winsqlite3.lib;shlwapi.lib;icuuc.lib;icuin.lib;urlmon.lib;Advapi32.lib;winhttp.lib;onecoreuap.lib;msi.lib;gdi32.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <AdditionalDependencies Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">wininet.lib;shell32.lib;winsqlite3.lib;shlwapi.lib;icuuc.lib;icuin.lib;urlmon.lib;Advapi32.lib;winhttp.lib;onecoreuap.lib;msi.lib;gdi32.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <DelayLoadDLLs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">gdi32.dll</DelayLoadDLLs>
-      <DelayLoadDLLs Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">gdi32.dll</DelayLoadDLLs>
+      <AdditionalDependencies Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">wininet.lib;shell32.lib;winsqlite3.lib;shlwapi.lib;icuuc.lib;icuin.lib;urlmon.lib;Advapi32.lib;winhttp.lib;onecoreuap.lib;msi.lib;gdi32.lib;delayimp.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">wininet.lib;shell32.lib;winsqlite3.lib;shlwapi.lib;icuuc.lib;icuin.lib;urlmon.lib;Advapi32.lib;winhttp.lib;onecoreuap.lib;msi.lib;gdi32.lib;delayimp.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <DelayLoadDLLs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">gdi32.dll;WinGetDeploymentClient.dll</DelayLoadDLLs>
+      <DelayLoadDLLs Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">gdi32.dll;WinGetDeploymentClient.dll</DelayLoadDLLs>
     </Link>
     <Manifest>
       <AdditionalManifestFiles Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(ProjectDir)..\manifest\shared.manifest</AdditionalManifestFiles>
@@ -153,8 +153,8 @@
       <RuntimeTypeInfo Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">false</RuntimeTypeInfo>
     </ClCompile>
     <Link>
-      <AdditionalDependencies Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">wininet.lib;shell32.lib;winsqlite3.lib;shlwapi.lib;icuuc.lib;icuin.lib;urlmon.lib;Advapi32.lib;winhttp.lib;onecoreuap.lib;msi.lib;gdi32.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <DelayLoadDLLs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">gdi32.dll</DelayLoadDLLs>
+      <AdditionalDependencies Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">wininet.lib;shell32.lib;winsqlite3.lib;shlwapi.lib;icuuc.lib;icuin.lib;urlmon.lib;Advapi32.lib;winhttp.lib;onecoreuap.lib;msi.lib;gdi32.lib;delayimp.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <DelayLoadDLLs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">gdi32.dll;WinGetDeploymentClient.dll</DelayLoadDLLs>
     </Link>
     <Manifest>
       <AdditionalManifestFiles Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">$(ProjectDir)..\manifest\shared.manifest</AdditionalManifestFiles>
@@ -1160,6 +1160,10 @@
     </ProjectReference>
     <ProjectReference Include="..\Microsoft.Management.Configuration\Microsoft.Management.Configuration.vcxproj">
       <Project>{ca460806-5e41-4e97-9a3d-1d74b433b663}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\WinGetDeploymentClient\WinGetDeploymentClient.vcxproj">
+      <Project>{2e9eb4b9-a7fb-4c8c-9163-cfbc1fd43fdf}</Project>
+      <Private>false</Private>
     </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
