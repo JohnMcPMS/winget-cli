@@ -226,8 +226,10 @@ An eligible invalid protected field is not the same as an absent field: it block
 ordinary-file fallback and selects the default. Protected entries for split
 settings are ineligible without the full token, so even an invalid entry cannot
 replace the ordinary value or force its default. Other valid eligible protected
-settings still apply. Whole-file load/recovery failures remain errors in either
-context because the file may also contain shared overrides.
+settings still apply. Any whole-file load failure with no usable protected
+backup leaves both files' settings unapplied and selects compiled defaults
+with warnings in either context. Settings load failures must not prevent
+functionality.
 
 "Default" normally means the existing compiled default. The module root has a
 context-specific default described below. An absent default install root still
@@ -266,24 +268,30 @@ Preserve authoritative in-process roots and existing explicit API inputs.
 This change isolates WinGet's ordinary module directory; it does not claim that
 every PowerShell search path or administrator-selected custom path is trusted.
 
-### Recovery and initialization failures
+### Recovery and defaults
 
 | Protected-file condition | Result |
 |---|---|
 | Neither primary nor backup exists | Normal absence; continue with eligible ordinary values/defaults. |
 | Primary loads successfully | Use primary; do not recover individual invalid fields from backup. |
 | Primary is absent, unreadable, or malformed; backup loads | Use protected backup and record a recovery warning. |
-| Existing protected configuration cannot be read/parsed or recovered | Fail normal settings initialization; do not proceed without administrator overrides. |
+| Protected configuration cannot be read/parsed, has a non-object root, or otherwise cannot be loaded, and no usable backup exists | Warn and use compiled defaults without applying either file's settings; do not propagate load errors. |
 | Individual eligible protected field is invalid | Warn and use its context-appropriate default; retain other valid fields. |
 
 Report source and setting path in diagnostics without unnecessarily exposing
-setting values. Do not collapse access failures into successful empty loads.
+setting values. Report access failures as warnings rather than silently treating
+them as missing files.
 For restricted full-token settings, no failure or recovery path reactivates an
 ordinary-file value.
 
+The load-failure fallback matches the existing no-valid-JSON behavior: no
+settings are added to the effective map. Keep ordinary-file source/edit
+semantics in `GetType()` even when its values are not applied.
+
 Keep protected-file opening and management path discovery available for repair
-even when its contents would prevent normal initialization. This limited
-management path does not relax failure behavior for normal operations.
+when settings could not be loaded. Normal operations continue with compiled
+defaults; discovering or opening a file for repair must not depend on its
+contents being valid.
 
 ### CLI management
 
@@ -347,8 +355,9 @@ No IDL or public COM interface changes are required.
 one-time custom initialization semantics and bypasses both files.
 
 File-backed COM consumers use the same effective settings view. COM remains
-non-interactive; initialization failures follow existing exception/HRESULT
-propagation rather than prompting or displaying CLI output.
+non-interactive; settings load failures select compiled defaults and record
+diagnostics rather than prompting, displaying CLI output, or propagating file
+load errors.
 
 CLI install, upgrade, uninstall, download, and other settings consumers receive
 the composed values without changes to their operational logic. Configuration
@@ -441,7 +450,7 @@ this feature does not change configuration elevation/remoting protocols.
 | Unelevated `settings --admin`, file absent | Report path and need for elevated creation; do not launch editor. |
 | `settings --admin`, file malformed | Remain available for repair; do not replace a good backup with the malformed primary. |
 | `settings export`, file malformed | Still report paths/capabilities as JSON for repair tooling. |
-| File-backed operation, unrecoverable protected failure | Fail initialization without proceeding on ordinary settings alone. |
+| File-backed operation, unrecoverable protected load failure | Warn and use compiled defaults; apply neither file's settings. |
 | Custom in-process initialization | Do not load either file; retain existing validation/policy semantics. |
 | COM | No prompts or CLI output; propagate failures through existing API handling. |
 | PowerShell Get/Test with `-Admin` | Read/test protected raw file without elevation. |
@@ -460,7 +469,9 @@ Use existing unit and integration test infrastructure to cover:
   replacement.
 - Invalid eligible protected fields selecting context defaults rather than
   ordinary fallback; ineligible split entries preserving ordinary selection.
-- Primary/backup recovery, unrecoverable failure, and management repair access.
+- Primary/backup recovery, defaults without either file's settings after any
+  unrecoverable protected load failure (including read/access errors), and
+  management repair access.
 - Authoritative custom initialization and unchanged Group Policy behavior.
 - Migration warning presence, suppression, visibility, and duplicate avoidance.
 - Protected directory/file permissions, read-only opens, and elevated creation,
@@ -506,14 +517,23 @@ Protected backup recovery displays through the existing settings-warning path:
 Warning: The admin settings file could not be loaded. Settings were loaded from its protected backup.
 ```
 
-Unrecoverable normal initialization reports:
+Unrecoverable JSON parsing uses the existing parse/default warning path and
+continues without applying either file's settings:
 
 ```text
-The admin settings file could not be loaded and no usable protected backup was found. Run 'winget settings --admin' to repair the file.
+Warning: Error parsing file: admin-settings.json
+Warning: Settings file couldn't load. Using default values.
 ```
 
-Error details identify the failing source. Repair/path-discovery operations must
-not be blocked by this normal-initialization failure.
+Unrecoverable read/access failures also warn and continue with compiled defaults:
+
+```text
+Warning: Error reading the protected settings file: admin-settings.json
+Warning: Settings file couldn't load. Using default values.
+```
+
+Warning details identify the failing source. Normal operations and
+repair/path-discovery operations remain available after fallback to defaults.
 
 `winget settings export` adds the path without changing existing fields:
 
@@ -556,9 +576,12 @@ contracts; they are not reclassified as ordinary-file input.
 ### Reliability
 
 Protected backups provide recovery without silently discarding administrator
-overrides. Individual invalid values use defaults and warnings; unrecoverable
-file failures stop normal initialization. Management access remains available
-to diagnose and repair the configuration.
+overrides. Individual invalid values use defaults and warnings. Any
+unrecoverable protected load failure warns and uses compiled defaults without
+applying either file's settings. Settings load failures must never prevent
+functionality. Built-in defaults must be secure; an unsafe default is a separate
+issue, not a reason to require successfully loaded settings.
+Management access remains available to diagnose and repair the configuration.
 
 ### Compatibility
 
@@ -593,11 +616,12 @@ than reuse ordinary modules.
 
 - Users may initially see different elevated paths or portable deletion behavior
   until an administrator configures the protected file.
-- A malformed protected file can prevent normal operations; repair access and
-  precise source diagnostics must remain independent of successful resolution.
+- A malformed or unreadable protected file with no usable backup suppresses both
+  files' settings in favor of compiled defaults. Precise warnings and repair
+  access must remain available, without preventing normal operations.
 - Shared startup code may currently read settings before identifying a repair
-  command. Implementation must preserve management access without weakening
-  normal initialization failures.
+  command. Implementation must preserve management access and avoid
+  contaminating structured output with warning text.
 - Editor association can launch an existing process. Elevation does not guarantee
   that every associated editor can save a protected file; do not relax ACLs or
   automatically elevate an unrelated editor.

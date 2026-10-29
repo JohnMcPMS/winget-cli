@@ -89,11 +89,18 @@ namespace AppInstaller::Settings
 
             AICLI_LOG(Core, Error, << "Error parsing " << settingName << ": " << error);
             warnings.emplace_back(StringResource::String::SettingsWarningParseError, settingName, error, false);
+            warnings.back().Source = LocIndString{ settingName };
 
             return {};
         }
 
-        std::optional<Json::Value> ParseFile(const StreamDefinition& setting, std::vector<UserSettings::Warning>& warnings)
+        struct ParsedSettingsFile
+        {
+            std::optional<Json::Value> Root;
+            bool Failed = false;
+        };
+
+        ParsedSettingsFile ParseFile(const StreamDefinition& setting, std::vector<UserSettings::Warning>& warnings)
         {
             try
             {
@@ -101,19 +108,114 @@ namespace AppInstaller::Settings
                 if (stream)
                 {
                     std::string settingsContentStr = Utility::ReadEntireStream(*stream);
-                    return ParseSettingsContent(settingsContentStr, setting.Name, warnings);
+                    THROW_HR_IF(APPINSTALLER_CLI_ERROR_STREAM_READ_FAILURE, setting.Type == Type::AdminFile && stream->fail());
+                    auto root = ParseSettingsContent(settingsContentStr, setting.Name, warnings);
+                    if (!root)
+                    {
+                        return { {}, true };
+                    }
+
+                    if (setting.Type == Type::AdminFile && !root->isObject())
+                    {
+                        AICLI_LOG(Core, Error, << "Settings file must contain a JSON object: " << setting.Name);
+                        warnings.emplace_back(StringResource::String::SettingsWarningInvalidFileFormat, setting.Name, ""sv, false);
+                        warnings.back().Source = LocIndString{ setting.Name };
+                        return { {}, true };
+                    }
+
+                    return { std::move(root), false };
                 }
             }
             catch (const std::exception& e)
             {
                 AICLI_LOG(Core, Error, << "Failed to read " << setting.Name << "; Reason: " << e.what());
+                if (setting.Type == Type::AdminFile)
+                {
+                    warnings.emplace_back(StringResource::String::SettingsWarningReadError, setting.Name, e.what(), false);
+                    warnings.back().Source = LocIndString{ setting.Name };
+                }
+                return { {}, true };
             }
             catch (...)
             {
                 AICLI_LOG(Core, Error, << "Failed to read " << setting.Name << "; Reason unknown.");
+                if (setting.Type == Type::AdminFile)
+                {
+                    warnings.emplace_back(StringResource::String::SettingsWarningReadError, setting.Name, ""sv, false);
+                    warnings.back().Source = LocIndString{ setting.Name };
+                }
+                return { {}, true };
             }
 
             return {};
+        }
+
+        struct SettingsSourceInfo
+        {
+            Json::Value Root;
+            std::string_view Name;
+            UserSettingsType Type = UserSettingsType::Default;
+            bool Failed = false;
+
+            void LoadSettingsSource(
+                const StreamDefinition& primary,
+                const StreamDefinition& backup,
+                std::vector<UserSettings::Warning>& warnings)
+            {
+                Name = primary.Name;
+
+                auto primarySettings = ParseFile(primary, warnings);
+                if (primarySettings.Root.has_value())
+                {
+                    Root = std::move(primarySettings.Root.value());
+                    Type = UserSettingsType::Standard;
+                    AICLI_LOG(Core, Info, << "Settings loaded from " << Name);
+                }
+
+                if (Root.isNull())
+                {
+                    auto backupSettings = ParseFile(backup, warnings);
+                    if (backupSettings.Root.has_value())
+                    {
+                        Root = std::move(backupSettings.Root.value());
+                        Name = backup.Name;
+                        Type = UserSettingsType::Backup;
+                        AICLI_LOG(Core, Info, << "Settings loaded from " << Name);
+                        if (backup.Type == Type::AdminFile)
+                        {
+                            warnings.emplace_back(StringResource::String::SettingsWarningLoadedBackupSettings, Name, ""sv, false);
+                        }
+                        else
+                        {
+                            warnings.emplace_back(StringResource::String::SettingsWarningLoadedBackupSettings);
+                        }
+                        warnings.back().Source = LocIndString{ Name };
+                    }
+                    else if (primarySettings.Failed || primarySettings.Root.has_value() || backupSettings.Failed)
+                    {
+                        Failed = true;
+                        warnings.emplace_back(StringResource::String::SettingsWarningUsingDefault);
+                        warnings.back().Source = LocIndString{ primarySettings.Failed || primarySettings.Root.has_value() ?
+                            primary.Name : backup.Name };
+                    }
+                }
+            }
+        };
+
+        struct SettingsSources
+        {
+            SettingsSourceInfo User;
+            SettingsSourceInfo Admin;
+            bool FileBacked = false;
+            bool FullToken = false;
+        };
+
+        bool HasSetting(const Json::Value& root, const std::string& path)
+        {
+            // Resolving a path alone cannot distinguish an explicit null from an absent field.
+            const auto separator = path.find_last_of('.');
+            const auto& parent = separator == 0 ? root : Json::Path(path.substr(0, separator)).resolve(root);
+            return parent.isObject() && parent.isMember(path.substr(separator + 1));
         }
 
         template <Setting S>
@@ -124,7 +226,7 @@ namespace AppInstaller::Settings
 
         template <Setting S>
         void Validate(
-            Json::Value& root,
+            const SettingsSources& sources,
             std::map<Setting, details::SettingVariant>& settings,
             std::vector<UserSettings::Warning>& warnings)
         {
@@ -157,8 +259,16 @@ namespace AppInstaller::Settings
             }
 
             const Json::Path jsonPath(path);
-            Json::Value result = jsonPath.resolve(root);
-            if (!result.isNull())
+            constexpr auto treatment = details::SettingMapping<S>::Treatment;
+            const bool ignoreUser = sources.FileBacked && sources.FullToken && treatment != details::SettingTreatment::Unrestricted;
+            const bool useAdmin = sources.FileBacked &&
+                (sources.FullToken || treatment != details::SettingTreatment::RestrictedSplit) &&
+                HasSetting(sources.Admin.Root, path);
+            const auto sourceName = useAdmin ? sources.Admin.Name : sources.User.Name;
+            Json::Value result = useAdmin ? jsonPath.resolve(sources.Admin.Root) : (ignoreUser ? Json::Value{} : jsonPath.resolve(sources.User.Root));
+            bool validAdminValue = false;
+
+            if (useAdmin || !result.isNull())
             {
                 auto jsonValue = GetValue<typename details::SettingMapping<S>::json_t>(result);
 
@@ -171,36 +281,47 @@ namespace AppInstaller::Settings
                         // Finally add it to the map
                         settings[S].emplace<details::SettingIndex(S)>(
                             std::forward<typename details::SettingMapping<S>::value_t>(validatedValue.value()));
-                        AICLI_LOG(Core, Verbose, << "Valid setting. Field: " << path << " Value: " << GetValueString(jsonValue.value()));
+                        validAdminValue = useAdmin;
+                        AICLI_LOG(Core, Verbose, << "Valid setting. Source: " << sourceName << " Field: " << path << " Value: " << GetValueString(jsonValue.value()));
                     }
                     else
                     {
                         auto valueAsString = GetValueString(jsonValue.value());
-                        AICLI_LOG(Core, Error, << "Invalid field value. Field: " << path << " Value: " << valueAsString);
+                        AICLI_LOG(Core, Error, << "Invalid field value. Source: " << sourceName << " Field: " << path << " Value: " << valueAsString);
                         warnings.emplace_back(StringResource::String::SettingsWarningInvalidFieldValue, path, valueAsString);
+                        warnings.back().Source = LocIndString{ sourceName };
                     }
                 }
                 else
                 {
-                    AICLI_LOG(Core, Error, << "Invalid field format. Field: " << path << " Using default");
+                    AICLI_LOG(Core, Error, << "Invalid field format. Source: " << sourceName << " Field: " << path << " Using default");
                     warnings.emplace_back(StringResource::String::SettingsWarningInvalidFieldFormat, path);
+                    warnings.back().Source = LocIndString{ sourceName };
                 }
             }
             else
             {
                 AICLI_LOG(Core, Verbose, << "Setting " << path << " not found. Using default");
             }
+
+            if (ignoreUser && HasSetting(sources.User.Root, path) && !validAdminValue)
+            {
+                AICLI_LOG(Core, Warning, << "Ignoring setting from " << sources.User.Name << " with the full token. Field: " << path);
+                warnings.emplace_back(StringResource::String::SettingsWarningIgnoredWithFullToken, path);
+                warnings.back().Source = LocIndString{ sources.User.Name };
+                warnings.back().IsMigrationWarning = true;
+            }
         }
 
         template <size_t... S>
         void ValidateAll(
-            Json::Value& root,
+            const SettingsSources& sources,
             std::map<Setting, details::SettingVariant>& settings,
             std::vector<UserSettings::Warning>& warnings,
             std::index_sequence<S...>)
         {
             // Use folding to call each setting validate function.
-            (FoldHelper{}, ..., Validate<static_cast<Setting>(S)>(root, settings, warnings));
+            (FoldHelper{}, ..., Validate<static_cast<Setting>(S)>(sources, settings, warnings));
         }
 
         std::optional<std::filesystem::path> ValidatePathValue(std::string_view value)
@@ -595,14 +716,14 @@ namespace AppInstaller::Settings
             return *s_UserSettings_Override;
         }
 #endif
-        if (!s_userSettingsInitialized)
+        static UserSettings userSettings = [&content]()
         {
             s_userSettingsInInitialization = true;
-        }
+            auto resetInitialization = wil::scope_exit([]() { s_userSettingsInInitialization = false; });
+            return UserSettings(content);
+        }();
 
-        static UserSettings userSettings(content);
         s_userSettingsInitialized = true;
-        s_userSettingsInInitialization = false;
 
         return userSettings;
     }
@@ -640,9 +761,9 @@ namespace AppInstaller::Settings
 
     UserSettings::UserSettings(const std::optional<std::string>& content) : m_type(UserSettingsType::Default)
     {
-        Json::Value settingsRoot = Json::Value::nullSingleton();
+        SettingsSources sources;
 
-        // Settings can be loaded from settings.json or settings.json.backup files.
+        // Select the ordinary source independently of the protected overlay.
         // 0 - Use default (empty) settings if disabled by group policy.
         // if
         // 1 - Use passed in settings content if available.
@@ -660,51 +781,33 @@ namespace AppInstaller::Settings
 
         if (content.has_value())
         {
+            sources.User.Name = "CustomSettings"sv;
             auto settingsJson = ParseSettingsContent(content.value(), "CustomSettings", m_warnings);
             if (settingsJson.has_value())
             {
                 AICLI_LOG(Core, Info, << "Settings loaded from custom settings");
-                m_type = UserSettingsType::Custom;
-                settingsRoot = settingsJson.value();
+                sources.User.Type = UserSettingsType::Custom;
+                sources.User.Root = std::move(settingsJson.value());
             }
         }
         else
         {
-            auto settingsJson = ParseFile(Stream::PrimaryUserSettings, m_warnings);
-            if (settingsJson.has_value())
-            {
-                AICLI_LOG(Core, Info, << "Settings loaded from " << Stream::PrimaryUserSettings.Name);
-                m_type = UserSettingsType::Standard;
-                settingsRoot = settingsJson.value();
-            }
-
-            // Settings didn't parse or doesn't exist, try with backup.
-            if (settingsRoot.isNull())
-            {
-                auto settingsBackupJson = ParseFile(Stream::BackupUserSettings, m_warnings);
-                if (settingsBackupJson.has_value())
-                {
-                    AICLI_LOG(Core, Info, << "Settings loaded from " << Stream::BackupUserSettings.Name);
-                    m_warnings.emplace_back(StringResource::String::SettingsWarningLoadedBackupSettings);
-                    m_type = UserSettingsType::Backup;
-                    settingsRoot = settingsBackupJson.value();
-                }
-                else
-                {
-                    // Settings and back up didn't parse or exist. If they exist then warn the user.
-                    auto settingsPath = Stream{ Stream::PrimaryUserSettings }.GetPath();
-                    auto backupPath = Stream{ Stream::BackupUserSettings }.GetPath();
-                    if (std::filesystem::exists(settingsPath) || std::filesystem::exists(backupPath))
-                    {
-                        m_warnings.emplace_back(StringResource::String::SettingsWarningUsingDefault);
-                    }
-                }
-            }
+            sources.FileBacked = true;
+            sources.FullToken = IsRunningWithNonDefaultFullToken();
+            sources.User.LoadSettingsSource(Stream::PrimaryUserSettings, Stream::BackupUserSettings, m_warnings);
+            sources.Admin.LoadSettingsSource(Stream::PrimaryAdminSettingsFile, Stream::BackupAdminSettingsFile, m_warnings);
         }
 
-        if (!settingsRoot.isNull())
+        m_type = sources.User.Type;
+        if (sources.Admin.Failed)
         {
-            ValidateAll(settingsRoot, m_settings, m_warnings, std::make_index_sequence<static_cast<size_t>(Setting::Max)>());
+            AICLI_LOG(Core, Warning, << "Protected settings could not be loaded. Ignoring file-backed settings and using default values.");
+            return;
+        }
+
+        if (!sources.User.Root.isNull() || !sources.Admin.Root.isNull())
+        {
+            ValidateAll(sources, m_settings, m_warnings, std::make_index_sequence<static_cast<size_t>(Setting::Max)>());
         }
         else
         {
