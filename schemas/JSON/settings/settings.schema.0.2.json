@@ -205,17 +205,17 @@
           "default": false
         },
         "portablePackageUserRoot": {
-          "description": "The default root directory where packages are installed to under User scope. Applies to the portable installer type.",
+          "description": "The default root directory where packages are installed to under User scope. Applies to the portable installer type. Values in the ordinary user settings file are ignored when WinGet runs with a non-default full token. Configure this setting in the protected admin-settings.json file using 'winget settings --admin'; its value is shared across token contexts.",
           "type": "string",
           "default": "%LOCALAPPDATA%/Microsoft/WinGet/Packages/"
         },
         "portablePackageMachineRoot": {
-          "description": "The default root directory where packages are installed to under Machine scope. Applies to the portable installer type.",
+          "description": "The default root directory where packages are installed to under Machine scope. Applies to the portable installer type. Machine-scope portable package changes require elevation. Values in the ordinary user settings file are ignored when WinGet runs with a non-default full token. Configure this setting in the protected admin-settings.json file using 'winget settings --admin'; its value is shared across token contexts.",
           "type": "string",
           "default": "%PROGRAMFILES%/WinGet/Packages/"
         },
         "defaultInstallRoot": {
-          "description": "Default install location to use for packages that require it when not specified",
+          "description": "Default install location to use for packages that require it when not specified. With a non-default full token, only values in the protected admin-settings.json file apply; configure them using 'winget settings --admin'. Without that full token, only values in the ordinary user settings file apply, allowing separate install roots.",
           "type": "string",
           "maxLength": 32767
         },
@@ -241,7 +241,7 @@
       "type": "object",
       "properties": {
         "purgePortablePackage": {
-          "description": "Controls whether the default behavior for uninstall removes all files and directories relevant to this package. Only applies to the portable installerType.",
+          "description": "Controls whether the default behavior for uninstall removes all files and directories relevant to this package. Only applies to the portable installerType. Values in the ordinary user settings file are ignored when WinGet runs with a non-default full token. Configure this setting in the protected admin-settings.json file using 'winget settings --admin'; its value is shared across token contexts.",
           "type": "boolean",
           "default": false
         }
@@ -252,7 +252,7 @@
       "type": "object",
       "properties": {
         "defaultModuleRoot": {
-          "description": "The default root directory where PowerShell modules are installed to when applying a configuration.",
+          "description": "The default root directory where PowerShell modules are installed to when applying a configuration. With a non-default full token, only values in the protected admin-settings.json file apply; configure them using 'winget settings --admin'. Without that full token, only values in the ordinary user settings file apply, allowing separate module roots. The default below is for ordinary-token use; the full-token default is a separate administrator-writable per-user module directory.",
           "type": "string",
           "maxLength": 32767,
           "default": "%LOCALAPPDATA%/Microsoft/WinGet/Configuration/Modules/"
@@ -264,7 +264,7 @@
       "type": "object",
       "properties": {
         "defaultDownloadDirectory": {
-          "description": "The default directory where installers are downloaded to.",
+          "description": "The default directory where installers are downloaded to. Values in the ordinary user settings file are ignored when WinGet runs with a non-default full token. Configure this setting in the protected admin-settings.json file using 'winget settings --admin'; its value is shared across token contexts.",
           "type": "string",
           "default": "%USERPROFILE%/Downloads/"
         }
