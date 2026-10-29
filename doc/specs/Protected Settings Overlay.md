@@ -10,9 +10,10 @@ last updated: 2026-10-29
 
 Add a per-user, administrator-writable settings file using the existing user
 settings schema, whose explicitly configured values override the ordinary user
-settings file. Mark selected settings so that their ordinary-file values are
-ignored when WinGet runs with the non-default full token, while preserving the
-existing settings consumption interface and authoritative in-process settings.
+settings file where eligible for the execution context. Selected settings ignore
+ordinary-file values with the non-default full token; module and default install
+roots additionally use separate values across the token boundary, while keeping
+the existing settings interface and authoritative in-process settings.
 
 ## Inspiration
 
@@ -25,8 +26,10 @@ administrator selected those values.
 Ignoring sensitive values in that file prevents administrators from configuring
 those settings for elevated use unless an alternative is provided. A protected
 file supplies that alternative without introducing a second settings schema.
-Applying its explicit values in ordinary processes as well makes the override
-consistent across execution contexts.
+Protected overrides can be shared across contexts for output locations and
+other suitable controls. Locations used for reading or importing content may
+instead need independent ordinary and full-token values so ordinary operations
+do not require the administrator-selected location to be medium-writable.
 
 ## Solution Design
 
@@ -38,6 +41,8 @@ consistent across execution contexts.
 | Protected file | New `admin-settings.json`, writable only with administrative privileges and readable by the current user without elevation. |
 | Full token | The condition identified by the existing `Runtime::IsRunningWithNonDefaultFullToken()` helper. |
 | Restricted setting | A setting whose ordinary-file value is ignored with a full token. |
+| Shared override | A protected-file value eligible in either token context. |
+| Split setting | A restricted setting whose protected-file value is eligible only with the full token. |
 | In-process settings | Custom JSON supplied through the existing one-time settings initialization API instead of settings files. |
 
 The full-token helper checks `TokenElevationTypeFull`: the non-default full side
@@ -88,8 +93,8 @@ to be invalid.
 ### Setting classifications
 
 Add explicit treatment metadata to every canonical `SettingMapping`, alongside
-its JSON path, type, default, and policy mapping. Initially, only two treatments
-are needed: unrestricted and ignore ordinary-file values with a full token.
+its JSON path, type, default, and policy mapping. Three treatments are needed:
+unrestricted/shared override, restricted/shared override, and restricted/split.
 Do not introduce a general flags framework for hypothetical future treatments.
 
 Require an explicit classification for new settings, including settings
@@ -97,14 +102,20 @@ compiled only with test hooks.
 
 The initial restricted set is:
 
-| Setting | Restricted influence |
-|---|---|
-| `configureBehavior.defaultModuleRoot` | PowerShell module installation, search, and import location. |
-| `installBehavior.portablePackageUserRoot` | Portable package destination; user scope does not reduce an already elevated token. |
-| `installBehavior.portablePackageMachineRoot` | Machine-scope portable package destination. |
-| `installBehavior.defaultInstallRoot` | Default installation destination passed into installer workflows. |
-| `downloadBehavior.defaultDownloadDirectory` | Download-only installer and manifest destination. |
-| `uninstallBehavior.purgePortablePackage` | Recursive deletion of the recorded portable installation directory. |
+| Setting | Protected override | Rationale |
+|---|---|---|
+| `configureBehavior.defaultModuleRoot` | Split | Modules are saved, discovered, and imported here; ordinary operations must not force the full-token root to be medium-writable. |
+| `installBehavior.portablePackageUserRoot` | Shared | Keep consistent paths; separate portable work will block full-token user-scope operations, then implement de-elevation. |
+| `installBehavior.portablePackageMachineRoot` | Shared | Keep consistent paths; machine-scope portable mutations require elevation. |
+| `installBehavior.defaultInstallRoot` | Split | Package installers may read existing contents or installed components; not a guaranteed write-only destination. |
+| `downloadBehavior.defaultDownloadDirectory` | Shared | Download-only output, not ordinary installation staging or automatic execution input. |
+| `uninstallBehavior.purgePortablePackage` | Shared | Boolean deletion policy, not a configurable content search location. |
+
+Portable roots are not write-only: WinGet later reads hashes and portable SQLite
+indexes at installed locations. Sharing the user root is an explicit design
+choice based on separate blocking/de-elevation work, not a claim that those
+protections are implemented by this feature. Document machine-scope elevation
+requirements in the schema/spec; do not add another runtime metadata dimension.
 
 Keep all other settings unrestricted initially. Installer preferences select
 among otherwise applicable artifacts; extraction settings select fixed
@@ -123,7 +134,10 @@ Update the descriptions of all six restricted properties in
 values are ignored with a non-default full token and direct users to
 `winget settings --admin` to configure the protected file. This makes the
 restriction discoverable in editors using the shared schema without changing
-property types, defaults, or validation.
+property types or validation. For the two split properties, also explain that
+protected-file values do not apply without the full token. Document the
+context-specific module default and the machine portable root's elevated-only
+operational use.
 
 For example, the ordinary file can contain:
 
@@ -135,6 +149,9 @@ For example, the ordinary file can contain:
   },
   "downloadBehavior": {
     "defaultDownloadDirectory": "C:\\UserDownloads"
+  },
+  "configureBehavior": {
+    "defaultModuleRoot": "C:\\UserModules"
   }
 }
 ```
@@ -146,6 +163,9 @@ The protected file can contain:
   "$schema": "https://aka.ms/winget-settings.schema.json",
   "downloadBehavior": {
     "defaultDownloadDirectory": "C:\\ManagedDownloads"
+  },
+  "configureBehavior": {
+    "defaultModuleRoot": "C:\\ManagedModules"
   }
 }
 ```
@@ -154,6 +174,11 @@ The resulting view uses `C:\ManagedDownloads` in both token contexts and retains
 the ordinary progress-bar preference. If the protected download setting is
 absent, an ordinary-token process uses `C:\UserDownloads`; a full-token process
 uses the compiled default and records a migration warning.
+
+The module root instead uses `C:\UserModules` without the full token and
+`C:\ManagedModules` with it. The administrator must protect the latter directory
+against ordinary writes; storing its name in the protected file does not
+establish that directory's permissions.
 
 An administrator may override unrestricted settings as well. A protected file
 containing only selected values does not default the remaining user settings.
@@ -177,7 +202,8 @@ For file-backed initialization:
 1. Select the ordinary primary or backup using existing behavior.
 2. Load the protected primary or recover its protected backup.
 3. Compose explicit entries at canonical setting granularity, filtering
-   restricted ordinary entries when the existing full-token helper returns true.
+   restricted ordinary entries with the full token and protected entries for
+   split settings without it.
 4. Apply existing typed validation and expose the effective settings view.
 
 Preserve the existing policy-first validation in `Validate<S>()`. It already
@@ -189,14 +215,23 @@ Absent a mapped policy, file-backed selection is:
 
 | Context | Classification | Protected field absent | Protected field valid | Protected field invalid |
 |---|---|---|---|---|
-| Ordinary token | Unrestricted | Ordinary value or default | Protected value | Warn; compiled default |
-| Ordinary token | Restricted | Ordinary value or default | Protected value | Warn; compiled default |
-| Full token | Unrestricted | Ordinary value or default | Protected value | Warn; compiled default |
-| Full token | Restricted | Compiled default | Protected value | Warn; compiled default |
+| Ordinary token | Unrestricted/shared | Ordinary value or default | Protected value | Warn; default |
+| Ordinary token | Restricted/shared | Ordinary value or default | Protected value | Warn; default |
+| Ordinary token | Restricted/split | Ordinary value or default | Ordinary value or default | Ordinary value or default |
+| Full token | Unrestricted/shared | Ordinary value or default | Protected value | Warn; default |
+| Full token | Restricted/shared | Default | Protected value | Warn; default |
+| Full token | Restricted/split | Full-token default | Protected value | Warn; full-token default |
 
-An invalid protected field is not the same as an absent field. It blocks
-ordinary-file fallback for that setting even in an ordinary-token process;
-other valid protected settings still apply.
+An eligible invalid protected field is not the same as an absent field: it blocks
+ordinary-file fallback and selects the default. Protected entries for split
+settings are ineligible without the full token, so even an invalid entry cannot
+replace the ordinary value or force its default. Other valid eligible protected
+settings still apply. Whole-file load/recovery failures remain errors in either
+context because the file may also contain shared overrides.
+
+"Default" normally means the existing compiled default. The module root has a
+context-specific default described below. An absent default install root still
+uses the existing empty default and location-prompt behavior.
 
 False, zero, and valid empty collections are explicit values. Arrays replace
 the lower-precedence array as a whole; they are not concatenated. Overriding one
@@ -208,6 +243,29 @@ objects or implement a second schema/parser. Preserve the existing user source
 and edit semantics exposed by `GetType()`; track overlay state separately as
 needed.
 
+### Full-token module storage and discovery
+
+Without a valid protected module-root value, use a distinct administrator-writable
+per-user module directory with the full token. Reuse protected per-user path/ACL
+mechanisms and preserve packaged/unpackaged separation. Ordinary-token processes
+retain their existing module default and cannot change the full-token default's
+contents. Invalid eligible root values select this context-appropriate default,
+not an empty value that would fall back to LocalAppData.
+
+Include a narrowly scoped configuration processor change: full-token module
+discovery must not automatically prepend the ordinary WinGet module directory
+as an additional fallback when selecting a protected custom or default root.
+The current factory always adds that ordinary path even with a custom location;
+settings overlay alone does not remove it. Exclude that ordinary WinGet
+directory if inherited in the search path as well, without removing the
+separately selected authoritative root.
+
+Do not automatically copy or trust modules from the ordinary directory.
+Reacquire or explicitly provision required modules in the protected location.
+Preserve authoritative in-process roots and existing explicit API inputs.
+This change isolates WinGet's ordinary module directory; it does not claim that
+every PowerShell search path or administrator-selected custom path is trusted.
+
 ### Recovery and initialization failures
 
 | Protected-file condition | Result |
@@ -216,7 +274,7 @@ needed.
 | Primary loads successfully | Use primary; do not recover individual invalid fields from backup. |
 | Primary is absent, unreadable, or malformed; backup loads | Use protected backup and record a recovery warning. |
 | Existing protected configuration cannot be read/parsed or recovered | Fail normal settings initialization; do not proceed without administrator overrides. |
-| Individual protected field is invalid | Warn and use its compiled default; retain other valid fields. |
+| Individual eligible protected field is invalid | Warn and use its context-appropriate default; retain other valid fields. |
 
 Report source and setting path in diagnostics without unnecessarily exposing
 setting values. Do not collapse access failures into successful empty loads.
@@ -292,10 +350,11 @@ File-backed COM consumers use the same effective settings view. COM remains
 non-interactive; initialization failures follow existing exception/HRESULT
 propagation rather than prompting or displaying CLI output.
 
-CLI install, upgrade, uninstall, download, configuration, and other existing
-settings consumers receive the composed values without changes to their
-operational logic. Explicit CLI/API argument precedence, installer launching,
-remoting protocols, and resume serialization remain unchanged.
+CLI install, upgrade, uninstall, download, and other settings consumers receive
+the composed values without changes to their operational logic. Configuration
+module default/discovery handling has the narrow exception described above.
+Explicit CLI/API argument precedence, installer launching, remoting protocols,
+and resume serialization remain unchanged.
 
 This guarantee applies to values exposed by the view in its initialization
 context. It does not redefine the authority of values already selected in a
@@ -389,15 +448,18 @@ this feature does not change configuration elevation/remoting protocols.
 | PowerShell Set with `-Admin` | Require elevation; preserve object output and existing merge behavior. |
 | DSC protected target | Non-interactive raw-file operations; protected writes require elevation. |
 | Settings disabled by policy | Preserve early exit; load neither settings file. |
+| Ordinary-token configuration | Use ordinary module root/default; ignore the protected split entry. |
+| Full-token configuration | Use protected module root or protected per-user default; do not automatically search/copy ordinary WinGet modules. |
 
 ### Validation and cross-repository impact
 
 Use existing unit and integration test infrastructure to cover:
 
-- Both classifications and token contexts, with each source absent/present.
+- All three classifications and token contexts, with each source absent/present.
 - Explicit false/zero/empty values, nested sibling preservation, and whole-array
   replacement.
-- Invalid protected fields selecting defaults rather than ordinary fallback.
+- Invalid eligible protected fields selecting context defaults rather than
+  ordinary fallback; ineligible split entries preserving ordinary selection.
 - Primary/backup recovery, unrecoverable failure, and management repair access.
 - Authoritative custom initialization and unchanged Group Policy behavior.
 - Migration warning presence, suppression, visibility, and duplicate avoidance.
@@ -405,6 +467,10 @@ Use existing unit and integration test infrastructure to cover:
   backup, and mutation.
 - Additive export schema/property and PowerShell/DSC raw-file target selection.
 - Explicit classification coverage for every canonical setting.
+- Distinct protected/ordinary module defaults and protected default permissions.
+- Exclusion of automatic/inherited ordinary WinGet module paths with the full
+  token, preservation of explicit authoritative roots, and no automatic module
+  copying/reuse.
 
 No package manifest fields, publisher validation rules, or source protocol
 changes are involved. Consequently, no changes are required in winget-create,
@@ -505,6 +571,11 @@ Migration warnings and explicit protected configuration provide the transition;
 there is no automatic trust promotion. Unrestricted settings retain ordinary
 behavior unless explicitly overridden in the protected file.
 
+Module and default install roots are independently configurable for each token
+context. Full-token configuration no longer automatically reuses the ordinary
+WinGet module directory; administrators must acquire or explicitly provision
+modules in the protected location.
+
 The additive export property and optional PowerShell/DSC selectors preserve
 existing callers. Raw-file management continues to differ from the effective
 settings view.
@@ -513,8 +584,10 @@ settings view.
 
 Load the additional small local file once during existing process-static settings
 initialization. Read its backup only for recovery, and write backups only during
-eligible CLI opens. No polling, network activity, or additional work in individual
-settings consumers is introduced.
+eligible CLI opens. No polling is introduced. Module factory initialization also
+selects the context-specific default and filters the ordinary WinGet module path.
+Initial full-token configuration may need to download modules separately rather
+than reuse ordinary modules.
 
 ## Potential Issues
 
@@ -537,6 +610,11 @@ settings consumers is introduced.
   known source/load state rather than copying unconditionally.
 - Protected path and raw file discovery must remain correct across package
   identities, runtime-state names, and account contexts.
+- Shared portable roots rely on separate operational elevation protections.
+  The planned user-scope blocking/de-elevation work must not be mistaken for an
+  implemented guarantee of this overlay.
+- Splitting module storage without removing the automatic ordinary WinGet search
+  fallback would leave the original cross-context module discovery issue.
 
 ## Deprecation Path
 
@@ -569,3 +647,5 @@ overlay, automatic migration, or a new custom-settings authority model.
 - PowerShell management: `src\PowerShell\Microsoft.WinGet.Client.Engine\Commands\UserSettingsCommand.cs`.
 - Native DSC resource: `src\AppInstallerCLICore\Commands\DscUserSettingsFileResource.cpp`.
 - PowerShell DSC resource: `src\PowerShell\Microsoft.WinGet.DSC\Microsoft.WinGet.DSC.psm1`.
+- Module default and search paths: `src\Microsoft.Management.Configuration.Processor\Public\PowerShellConfigurationSetProcessorFactory.cs`.
+- Portable state and hash reads: `src\AppInstallerCLICore\PortableInstaller.cpp`.
