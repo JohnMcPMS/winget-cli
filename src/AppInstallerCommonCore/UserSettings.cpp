@@ -294,11 +294,16 @@ namespace AppInstaller::Settings
             const auto sourceName = useAdmin ? sources.Admin.Name : sources.User.Name;
             bool validAdminValue = false;
 
-            if (result != nullptr && (useAdmin || !result->isNull()))
+            if (result != nullptr)
             {
                 auto jsonValue = GetValue<typename details::SettingMapping<S>::json_t>(*result);
 
-                if (jsonValue.has_value())
+                if (result->isNull())
+                {
+                    validAdminValue = useAdmin;
+                    AICLI_LOG(Core, Verbose, << "Explicit null value. Source: " << sourceName << " Field: " << path << " Using default");
+                }
+                else if (jsonValue.has_value())
                 {
                     auto validatedValue = details::SettingMapping<S>::Validate(jsonValue.value());
 
