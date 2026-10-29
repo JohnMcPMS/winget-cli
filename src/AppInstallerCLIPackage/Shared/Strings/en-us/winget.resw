@@ -1005,7 +1005,7 @@ They can be configured through the settings file 'winget settings'.</value>
   </data>
   <data name="SettingsWarningInvalidFileFormat" xml:space="preserve">
     <value>The settings file must contain a JSON object.</value>
-    <comment>Warning for a protected settings file whose JSON root is not an object. The file name is displayed separately.</comment>
+    <comment>Warning for a settings file whose JSON root is not an object. The file name is displayed separately.</comment>
   </data>
   <data name="SettingsWarningInvalidValueFromPolicy" xml:space="preserve">
     <value>Invalid setting from Group Policy.</value>
@@ -1020,9 +1020,9 @@ They can be configured through the settings file 'winget settings'.</value>
   <data name="SettingsWarningParseError" xml:space="preserve">
     <value>Error parsing file:</value>
   </data>
-  <data name="SettingsWarningAdminReadError" xml:space="preserve">
-    <value>Error reading the administrator settings file:</value>
-    <comment>Warning when a protected settings file could not be read. The file name and any available diagnostic details are displayed separately.</comment>
+  <data name="SettingsWarningReadError" xml:space="preserve">
+    <value>Error reading the settings file:</value>
+    <comment>Warning when an ordinary or protected settings file could not be read. The file name and any available diagnostic details are displayed separately.</comment>
   </data>
   <data name="SettingsWarningValue" xml:space="preserve">
     <value>Value: {0}</value>

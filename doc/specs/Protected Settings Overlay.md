@@ -270,6 +270,10 @@ every PowerShell search path or administrator-selected custom path is trusted.
 
 ### Recovery and defaults
 
+Ordinary and protected settings files share the same parsing and JSON-object
+root validation. Stream failures and read exceptions record source-specific
+warnings for either file type and trigger the applicable backup/default path.
+
 | Protected-file condition | Result |
 |---|---|
 | Neither primary nor backup exists | Normal absence; continue with eligible ordinary values/defaults. |
@@ -528,7 +532,7 @@ Warning: Settings file couldn't load. Using default values.
 Unrecoverable read/access failures also warn and continue with compiled defaults:
 
 ```text
-Warning: Error reading the protected settings file: admin-settings.json
+Warning: Error reading the settings file: admin-settings.json
 Warning: Settings file couldn't load. Using default values.
 ```
 

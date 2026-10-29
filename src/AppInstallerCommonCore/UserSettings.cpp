@@ -108,14 +108,20 @@ namespace AppInstaller::Settings
                 if (stream)
                 {
                     std::string settingsContentStr = Utility::ReadEntireStream(*stream);
-                    THROW_HR_IF(APPINSTALLER_CLI_ERROR_STREAM_READ_FAILURE, setting.Type == Type::AdminFile && stream->fail());
+                    if (stream->fail())
+                    {
+                        AICLI_LOG(Core, Error, << "Failed to read " << setting.Name << "; Stream failure.");
+                        warnings.emplace_back(StringResource::String::SettingsWarningReadError, setting.Name, ""sv, false);
+                        warnings.back().Source = LocIndString{ setting.Name };
+                        return { {}, true };
+                    }
                     auto root = ParseSettingsContent(settingsContentStr, setting.Name, warnings);
                     if (!root)
                     {
                         return { {}, true };
                     }
 
-                    if (setting.Type == Type::AdminFile && !root->isObject())
+                    if (!root->isObject())
                     {
                         AICLI_LOG(Core, Error, << "Settings file must contain a JSON object: " << setting.Name);
                         warnings.emplace_back(StringResource::String::SettingsWarningInvalidFileFormat, setting.Name, ""sv, false);
@@ -129,21 +135,15 @@ namespace AppInstaller::Settings
             catch (const std::exception& e)
             {
                 AICLI_LOG(Core, Error, << "Failed to read " << setting.Name << "; Reason: " << e.what());
-                if (setting.Type == Type::AdminFile)
-                {
-                    warnings.emplace_back(StringResource::String::SettingsWarningReadError, setting.Name, e.what(), false);
-                    warnings.back().Source = LocIndString{ setting.Name };
-                }
+                warnings.emplace_back(StringResource::String::SettingsWarningReadError, setting.Name, e.what(), false);
+                warnings.back().Source = LocIndString{ setting.Name };
                 return { {}, true };
             }
             catch (...)
             {
                 AICLI_LOG(Core, Error, << "Failed to read " << setting.Name << "; Reason unknown.");
-                if (setting.Type == Type::AdminFile)
-                {
-                    warnings.emplace_back(StringResource::String::SettingsWarningReadError, setting.Name, ""sv, false);
-                    warnings.back().Source = LocIndString{ setting.Name };
-                }
+                warnings.emplace_back(StringResource::String::SettingsWarningReadError, setting.Name, ""sv, false);
+                warnings.back().Source = LocIndString{ setting.Name };
                 return { {}, true };
             }
 
