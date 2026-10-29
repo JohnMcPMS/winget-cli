@@ -169,8 +169,7 @@ namespace AppInstaller::Settings
             // json_t - type the setting in json.
             // value_t - the type of this setting.
             // DefaultValue - the value_t default value when setting is absent or semantically wrong.
-            // Path - json path to the property. See Json::Path in json.h for syntax. So far, this is sufficient
-            //        but since is "brief" and "untested" we might implement our own if needed.
+            // Path - Dot-separated object member path, beginning with '.'.
             // Validate - Function that does semantic validation.
             // Treatment - File-source eligibility with and without the non-default full token.
         };

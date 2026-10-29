@@ -210,12 +210,34 @@ namespace AppInstaller::Settings
             bool FullToken = false;
         };
 
-        bool HasSetting(const Json::Value& root, const std::string& path)
+        const Json::Value* ResolveSetting(const Json::Value& root, std::string_view path)
         {
-            // Resolving a path alone cannot distinguish an explicit null from an absent field.
-            const auto separator = path.find_last_of('.');
-            const auto& parent = separator == 0 ? root : Json::Path(path.substr(0, separator)).resolve(root);
-            return parent.isObject() && parent.isMember(path.substr(separator + 1));
+            const Json::Value* current = &root;
+            while (!path.empty())
+            {
+                if (!current->isObject())
+                {
+                    return nullptr;
+                }
+
+                path.remove_prefix(1);
+                const auto separator = path.find('.');
+                const auto member = path.substr(0, separator);
+
+                current = current->find(member.data(), member.data() + member.size());
+                if (!current)
+                {
+                    return nullptr;
+                }
+
+                if (separator == std::string_view::npos)
+                {
+                    break;
+                }
+                path.remove_prefix(separator);
+            }
+
+            return current;
         }
 
         template <Setting S>
@@ -230,8 +252,7 @@ namespace AppInstaller::Settings
             std::map<Setting, details::SettingVariant>& settings,
             std::vector<UserSettings::Warning>& warnings)
         {
-            // jsoncpp doesn't support std::string_view yet.
-            auto path = std::string(details::SettingMapping<S>::Path);
+            constexpr auto path = details::SettingMapping<S>::Path;
 
             // Settings set by Group Policy override anything else. See if there is one.
             auto policyValue = GetValueFromPolicy<S>();
@@ -258,19 +279,24 @@ namespace AppInstaller::Settings
                 return;
             }
 
-            const Json::Path jsonPath(path);
             constexpr auto treatment = details::SettingMapping<S>::Treatment;
             const bool ignoreUser = sources.FileBacked && sources.FullToken && treatment != details::SettingTreatment::Unrestricted;
-            const bool useAdmin = sources.FileBacked &&
-                (sources.FullToken || treatment != details::SettingTreatment::RestrictedSplit) &&
-                HasSetting(sources.Admin.Root, path);
+            const Json::Value* result = nullptr;
+            if (sources.FileBacked && (sources.FullToken || treatment != details::SettingTreatment::RestrictedSplit))
+            {
+                result = ResolveSetting(sources.Admin.Root, path);
+            }
+            const bool useAdmin = result != nullptr;
+            if (!useAdmin && !ignoreUser)
+            {
+                result = ResolveSetting(sources.User.Root, path);
+            }
             const auto sourceName = useAdmin ? sources.Admin.Name : sources.User.Name;
-            Json::Value result = useAdmin ? jsonPath.resolve(sources.Admin.Root) : (ignoreUser ? Json::Value{} : jsonPath.resolve(sources.User.Root));
             bool validAdminValue = false;
 
-            if (useAdmin || !result.isNull())
+            if (result != nullptr && (useAdmin || !result->isNull()))
             {
-                auto jsonValue = GetValue<typename details::SettingMapping<S>::json_t>(result);
+                auto jsonValue = GetValue<typename details::SettingMapping<S>::json_t>(*result);
 
                 if (jsonValue.has_value())
                 {
@@ -304,7 +330,7 @@ namespace AppInstaller::Settings
                 AICLI_LOG(Core, Verbose, << "Setting " << path << " not found. Using default");
             }
 
-            if (ignoreUser && HasSetting(sources.User.Root, path) && !validAdminValue)
+            if (ignoreUser && !validAdminValue && ResolveSetting(sources.User.Root, path) != nullptr)
             {
                 AICLI_LOG(Core, Warning, << "Ignoring setting from " << sources.User.Name << " with the full token. Field: " << path);
                 warnings.emplace_back(StringResource::String::SettingsWarningIgnoredWithFullToken, path);
