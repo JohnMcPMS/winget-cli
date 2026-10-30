@@ -165,7 +165,7 @@ TEST_CASE("UserSettingsOverlay_InvalidAdminValueBlocksUserFallback", "[settings]
 {
     auto files = DeleteUserSettingsFiles();
     const bool fullToken = GENERATE(false, true);
-    const std::string value = GENERATE("null"s, "17"s, R"("relative")"s);
+    const std::string value = GENERATE("17"s, R"("relative")"s);
     CAPTURE(fullToken, value);
     TestHook::SetIsRunningWithNonDefaultFullToken_Override tokenOverride(fullToken);
     SetSetting(Stream::PrimaryUserSettings, R"({
@@ -203,6 +203,32 @@ TEST_CASE("UserSettingsOverlay_InvalidUnrestrictedAdminValueBlocksUserFallback",
     REQUIRE(MigrationWarningCount(settings) == 0);
 }
 
+TEST_CASE("UserSettingsOverlay_AdminNullSelectsDefault", "[settings]")
+{
+    auto files = DeleteUserSettingsFiles();
+    const bool fullToken = GENERATE(false, true);
+    CAPTURE(fullToken);
+    TestHook::SetIsRunningWithNonDefaultFullToken_Override tokenOverride(fullToken);
+    SetSetting(Stream::PrimaryUserSettings, R"({
+        "downloadBehavior": { "defaultDownloadDirectory": "C:\\User" },
+        "installBehavior": { "defaultInstallRoot": "C:\\User" }
+    })");
+    SetAdminSettingsFile(Stream::PrimaryAdminSettingsFile, R"({
+        "downloadBehavior": { "defaultDownloadDirectory": null },
+        "installBehavior": { "defaultInstallRoot": null }
+    })");
+    SetAdminSettingsFile(Stream::BackupAdminSettingsFile, R"({
+        "downloadBehavior": { "defaultDownloadDirectory": "C:\\Backup" },
+        "installBehavior": { "defaultInstallRoot": "C:\\Backup" }
+    })");
+
+    UserSettingsTest settings;
+    REQUIRE(settings.Get<Setting::DownloadDefaultDirectory>().empty());
+    const std::filesystem::path expectedRoot = fullToken ? L"" : LR"(C:\User)";
+    REQUIRE(settings.Get<Setting::InstallDefaultRoot>() == expectedRoot);
+    REQUIRE(settings.GetWarnings().empty());
+}
+
 TEST_CASE("UserSettingsOverlay_ResolveMissingAndNull", "[settings]")
 {
     auto files = DeleteUserSettingsFiles();
@@ -219,14 +245,7 @@ TEST_CASE("UserSettingsOverlay_ResolveMissingAndNull", "[settings]")
     UserSettingsTest settings;
     REQUIRE(settings.Get<Setting::InstallScopePreference>() == (presentNull ?
         AppInstaller::Manifest::ScopeEnum::User : AppInstaller::Manifest::ScopeEnum::Machine));
-    const auto& warnings = settings.GetWarnings();
-    REQUIRE(warnings.size() == (presentNull ? 1 : 0));
-    if (presentNull)
-    {
-        REQUIRE(warnings[0].Message == AppInstaller::StringResource::String::SettingsWarningInvalidFieldFormat);
-        REQUIRE(warnings[0].Source == Stream::PrimaryAdminSettingsFile.Name);
-        REQUIRE(warnings[0].Path == ".installBehavior.preferences.scope");
-    }
+    REQUIRE(settings.GetWarnings().empty());
 }
 
 TEST_CASE("UserSettingsOverlay_IgnoredNullIsPresent", "[settings]")
@@ -267,8 +286,8 @@ TEST_CASE("UserSettingsOverlay_IneligibleSplitFields", "[settings]")
     const std::filesystem::path expectedRoot = fullToken ? L"" : LR"(C:\User)";
     REQUIRE(settings.Get<Setting::InstallDefaultRoot>() == expectedRoot);
     REQUIRE(settings.Get<Setting::ConfigureDefaultModuleRoot>() == expectedRoot);
-    REQUIRE(settings.GetWarnings().size() == (fullToken ? 4 : 0));
-    REQUIRE(MigrationWarningCount(settings) == (fullToken ? 2 : 0));
+    REQUIRE(settings.GetWarnings().size() == (fullToken ? 2 : 0));
+    REQUIRE(MigrationWarningCount(settings) == (fullToken ? 1 : 0));
 }
 
 TEST_CASE("UserSettingsOverlay_ProtectedFileRecovery", "[settings]")
