@@ -287,8 +287,11 @@ int __stdcall wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPWSTR cmdLine, 
 
     RETURN_IF_FAILED(WindowsPackageManagerServerInitialize());
 
+    WindowsPackageManagerServerLog(manualActivation ? "Initializing manually activated COM server." : "Initializing COM server.");
     _comServerExitEvent.create();
     RETURN_IF_FAILED(WindowsPackageManagerServerModuleCreate(&_releaseNotifier));
+    WindowsPackageManagerServerLog("COM server module created.");
+    
     for (int i = 0; i < argc; ++i)
     {
         if (std::wstring_view{ argv[i] } == L"--internalPackageManager")
@@ -317,6 +320,7 @@ int __stdcall wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPWSTR cmdLine, 
             }
 
             RETURN_IF_FAILED(WindowsPackageManagerServerInitializeRPCServer());
+            WindowsPackageManagerServerLog("Manual activation RPC server initialized.");
 
             // Notify the client that the server is available.
             serverSync.StartEvents.SignalAll();
@@ -324,7 +328,9 @@ int __stdcall wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPWSTR cmdLine, 
         else
         {
             // Register all the CoCreatableClassWrlCreatorMapInclude classes
+            WindowsPackageManagerServerLog("Registering COM server class objects.");
             RETURN_IF_FAILED(WindowsPackageManagerServerModuleRegister());
+            WindowsPackageManagerServerLog("COM server class objects registered.");
         }
 
         _comServerExitEvent.wait();
@@ -334,7 +340,9 @@ int __stdcall wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPWSTR cmdLine, 
 
         if (!manualActivation)
         {
+            WindowsPackageManagerServerLog("Unregistering COM server class objects.");
             RETURN_IF_FAILED(WindowsPackageManagerServerModuleUnregister());
+            WindowsPackageManagerServerLog("COM server class objects unregistered.");
         }
     }
     catch (...)

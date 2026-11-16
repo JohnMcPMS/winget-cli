@@ -386,11 +386,28 @@ namespace AppInstaller::CLI::Workflow
         }
     }
 
+    void UninstallPreviousPackage(Execution::Context& context)
+    {
+        const auto& installedVersion = context.Get<Execution::Data::InstalledPackageVersion>();
+        THROW_HR_IF(E_UNEXPECTED, !installedVersion);
+        context.Add<Execution::Data::UninstalledPackageMetadata>(installedVersion->GetMetadata());
+
+        AICLI_RETURN_IF_TERMINATED(context <<
+            GetUninstallInfo <<
+            ExecuteUninstaller);
+        context.ClearFlags(Execution::ContextFlag::InstallerExecutionUseUpdate);
+    }
+
     void ExecuteInstallerForType::operator()(Execution::Context& context) const
     {
         bool isUpdate = WI_IsFlagSet(context.GetFlags(), Execution::ContextFlag::InstallerExecutionUseUpdate);
         UpdateBehaviorEnum updateBehavior = context.Get<Execution::Data::Installer>().value().UpdateBehavior;
         bool doUninstallPrevious = isUpdate && (updateBehavior == UpdateBehaviorEnum::UninstallPrevious || context.Args.Contains(Execution::Args::Type::UninstallPrevious));
+
+        if (doUninstallPrevious)
+        {
+            AICLI_RETURN_IF_TERMINATED(context << EnsureSupportForInstalledPackageOperation);
+        }
 
         Synchronization::CrossProcessInstallLock lock;
         if (!ExemptFromSingleInstallLocking(m_installerType))
@@ -417,10 +434,7 @@ namespace AppInstaller::CLI::Workflow
         case InstallerTypeEnum::Wix:
             if (doUninstallPrevious)
             {
-                context <<
-                    GetUninstallInfo <<
-                    ExecuteUninstaller;
-                context.ClearFlags(Execution::ContextFlag::InstallerExecutionUseUpdate);
+                context << UninstallPreviousPackage;
             }
             if (ShouldUseDirectMSIInstall(m_installerType, context.Args.Contains(Execution::Args::Type::Silent)))
             {
@@ -442,10 +456,7 @@ namespace AppInstaller::CLI::Workflow
         case InstallerTypeEnum::Portable:
             if (doUninstallPrevious)
             {
-                context <<
-                    GetUninstallInfo <<
-                    ExecuteUninstaller;
-                context.ClearFlags(Execution::ContextFlag::InstallerExecutionUseUpdate);
+                context << UninstallPreviousPackage;
             }
             context << details::PortableInstall;
             break;
@@ -707,9 +718,15 @@ namespace AppInstaller::CLI::Workflow
             AICLI_TERMINATE_CONTEXT(APPINSTALLER_CLI_ERROR_INSTALL_UPGRADE_NOT_SUPPORTED);
         }
 
+        if (isUpdate && (updateBehavior == UpdateBehaviorEnum::UninstallPrevious || context.Args.Contains(Execution::Args::Type::UninstallPrevious)))
+        {
+            AICLI_RETURN_IF_TERMINATED(context << EnsureSupportForInstalledPackageOperation);
+        }
+
         context <<
             Workflow::EnsureRunningAsAdminForMachineScopeInstall <<
             Workflow::EnsureSupportForPortableInstall <<
+            Workflow::EnsureSupportForFontInstall <<
             Workflow::EnsureValidNestedInstallerMetadataForArchiveInstall;
     }
 

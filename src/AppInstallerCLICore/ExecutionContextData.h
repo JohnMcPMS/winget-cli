@@ -70,6 +70,10 @@ namespace AppInstaller::CLI::Execution
         MsixDigests,
         InstallerDownloadAuthenticators,
         SelectedIndex,
+        // Indicates that update selection found newer versions, but none had an applicable installer.
+        InstallerInapplicable,
+        // Snapshot taken before uninstall-previous; remains available during the replacement install.
+        UninstalledPackageMetadata,
         Max
     };
 
@@ -177,6 +181,12 @@ namespace AppInstaller::CLI::Execution
         struct DataMapping<Data::InstalledPackageVersion>
         {
             using value_t = std::shared_ptr<Repository::IPackageVersion>;
+        };
+
+        template <>
+        struct DataMapping<Data::UninstalledPackageMetadata>
+        {
+            using value_t = Repository::IPackageVersion::Metadata;
         };
 
         template <>
@@ -305,6 +315,12 @@ namespace AppInstaller::CLI::Execution
         {
             // The authenticator map shared with sub contexts
             using value_t = std::shared_ptr<std::map<Authentication::AuthenticationInfo, Authentication::Authenticator>>;
+        };
+
+        template<>
+        struct DataMapping<Data::InstallerInapplicable>
+        {
+            using value_t = bool;
         };
     }
 }
