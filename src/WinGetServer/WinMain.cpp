@@ -2,8 +2,6 @@
 // Licensed under the MIT License.
 #define NOMINMAX
 #include <Windows.h>
-#include <roapi.h>
-#include <winstring.h>
 #pragma warning( push )
 #pragma warning ( disable : 6001 6388 6553)
 #include <wil/resource.h>
@@ -31,36 +29,14 @@ static void _releaseNotifier() noexcept
     _comServerExitEvent.SetEvent();
 }
 
-static HRESULT WINAPI GetActivationFactory(HSTRING classId, IActivationFactory** factory)
+static HRESULT ValidateInternalPackageManagerServer() try
 {
-    return WindowsPackageManagerInProcModuleGetActivationFactory(classId, reinterpret_cast<void**>(factory));
-}
-
-static HRESULT RunInternalPackageManagerServer() try
-{
-    RETURN_IF_FAILED(RoInitialize(RO_INIT_MULTITHREADED));
-    auto uninitialize = wil::scope_exit([]() { RoUninitialize(); });
-
     const auto tokenType = wil::get_token_information<TOKEN_ELEVATION_TYPE>(GetCurrentProcessToken());
     RETURN_HR_IF_MSG(E_ACCESSDENIED, tokenType != TokenElevationTypeLimited,
         "The package-internal activation playground requires a limited split token; actual token type: %u.", static_cast<unsigned>(tokenType));
     const std::string diagnostics = "Package-internal PackageManager server PID: " + std::to_string(GetCurrentProcessId()) +
         ", token: Limited";
-    RETURN_IF_FAILED(WindowsPackageManagerServerLog(diagnostics.c_str()));
-
-    constexpr wchar_t className[] = L"Microsoft.Management.Deployment.PackageManager";
-    wil::unique_hstring classId;
-    RETURN_IF_FAILED(WindowsCreateString(
-        className,
-        ARRAYSIZE(className) - 1,
-        &classId));
-    HSTRING classIds[] = { classId.get() };
-    PFNGETACTIVATIONFACTORY callbacks[] = { &GetActivationFactory };
-    RO_REGISTRATION_COOKIE cookie{};
-    RETURN_IF_FAILED(RoRegisterActivationFactories(classIds, callbacks, ARRAYSIZE(classIds), &cookie));
-    auto unregister = wil::scope_exit([&]() { RoRevokeActivationFactories(cookie); });
-    _comServerExitEvent.wait();
-    return S_OK;
+    RETURN_HR(WindowsPackageManagerServerLog(diagnostics.c_str()));
 }
 CATCH_RETURN();
 
@@ -296,7 +272,7 @@ int __stdcall wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPWSTR cmdLine, 
     {
         if (std::wstring_view{ argv[i] } == L"--internalPackageManager")
         {
-            return RunInternalPackageManagerServer();
+            RETURN_IF_FAILED(ValidateInternalPackageManagerServer());
         }
     }
 

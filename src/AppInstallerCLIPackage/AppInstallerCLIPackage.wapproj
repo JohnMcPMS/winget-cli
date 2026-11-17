@@ -182,6 +182,7 @@
     <Content Include="Images\SplashScreen.scale-150_altform-colorful_theme-light.png" />
     <Content Include="Images\SplashScreen.scale-200.png" />
     <None Include="Execute-AppxRecipe.ps1" />
+    <None Include="Generate-InternalCOMRegistry.ps1" />
     <None Include="Register-WingetdevAutoComplete.ps1" />
     <PRIResource Include="Shared\Strings\en-us\winget.resw">
       <SubType>Designer</SubType>
@@ -228,11 +229,29 @@
   <PropertyGroup Condition="'$(Platform)'=='x86'">
     <ConfigServerRid>win-x86</ConfigServerRid>
   </PropertyGroup>
+  <PropertyGroup>
+    <WinGetInternalCOMRegistryPath>$([MSBuild]::NormalizePath('$(MSBuildProjectDirectory)', '$(IntermediateOutputPath)', 'registry.dat'))</WinGetInternalCOMRegistryPath>
+  </PropertyGroup>
   <Target Name="WinGetGenerateDSCv3Manifests" BeforeTargets="WinGetIncludeAdditionalFilesInPackage">
     <Message Importance="normal" Text="Generating DSCv3 manifests..." />
     <Copy SourceFiles="$(SolutionDir)\$(PlatformTarget)\$(Configuration)\WindowsPackageManager\WindowsPackageManager.dll" DestinationFolder="$(SolutionDir)\$(PlatformTarget)\$(Configuration)\AppInstallerCLI" SkipUnchangedFiles="true" />
     <Exec Command="$(SolutionDir)\$(PlatformTarget)\$(Configuration)\AppInstallerCLI\winget.exe dscv3 --manifest -o $(SolutionDir)\$(PlatformTarget)\$(Configuration)\AppInstallerCLI\DSCv3Manifests" />
     <Message Importance="normal" Text="DSCv3 manifests generated." />
+  </Target>
+  <Target Name="WinGetGenerateInternalCOMRegistry" BeforeTargets="WinGetIncludeAdditionalFilesInPackage"
+          Inputs="$(ProjectDir)Generate-InternalCOMRegistry.ps1;$(ProjectDir)Package.appxmanifest"
+          Outputs="$(WinGetInternalCOMRegistryPath)">
+    <GetSdkPropertyValue SDKIdentifier="$(SDKIdentifier)" SDKVersion="$(SDKVersion)"
+                         TargetPlatformIdentifier="$(TargetPlatformIdentifier)"
+                         TargetPlatformMinVersion="$(TargetPlatformMinVersion)" TargetPlatformVersion="$(TargetPlatformVersion)"
+                         PropertyName="WindowsSdkDir">
+      <Output TaskParameter="PropertyValue" PropertyName="WinGetInternalCOMSdkDir" />
+    </GetSdkPropertyValue>
+    <Error Condition="'$(WinGetInternalCOMSdkDir)' == ''" Text="Could not locate the Windows SDK for offline COM registration." />
+    <Exec WorkingDirectory="$(ProjectDir)" Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(ProjectDir)Generate-InternalCOMRegistry.ps1&quot; -OutputPath &quot;$(WinGetInternalCOMRegistryPath)&quot; -OfflineRegistryDirectory &quot;$(WinGetInternalCOMSdkDir)\Redist\$(TargetPlatformVersion)\offreg&quot;" />
+    <ItemGroup>
+      <FileWrites Include="$(WinGetInternalCOMRegistryPath)" />
+    </ItemGroup>
   </Target>
   <Target Name="WinGetIncludeAdditionalFilesInPackage" AfterTargets="_ComputeAppxPackagePayload">
     <PropertyGroup>
@@ -241,6 +260,9 @@
     </PropertyGroup>
     <Message Importance="normal" Text="WinGetAdditionalPackageFileRoot = $(WinGetAdditionalPackageFileRoot)" />
     <ItemGroup>
+      <WinGetAdditionalPackageFile Include="$(WinGetInternalCOMRegistryPath)">
+        <PackagePath>registry.dat</PackagePath>
+      </WinGetAdditionalPackageFile>
       <WinGetAdditionalPackageFile Include="$(WinGetAdditionalPackageFileRoot)\$(PlatformTarget)\$(Configuration)\WindowsPackageManager\WindowsPackageManager.dll">
         <PackagePath>WindowsPackageManager.dll</PackagePath>
       </WinGetAdditionalPackageFile>

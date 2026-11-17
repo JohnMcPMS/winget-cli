@@ -101,7 +101,7 @@ namespace AppInstaller::CLI
 
     Resource::LocString LimitedCOMCommand::LongDescription() const
     {
-        return Utility::LocIndString("Creates PackageManager through package-local WinRT activation without lower-trust registration discovery."sv);
+        return Utility::LocIndString("Creates PackageManager through a private registry.dat CLSID without lower-trust registration discovery."sv);
     }
 
     void LimitedCOMCommand::ExecuteInternal(Execution::Context& context) const
