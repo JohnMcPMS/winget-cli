@@ -176,5 +176,55 @@ namespace winrt::Microsoft::Management::Deployment::implementation
     {
         m_authenticationArguments = value;
     }
+    hstring InstallOptions::Locale()
+    {
+        return m_locale;
+    }
+
+    void InstallOptions::Locale(hstring const& value)
+    {
+        m_locale = value;
+    }
+
+    hstring InstallOptions::Rename()
+    {
+        return m_rename;
+    }
+
+    void InstallOptions::Rename(hstring const& value)
+    {
+        m_rename = value;
+    }
+
+    bool InstallOptions::UseDefaultScopePreference()
+    {
+        return m_useDefaultScopePreference;
+    }
+
+    void InstallOptions::UseDefaultScopePreference(bool value)
+    {
+        m_useDefaultScopePreference = value;
+    }
+
+    bool InstallOptions::UninstallPrevious()
+    {
+        return m_uninstallPrevious;
+    }
+
+    void InstallOptions::UninstallPrevious(bool value)
+    {
+        m_uninstallPrevious = value;
+    }
+
+    bool InstallOptions::IgnoreLocalArchiveMalwareScan()
+    {
+        return m_ignoreLocalArchiveMalwareScan;
+    }
+
+    void InstallOptions::IgnoreLocalArchiveMalwareScan(bool value)
+    {
+        m_ignoreLocalArchiveMalwareScan = value;
+    }
+
     CoCreatableMicrosoftManagementDeploymentClass(InstallOptions);
 }

@@ -14,15 +14,15 @@ namespace AppInstaller::CLI::Workflow
     using namespace AppInstaller::CLI::Execution;
     using namespace AppInstaller::Fonts;
 
+    Manifest::ScopeEnum GetFontInstallScope(Execution::Context& context)
+    {
+        return context.Args.Contains(Args::Type::InstallScope) ?
+            Manifest::ConvertToScopeEnum(context.Args.GetArg(Args::Type::InstallScope)) :
+            Manifest::ScopeEnum::User;
+    }
+
     namespace
     {
-        Manifest::ScopeEnum GetFontInstallScope(Execution::Context& context)
-        {
-            return context.Args.Contains(Args::Type::InstallScope) ?
-                Manifest::ConvertToScopeEnum(context.Args.GetArg(Args::Type::InstallScope)) :
-                Manifest::ScopeEnum::User;
-        }
-
         struct InstalledFontFamiliesTableLine
         {
             InstalledFontFamiliesTableLine(Utility::LocIndString familyName, int faceCount)
@@ -199,6 +199,10 @@ namespace AppInstaller::CLI::Workflow
 
     void EnsureSupportForFontInstall(Execution::Context& context)
     {
+        if (context.Contains(Execution::Data::LimitedTokenDeployment))
+        {
+            return;
+        }
         if (context.Get<Data::Installer>().value().EffectiveInstallerType() == Manifest::InstallerTypeEnum::Font &&
             GetFontInstallScope(context) != Manifest::ScopeEnum::Machine)
         {

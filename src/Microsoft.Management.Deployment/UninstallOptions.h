@@ -24,6 +24,12 @@ namespace winrt::Microsoft::Management::Deployment::implementation
         void Force(bool value);
         winrt::Microsoft::Management::Deployment::PackageUninstallScope PackageUninstallScope();
         void PackageUninstallScope(winrt::Microsoft::Management::Deployment::PackageUninstallScope const& value);
+        winrt::Microsoft::Management::Deployment::PackageVersionInfo InstalledVersion();
+        void InstalledVersion(winrt::Microsoft::Management::Deployment::PackageVersionInfo const& value);
+        bool Purge();
+        void Purge(bool value);
+        bool Preserve();
+        void Preserve(bool value);
 
 #if !defined(INCLUDE_ONLY_INTERFACE_METHODS)
     private:
@@ -33,6 +39,9 @@ namespace winrt::Microsoft::Management::Deployment::implementation
         std::wstring m_correlationData = L"";
         bool m_force = false;
         winrt::Microsoft::Management::Deployment::PackageUninstallScope m_packageUninstallScope = winrt::Microsoft::Management::Deployment::PackageUninstallScope::Any;
+        winrt::Microsoft::Management::Deployment::PackageVersionInfo m_installedVersion{ nullptr };
+        bool m_purge = false;
+        bool m_preserve = false;
 #endif
     };
 }

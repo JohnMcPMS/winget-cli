@@ -1,0 +1,3 @@
+LIBRARY WinGetDeploymentClient
+EXPORTS
+    WinGetCreateDeploymentSession

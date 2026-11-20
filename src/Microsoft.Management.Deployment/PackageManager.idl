@@ -359,6 +359,12 @@ namespace Microsoft.Management.Deployment
         SilentUninstallCommand,
         /// The publisher of the package
         PublisherDisplayName,
+
+        [contract(Microsoft.Management.Deployment.WindowsPackageManagerContract, 31)]
+        {
+            /// The architecture recorded for an installed package.
+            InstalledArchitecture,
+        }
     };
 
     /// The result of a comparison.
@@ -652,6 +658,12 @@ namespace Microsoft.Management.Deployment
             /// May be null if the package refers only to an installed item.
             Windows.Foundation.IReference<Int32> CatalogPriority { get; };
         }
+
+            [contract(Microsoft.Management.Deployment.WindowsPackageManagerContract, 31)]
+            {
+                /// All installed instances, including versions other than InstalledVersion.
+                Windows.Foundation.Collections.IVectorView<PackageVersionInfo> InstalledVersions { get; };
+            }
     }
 
     /// IMPLEMENTATION NOTE: CompositeSearchBehavior from winget/RepositorySource.h
@@ -1208,6 +1220,18 @@ namespace Microsoft.Management.Deployment
             /// Installs the package dependencies without installing the requested package.
             Boolean InstallDependenciesOnly;
         }
+
+        [contract(Microsoft.Management.Deployment.WindowsPackageManagerContract, 31)]
+        {
+            String Locale;
+            /// Overrides the command alias for a portable package.
+            String Rename;
+            /// Retains the configured scope preference for User or System requirements.
+            /// Defaults to false, which prefers the required scope.
+            Boolean UseDefaultScopePreference;
+            Boolean UninstallPrevious;
+            Boolean IgnoreLocalArchiveMalwareScan;
+        }
     }
 
     [contract(Microsoft.Management.Deployment.WindowsPackageManagerContract, 4)]
@@ -1259,6 +1283,15 @@ namespace Microsoft.Management.Deployment
             Boolean Force;
             // The scope the uninstall will perform. Currently only applicable to msix.
             PackageUninstallScope PackageUninstallScope;
+        }
+
+        [contract(Microsoft.Management.Deployment.WindowsPackageManagerContract, 31)]
+        {
+            PackageVersionInfo InstalledVersion;
+            /// Removes files created by the portable package.
+            Boolean Purge;
+            /// Preserves files created by the portable package.
+            Boolean Preserve;
         }
     }
 
@@ -1359,6 +1392,12 @@ namespace Microsoft.Management.Deployment
         User,
         /// Repair for all users.
         System,
+
+        [contract(Microsoft.Management.Deployment.WindowsPackageManagerContract, 31)]
+        {
+            UserOrUnknown,
+            SystemOrUnknown,
+        }
     };
 
     [contract(Microsoft.Management.Deployment.WindowsPackageManagerContract, 11)]
@@ -1366,7 +1405,8 @@ namespace Microsoft.Management.Deployment
     {
         RepairOptions();
 
-        /// This property is not currently used. The version of CatalogPackage.InstalledVersion is used for repair.
+        /// Selects the available version whose manifest will be used for repair.
+        /// If unset, the manifest version is selected using the installed package.
         PackageVersionId PackageVersionId;
 
         /// The package Repair scope.
@@ -1398,6 +1438,19 @@ namespace Microsoft.Management.Deployment
         {
             /// Authentication arguments used when downloading the package installer if authentication is required.
             AuthenticationArguments AuthenticationArguments;
+        }
+
+        [contract(Microsoft.Management.Deployment.WindowsPackageManagerContract, 31)]
+        {
+            PackageVersionInfo InstalledVersion;
+            String Locale;
+            /// Optional architecture requirements in preference order. Empty uses installed metadata and settings.
+            Windows.Foundation.Collections.IVector<Windows.System.ProcessorArchitecture> AllowedArchitectures { get; };
+            PackageInstallerType InstallerType;
+            /// Retains the configured scope preference for User or System requirements.
+            /// Defaults to true to preserve existing repair selection behavior.
+            Boolean UseDefaultScopePreference;
+            Boolean IgnoreLocalArchiveMalwareScan;
         }
     }
 

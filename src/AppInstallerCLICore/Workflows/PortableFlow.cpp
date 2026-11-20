@@ -19,40 +19,40 @@ using namespace AppInstaller::Repository::Microsoft;
 
 namespace AppInstaller::CLI::Workflow
 {
-    namespace
+    ScopeEnum GetPortableInstallScope(Execution::Context& context)
     {
-        constexpr std::string_view s_DefaultSource = "*DefaultSource"sv;
-
-        ScopeEnum GetPortableInstallScope(Execution::Context& context)
+        if (context.Contains(Execution::Data::UninstalledPackageMetadata))
         {
-            if (context.Contains(Execution::Data::UninstalledPackageMetadata))
+            const auto& metadata = context.Get<Execution::Data::UninstalledPackageMetadata>();
+            auto scope = metadata.find(PackageVersionMetadata::InstalledScope);
+            return scope != metadata.end() ? ConvertToScopeEnum(scope->second) : ScopeEnum::Unknown;
+        }
+
+        if (WI_IsFlagSet(context.GetFlags(), Execution::ContextFlag::InstallerExecutionUseUpdate) &&
+            context.Contains(Execution::Data::InstalledPackageVersion))
+        {
+            const auto& installedVersion = context.Get<Execution::Data::InstalledPackageVersion>();
+            if (installedVersion)
             {
-                const auto& metadata = context.Get<Execution::Data::UninstalledPackageMetadata>();
+                auto metadata = installedVersion->GetMetadata();
                 auto scope = metadata.find(PackageVersionMetadata::InstalledScope);
                 return scope != metadata.end() ? ConvertToScopeEnum(scope->second) : ScopeEnum::Unknown;
             }
-
-            if (WI_IsFlagSet(context.GetFlags(), Execution::ContextFlag::InstallerExecutionUseUpdate) &&
-                context.Contains(Execution::Data::InstalledPackageVersion))
-            {
-                const auto& installedVersion = context.Get<Execution::Data::InstalledPackageVersion>();
-                if (installedVersion)
-                {
-                    auto metadata = installedVersion->GetMetadata();
-                    auto scope = metadata.find(PackageVersionMetadata::InstalledScope);
-                    return scope != metadata.end() ? ConvertToScopeEnum(scope->second) : ScopeEnum::Unknown;
-                }
-            }
-
-            if (context.Args.Contains(Execution::Args::Type::InstallScope))
-            {
-                return ConvertToScopeEnum(context.Args.GetArg(Execution::Args::Type::InstallScope));
-            }
-
-            const auto requiredScope = Settings::User().Get<Settings::Setting::InstallScopeRequirement>();
-            return requiredScope != ScopeEnum::Unknown ?
-                requiredScope : Settings::User().Get<Settings::Setting::InstallScopePreference>();
         }
+
+        if (context.Args.Contains(Execution::Args::Type::InstallScope))
+        {
+            return ConvertToScopeEnum(context.Args.GetArg(Execution::Args::Type::InstallScope));
+        }
+
+        const auto requiredScope = Settings::User().Get<Settings::Setting::InstallScopeRequirement>();
+        return requiredScope != ScopeEnum::Unknown ?
+            requiredScope : Settings::User().Get<Settings::Setting::InstallScopePreference>();
+    }
+
+    namespace
+    {
+        constexpr std::string_view s_DefaultSource = "*DefaultSource"sv;
 
         std::string GetPortableProductCode(Execution::Context& context)
         {
@@ -391,6 +391,10 @@ namespace AppInstaller::CLI::Workflow
 
     void EnsureSupportForPortableInstall(Execution::Context& context)
     {
+        if (context.Contains(Execution::Data::LimitedTokenDeployment))
+        {
+            return;
+        }
         auto installerType = context.Get<Execution::Data::Installer>().value().EffectiveInstallerType();
 
         if (installerType == InstallerTypeEnum::Portable)

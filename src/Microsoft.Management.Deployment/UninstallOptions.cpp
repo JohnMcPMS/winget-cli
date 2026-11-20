@@ -66,5 +66,35 @@ namespace winrt::Microsoft::Management::Deployment::implementation
         m_packageUninstallScope = value;
     }
 
+    winrt::Microsoft::Management::Deployment::PackageVersionInfo UninstallOptions::InstalledVersion()
+    {
+        return m_installedVersion;
+    }
+
+    void UninstallOptions::InstalledVersion(winrt::Microsoft::Management::Deployment::PackageVersionInfo const& value)
+    {
+        m_installedVersion = value;
+    }
+
+    bool UninstallOptions::Purge()
+    {
+        return m_purge;
+    }
+
+    void UninstallOptions::Purge(bool value)
+    {
+        m_purge = value;
+    }
+
+    bool UninstallOptions::Preserve()
+    {
+        return m_preserve;
+    }
+
+    void UninstallOptions::Preserve(bool value)
+    {
+        m_preserve = value;
+    }
+
     CoCreatableMicrosoftManagementDeploymentClass(UninstallOptions);
 }

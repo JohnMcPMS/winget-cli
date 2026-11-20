@@ -274,6 +274,10 @@ namespace AppInstaller::CLI::Workflow
 
     void DownloadInstaller(Execution::Context& context)
     {
+        if (context.Contains(Execution::Data::LimitedTokenDeployment))
+        {
+            return;
+        }
         // Check if file was already downloaded.
         // This may happen after a failed installation or if the download was done
         // separately before, e.g. on COM scenarios.
@@ -640,6 +644,10 @@ namespace AppInstaller::CLI::Workflow
 
     void ReverifyInstallerHash(Execution::Context& context)
     {
+        if (context.Contains(Execution::Data::LimitedTokenDeployment))
+        {
+            return;
+        }
         const auto& installer = context.Get<Execution::Data::Installer>().value();
 
         if (context.Contains(Execution::Data::InstallerPath))

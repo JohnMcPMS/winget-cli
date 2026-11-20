@@ -32,6 +32,17 @@ namespace winrt::Microsoft::Management::Deployment::implementation
         void Force(bool value);
         winrt::Microsoft::Management::Deployment::AuthenticationArguments AuthenticationArguments();
         void AuthenticationArguments(winrt::Microsoft::Management::Deployment::AuthenticationArguments const& value);
+        winrt::Microsoft::Management::Deployment::PackageVersionInfo InstalledVersion();
+        void InstalledVersion(winrt::Microsoft::Management::Deployment::PackageVersionInfo const& value);
+        hstring Locale();
+        void Locale(hstring const& value);
+        winrt::Windows::Foundation::Collections::IVector<winrt::Windows::System::ProcessorArchitecture> AllowedArchitectures();
+        winrt::Microsoft::Management::Deployment::PackageInstallerType InstallerType();
+        void InstallerType(winrt::Microsoft::Management::Deployment::PackageInstallerType const& value);
+        bool UseDefaultScopePreference();
+        void UseDefaultScopePreference(bool value);
+        bool IgnoreLocalArchiveMalwareScan();
+        void IgnoreLocalArchiveMalwareScan(bool value);
 
 #if !defined(INCLUDE_ONLY_INTERFACE_METHODS)
     private:
@@ -45,6 +56,13 @@ namespace winrt::Microsoft::Management::Deployment::implementation
         winrt::Microsoft::Management::Deployment::PackageRepairScope m_packageRepairScope = winrt::Microsoft::Management::Deployment::PackageRepairScope::Any;
         winrt::Microsoft::Management::Deployment::PackageRepairMode m_packageRepairMode = winrt::Microsoft::Management::Deployment::PackageRepairMode::Default;
         winrt::Microsoft::Management::Deployment::AuthenticationArguments m_authenticationArguments{ nullptr };
+        winrt::Microsoft::Management::Deployment::PackageVersionInfo m_installedVersion{ nullptr };
+        hstring m_locale;
+        winrt::Windows::Foundation::Collections::IVector<winrt::Windows::System::ProcessorArchitecture> m_allowedArchitectures{
+            winrt::single_threaded_vector<winrt::Windows::System::ProcessorArchitecture>() };
+        winrt::Microsoft::Management::Deployment::PackageInstallerType m_installerType = winrt::Microsoft::Management::Deployment::PackageInstallerType::Unknown;
+        bool m_useDefaultScopePreference = true;
+        bool m_ignoreLocalArchiveMalwareScan = false;
 #endif
     };
 }

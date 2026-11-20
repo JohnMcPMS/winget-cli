@@ -157,6 +157,7 @@ namespace AppInstaller::CLI::Execution
             WI_ClearAllFlags(m_flags, flags);
         }
 
+        Workflow::ExecutionStage GetExecutionStage() const { return m_executionStage; }
         virtual void SetExecutionStage(Workflow::ExecutionStage stage);
 
         // Get Globals for Current Context

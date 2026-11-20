@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 #include "pch.h"
+#include "LimitedTokenFlow.h"
 #include "RepairFlow.h"
 #include "Workflows/ShellExecuteInstallerHandler.h"
 #include "Workflows/WorkflowBase.h"
@@ -454,6 +455,16 @@ namespace AppInstaller::CLI::Workflow
 
     void RepairSinglePackage(Execution::Context& context)
     {
+        if (PrepareLimitedTokenRepair(context))
+        {
+            if (context.Contains(Execution::Data::Installer) && context.Get<Execution::Data::Installer>() &&
+                context.Get<Execution::Data::Installer>()->RepairBehavior == RepairBehaviorEnum::Installer)
+            {
+                context << ShowInstallationDisclaimer << ShowPromptsForSinglePackage(/* ensureAcceptance */ true);
+            }
+            context << ExecuteLimitedTokenOperation;
+            return;
+        }
         context <<
             EnsureSupportForInstalledPackageOperation <<
             RepairApplicabilityCheck <<
@@ -466,7 +477,7 @@ namespace AppInstaller::CLI::Workflow
     void SelectApplicablePackageVersion(Execution::Context& context)
     {
         // If the repair flow is initiated with manifest, then we don't need to select the applicable package version.
-        if (context.Args.Contains(Args::Type::Manifest))
+        if (context.Args.Contains(Args::Type::Manifest) || context.Contains(Execution::Data::Manifest))
         {
             return;
         }

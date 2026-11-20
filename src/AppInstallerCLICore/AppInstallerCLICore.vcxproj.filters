@@ -47,6 +47,9 @@
     <ClInclude Include="Workflows\InstallFlow.h">
       <Filter>Workflows</Filter>
     </ClInclude>
+    <ClInclude Include="Workflows\LimitedTokenFlow.h">
+      <Filter>Workflows</Filter>
+    </ClInclude>
     <ClInclude Include="Workflows\ShellExecuteInstallerHandler.h">
       <Filter>Workflows</Filter>
     </ClInclude>
@@ -341,6 +344,9 @@
       <Filter>Workflows</Filter>
     </ClCompile>
     <ClCompile Include="Workflows\InstallFlow.cpp">
+      <Filter>Workflows</Filter>
+    </ClCompile>
+    <ClCompile Include="Workflows\LimitedTokenFlow.cpp">
       <Filter>Workflows</Filter>
     </ClCompile>
     <ClCompile Include="ExecutionReporter.cpp">

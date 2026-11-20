@@ -8,6 +8,7 @@
 #include <winget/Debugging.h>
 #include "TestCommon.h"
 #include "TestSettings.h"
+#include "TestHooks.h"
 
 using namespace winrt;
 using namespace winrt::Windows::Foundation;
@@ -76,6 +77,8 @@ HRESULT __stdcall CatchResultFromCaughtException() WI_PFN_NOEXCEPT
 int main(int argc, char** argv)
 {
     init_apartment();
+    // Workflow unit tests must explicitly provide a session before reaching a real COM server.
+    TestHook::SetLimitedTokenSessionFactory_Override limitedTokenFactory({});
 
     // Enable ProcessRedirectionTrustPolicy to match the MSIX packaged process context in which
     // WinGet runs in production. This policy causes Windows to block traversal of user-created

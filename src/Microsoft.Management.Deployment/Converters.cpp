@@ -150,6 +150,9 @@ namespace winrt::Microsoft::Management::Deployment::implementation
         ::AppInstaller::Repository::PackageVersionMetadata metadataKey = ::AppInstaller::Repository::PackageVersionMetadata::InstalledLocation;
         switch (packageVersionMetadataField)
         {
+        case Microsoft::Management::Deployment::PackageVersionMetadataField::InstalledArchitecture:
+            metadataKey = ::AppInstaller::Repository::PackageVersionMetadata::InstalledArchitecture;
+            break;
         case Microsoft::Management::Deployment::PackageVersionMetadataField::InstalledLocation:
             metadataKey = ::AppInstaller::Repository::PackageVersionMetadata::InstalledLocation;
             break;
@@ -316,6 +319,8 @@ namespace winrt::Microsoft::Management::Deployment::implementation
             return ::AppInstaller::Manifest::InstallerTypeEnum::Wix;
         case Microsoft::Management::Deployment::PackageInstallerType::Zip:
             return ::AppInstaller::Manifest::InstallerTypeEnum::Zip;
+        case Microsoft::Management::Deployment::PackageInstallerType::Font:
+            return ::AppInstaller::Manifest::InstallerTypeEnum::Font;
         case Microsoft::Management::Deployment::PackageInstallerType::Unknown:
             return ::AppInstaller::Manifest::InstallerTypeEnum::Unknown;
         }
@@ -360,8 +365,10 @@ namespace winrt::Microsoft::Management::Deployment::implementation
         case winrt::Microsoft::Management::Deployment::PackageRepairScope::Any:
             return ::AppInstaller::Manifest::ScopeEnum::Unknown;
         case winrt::Microsoft::Management::Deployment::PackageRepairScope::User:
+        case winrt::Microsoft::Management::Deployment::PackageRepairScope::UserOrUnknown:
             return ::AppInstaller::Manifest::ScopeEnum::User;
         case winrt::Microsoft::Management::Deployment::PackageRepairScope::System:
+        case winrt::Microsoft::Management::Deployment::PackageRepairScope::SystemOrUnknown:
             return ::AppInstaller::Manifest::ScopeEnum::Machine;
         }
 

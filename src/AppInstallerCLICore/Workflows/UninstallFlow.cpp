@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 #include "pch.h"
+#include "LimitedTokenFlow.h"
 #include "UninstallFlow.h"
 #include "InstallFlow.h"
 #include "FontFlow.h"
@@ -206,6 +207,12 @@ namespace AppInstaller::CLI::Workflow
 
     void GetUninstallInfo(Execution::Context& context)
     {
+        // Uninstall-previous must be delegated by its enclosing install, before taking the install lock.
+        if (!WI_IsFlagSet(context.GetFlags(), Execution::ContextFlag::InstallerExecutionUseUpdate) &&
+            PrepareLimitedTokenUninstall(context))
+        {
+            return;
+        }
         auto installedPackageVersion = context.Get<Execution::Data::InstalledPackageVersion>();
 
         if (!installedPackageVersion)
@@ -304,6 +311,11 @@ namespace AppInstaller::CLI::Workflow
 
     void ExecuteUninstaller(Execution::Context& context)
     {
+        if (context.Contains(Execution::Data::LimitedTokenDeployment))
+        {
+            context << ExecuteLimitedTokenOperation;
+            return;
+        }
         auto installedPackageVersion = context.Get<Execution::Data::InstalledPackageVersion>();
 
         if (!installedPackageVersion)
@@ -426,6 +438,10 @@ namespace AppInstaller::CLI::Workflow
 
     void RecordUninstall(Context& context)
     {
+        if (context.Contains(Data::LimitedTokenDeployment))
+        {
+            return;
+        }
         // In order to report an uninstall to every correlated tracking catalog, we first need to find them all.
         auto package = context.Get<Data::Package>();
         UninstallCorrelatedSources correlatedSources;

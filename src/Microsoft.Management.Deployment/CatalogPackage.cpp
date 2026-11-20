@@ -49,6 +49,24 @@ namespace winrt::Microsoft::Management::Deployment::implementation
             });
         return m_installedVersion;
     }
+    Windows::Foundation::Collections::IVectorView<Microsoft::Management::Deployment::PackageVersionInfo> CatalogPackage::InstalledVersions()
+    {
+        auto result = winrt::single_threaded_vector<Microsoft::Management::Deployment::PackageVersionInfo>();
+        auto installed = m_package->GetInstalled();
+        if (installed)
+        {
+            for (const auto& key : installed->GetVersionKeys())
+            {
+                auto installedVersion = installed->GetVersion(key);
+                THROW_HR_IF_NULL(E_UNEXPECTED, installedVersion.get());
+                auto version = winrt::make_self<wil::details::module_count_wrapper<implementation::PackageVersionInfo>>();
+                version->Initialize(std::move(installedVersion));
+                result.Append(*version);
+            }
+        }
+        return result.GetView();
+    }
+
     Windows::Foundation::Collections::IVectorView<Microsoft::Management::Deployment::PackageVersionId> CatalogPackage::AvailableVersions()
     {
         std::call_once(m_availableVersionsOnceFlag,

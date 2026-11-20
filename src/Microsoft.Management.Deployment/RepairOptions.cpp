@@ -118,5 +118,60 @@ namespace winrt::Microsoft::Management::Deployment::implementation
         m_authenticationArguments = value;
     }
 
+    winrt::Microsoft::Management::Deployment::PackageVersionInfo RepairOptions::InstalledVersion()
+    {
+        return m_installedVersion;
+    }
+
+    void RepairOptions::InstalledVersion(winrt::Microsoft::Management::Deployment::PackageVersionInfo const& value)
+    {
+        m_installedVersion = value;
+    }
+
+    hstring RepairOptions::Locale()
+    {
+        return m_locale;
+    }
+
+    void RepairOptions::Locale(hstring const& value)
+    {
+        m_locale = value;
+    }
+
+    winrt::Windows::Foundation::Collections::IVector<winrt::Windows::System::ProcessorArchitecture> RepairOptions::AllowedArchitectures()
+    {
+        return m_allowedArchitectures;
+    }
+
+    winrt::Microsoft::Management::Deployment::PackageInstallerType RepairOptions::InstallerType()
+    {
+        return m_installerType;
+    }
+
+    void RepairOptions::InstallerType(winrt::Microsoft::Management::Deployment::PackageInstallerType const& value)
+    {
+        m_installerType = value;
+    }
+
+    bool RepairOptions::UseDefaultScopePreference()
+    {
+        return m_useDefaultScopePreference;
+    }
+
+    void RepairOptions::UseDefaultScopePreference(bool value)
+    {
+        m_useDefaultScopePreference = value;
+    }
+
+    bool RepairOptions::IgnoreLocalArchiveMalwareScan()
+    {
+        return m_ignoreLocalArchiveMalwareScan;
+    }
+
+    void RepairOptions::IgnoreLocalArchiveMalwareScan(bool value)
+    {
+        m_ignoreLocalArchiveMalwareScan = value;
+    }
+
     CoCreatableMicrosoftManagementDeploymentClass(RepairOptions);
 }

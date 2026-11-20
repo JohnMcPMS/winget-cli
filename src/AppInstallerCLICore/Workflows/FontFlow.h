@@ -5,6 +5,8 @@
 
 namespace AppInstaller::CLI::Workflow
 {
+    Manifest::ScopeEnum GetFontInstallScope(Execution::Context& context);
+
     // Reports the installed fonts as a table.
     // Required Args: None
     // Inputs: None

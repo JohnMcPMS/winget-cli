@@ -5,6 +5,8 @@
 
 namespace AppInstaller::CLI::Workflow
 {
+    Manifest::ScopeEnum GetPortableInstallScope(Execution::Context& context);
+
     // Installs the portable package.
     // Required Args: None
     // Inputs: Manifest, Scope, Rename, Location

@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 #include "pch.h"
+#include "LimitedTokenFlow.h"
 #include "InstallFlow.h"
 #include "DownloadFlow.h"
 #include "FontFlow.h"
@@ -603,6 +604,11 @@ namespace AppInstaller::CLI::Workflow
 
     void InstallPackageInstaller(Execution::Context& context)
     {
+        if (context.Contains(Execution::Data::LimitedTokenDeployment))
+        {
+            context << ExecuteLimitedTokenOperation << DisplayInstallationNotes;
+            return;
+        }
         context <<
             Workflow::ReportExecutionStage(ExecutionStage::PreExecution) <<
             Workflow::SnapshotARPEntries <<
@@ -718,7 +724,11 @@ namespace AppInstaller::CLI::Workflow
             AICLI_TERMINATE_CONTEXT(APPINSTALLER_CLI_ERROR_INSTALL_UPGRADE_NOT_SUPPORTED);
         }
 
-        if (isUpdate && (updateBehavior == UpdateBehaviorEnum::UninstallPrevious || context.Args.Contains(Execution::Args::Type::UninstallPrevious)))
+        context << PrepareLimitedTokenInstall;
+        AICLI_RETURN_IF_TERMINATED(context);
+
+        if (!context.Contains(Execution::Data::LimitedTokenDeployment) &&
+            isUpdate && (updateBehavior == UpdateBehaviorEnum::UninstallPrevious || context.Args.Contains(Execution::Args::Type::UninstallPrevious)))
         {
             AICLI_RETURN_IF_TERMINATED(context << EnsureSupportForInstalledPackageOperation);
         }

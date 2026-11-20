@@ -49,6 +49,16 @@ namespace winrt::Microsoft::Management::Deployment::implementation
         void InstallDependenciesOnly(bool value);
         winrt::Microsoft::Management::Deployment::AuthenticationArguments AuthenticationArguments();
         void AuthenticationArguments(winrt::Microsoft::Management::Deployment::AuthenticationArguments const& value);
+        hstring Locale();
+        void Locale(hstring const& value);
+        hstring Rename();
+        void Rename(hstring const& value);
+        bool UseDefaultScopePreference();
+        void UseDefaultScopePreference(bool value);
+        bool UninstallPrevious();
+        void UninstallPrevious(bool value);
+        bool IgnoreLocalArchiveMalwareScan();
+        void IgnoreLocalArchiveMalwareScan(bool value);
 
 #if !defined(INCLUDE_ONLY_INTERFACE_METHODS)
     private:
@@ -72,6 +82,11 @@ namespace winrt::Microsoft::Management::Deployment::implementation
         bool m_skipDependencies = false;
         bool m_installDependenciesOnly = false;
         winrt::Microsoft::Management::Deployment::AuthenticationArguments m_authenticationArguments{ nullptr };
+        hstring m_locale;
+        hstring m_rename;
+        bool m_useDefaultScopePreference = false;
+        bool m_uninstallPrevious = false;
+        bool m_ignoreLocalArchiveMalwareScan = false;
 #endif
     };
 }
