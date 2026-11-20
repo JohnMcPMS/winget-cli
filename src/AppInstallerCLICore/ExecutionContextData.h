@@ -21,6 +21,11 @@
 #include <variant>
 #include <vector>
 
+namespace AppInstaller::CLI::Workflow
+{
+    struct LimitedTokenUninstall;
+}
+
 namespace AppInstaller::CLI::Execution
 {
     // Names a piece of data stored in the context by a workflow step.
@@ -74,6 +79,7 @@ namespace AppInstaller::CLI::Execution
         InstallerInapplicable,
         // Snapshot taken before uninstall-previous; remains available during the replacement install.
         UninstalledPackageMetadata,
+        LimitedTokenUninstall,
         Max
     };
 
@@ -85,6 +91,12 @@ namespace AppInstaller::CLI::Execution
         struct DataMapping
         {
             // value_t type specifies the type of this data
+        };
+
+        template <>
+        struct DataMapping<Data::LimitedTokenUninstall>
+        {
+            using value_t = std::shared_ptr<Workflow::LimitedTokenUninstall>;
         };
 
         template <>

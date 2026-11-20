@@ -260,6 +260,7 @@
     <ClCompile Include="InstallDependenciesFlow.cpp" />
     <ClCompile Include="InstallerMetadataCollectionContext.cpp" />
     <ClCompile Include="InstallFlow.cpp" />
+    <ClCompile Include="LimitedTokenFlow.cpp" />
     <ClCompile Include="ManifestComparator.cpp" />
     <ClCompile Include="JsonHelper.cpp" />
     <ClCompile Include="Logging.cpp" />
@@ -1175,6 +1176,11 @@
       <Private>false</Private>
     </ProjectReference>
   </ItemGroup>
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <AdditionalIncludeDirectories>$(MSBuildThisFileDirectory)..\WinGetDeploymentClient\Public;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+  </ItemDefinitionGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
     <Import Project="$(SolutionDir)\packages\Microsoft.Windows.ImplementationLibrary.1.0.250325.1\build\native\Microsoft.Windows.ImplementationLibrary.targets" Condition="Exists('$(SolutionDir)\packages\Microsoft.Windows.ImplementationLibrary.1.0.250325.1\build\native\Microsoft.Windows.ImplementationLibrary.targets')" />

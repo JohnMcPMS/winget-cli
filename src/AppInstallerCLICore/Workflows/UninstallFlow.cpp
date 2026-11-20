@@ -9,6 +9,7 @@
 #include "ShellExecuteInstallerHandler.h"
 #include "AppInstallerMsixInfo.h"
 #include "PortableFlow.h"
+#include "LimitedTokenFlow.h"
 #include <AppInstallerDeployment.h>
 #include <AppInstallerSynchronization.h>
 #include <winget/Runtime.h>
@@ -206,6 +207,11 @@ namespace AppInstaller::CLI::Workflow
 
     void GetUninstallInfo(Execution::Context& context)
     {
+        if (PrepareLimitedTokenUninstall(context))
+        {
+            return;
+        }
+
         auto installedPackageVersion = context.Get<Execution::Data::InstalledPackageVersion>();
 
         if (!installedPackageVersion)
@@ -304,6 +310,12 @@ namespace AppInstaller::CLI::Workflow
 
     void ExecuteUninstaller(Execution::Context& context)
     {
+        if (context.Contains(Execution::Data::LimitedTokenUninstall))
+        {
+            context << ExecuteLimitedTokenUninstall;
+            return;
+        }
+
         auto installedPackageVersion = context.Get<Execution::Data::InstalledPackageVersion>();
 
         if (!installedPackageVersion)
@@ -426,6 +438,11 @@ namespace AppInstaller::CLI::Workflow
 
     void RecordUninstall(Context& context)
     {
+        if (context.Contains(Data::LimitedTokenUninstall))
+        {
+            return;
+        }
+
         // In order to report an uninstall to every correlated tracking catalog, we first need to find them all.
         auto package = context.Get<Data::Package>();
         UninstallCorrelatedSources correlatedSources;

@@ -305,6 +305,9 @@
     <ClCompile Include="InstallFlow.cpp">
       <Filter>Source Files\CLI</Filter>
     </ClCompile>
+    <ClCompile Include="LimitedTokenFlow.cpp">
+      <Filter>Source Files\CLI</Filter>
+    </ClCompile>
     <ClCompile Include="ShowFlow.cpp">
       <Filter>Source Files\CLI</Filter>
     </ClCompile>

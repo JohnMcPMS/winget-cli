@@ -83,6 +83,7 @@
       <AdditionalOptions>%(AdditionalOptions) /permissive- /bigobj</AdditionalOptions>
     </ClCompile>
     <Link>
+      <ModuleDefinitionFile>WinGetDeploymentClient.def</ModuleDefinitionFile>
       <GenerateWindowsMetadata>false</GenerateWindowsMetadata>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalDependencies>ole32.lib;RuntimeObject.lib;uuid.lib;%(AdditionalDependencies)</AdditionalDependencies>
@@ -113,6 +114,7 @@
     <ClCompile Include="WinGetDeploymentClient.cpp" />
     <ClInclude Include="Public\WinGetDeploymentClient.h" />
     <None Include="packages.config" />
+    <None Include="WinGetDeploymentClient.def" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="Microsoft.Management.Deployment">

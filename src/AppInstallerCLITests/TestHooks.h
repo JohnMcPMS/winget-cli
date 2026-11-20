@@ -13,6 +13,7 @@
 #include <AppInstallerTelemetry.h>
 #include <AppInstallerRuntime.h>
 #include <AppInstallerDownloader.h>
+#include <Workflows/LimitedTokenFlow.h>
 #include <winget/UserSettings.h>
 #include <winget/ExperimentalFeature.h>
 #include <winget/Filesystem.h>
@@ -147,6 +148,27 @@ namespace AppInstaller
 
 namespace TestHook
 {
+    struct SetLimitedTokenUninstallFactory_Override
+    {
+        explicit SetLimitedTokenUninstallFactory_Override(AppInstaller::CLI::Workflow::LimitedTokenUninstallFactory factory) :
+            m_factory(std::move(factory)),
+            m_previous(AppInstaller::CLI::Workflow::TestHook_SetLimitedTokenUninstallFactory(&m_factory))
+        {
+        }
+
+        ~SetLimitedTokenUninstallFactory_Override()
+        {
+            AppInstaller::CLI::Workflow::TestHook_SetLimitedTokenUninstallFactory(m_previous);
+        }
+
+        SetLimitedTokenUninstallFactory_Override(const SetLimitedTokenUninstallFactory_Override&) = delete;
+        SetLimitedTokenUninstallFactory_Override& operator=(const SetLimitedTokenUninstallFactory_Override&) = delete;
+
+    private:
+        AppInstaller::CLI::Workflow::LimitedTokenUninstallFactory m_factory;
+        AppInstaller::CLI::Workflow::LimitedTokenUninstallFactory* m_previous;
+    };
+
     struct SetCreateSymlinkResult_Override
     {
         SetCreateSymlinkResult_Override(bool status) : m_status(status)
