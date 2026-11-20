@@ -85,13 +85,24 @@ TEST_CASE("LimitedTokenUninstall_OwnsClassicUninstall", "[LimitedTokenFlow][Unin
 
 TEST_CASE("LimitedTokenUninstall_PreservesDiscoveryContext", "[LimitedTokenFlow][workflow]")
 {
+    const bool hasTrackingSource = GENERATE(false, true);
+    CAPTURE(hasTrackingSource);
     TestHook::SetIsRunningWithNonDefaultFullToken_Override token(true);
     std::ostringstream output;
     TestContext context{ output, std::cin };
     AddInstalledPackage(context);
     auto manifest = context.Get<Data::InstalledPackageVersion>()->GetManifest();
+    manifest.Id = "ARP\\User\\X64\\test-product";
     auto source = std::make_shared<TestSource>();
-    context.Add<Data::Package>(TestCompositePackage::Make(std::vector{ manifest }, source));
+    source->Details.Origin = hasTrackingSource ? SourceOrigin::User : SourceOrigin::Predefined;
+    context.Add<Data::InstalledPackageVersion>(TestPackageVersion::Make(manifest,
+        context.Get<Data::InstalledPackageVersion>()->GetMetadata(), source));
+    auto availableManifest = manifest;
+    availableManifest.Id = "Catalog.DifferentPackage";
+    auto availableSource = std::make_shared<TestSource>();
+    availableSource->Details.Name = "UnrelatedSource";
+    availableSource->Details.Identifier = "*UnrelatedSource";
+    context.Add<Data::Package>(TestCompositePackage::Make(std::vector{ availableManifest }, availableSource));
     context.Args.AddArg(Args::Type::CustomHeader, "test-header");
     context.Args.AddArg(Args::Type::AuthenticationMode, "interactive");
     context.Args.AddArg(Args::Type::AuthenticationAccount, "test-account");
@@ -101,9 +112,8 @@ TEST_CASE("LimitedTokenUninstall_PreservesDiscoveryContext", "[LimitedTokenFlow]
     {
         REQUIRE(request.PackageId == manifest.Id);
         REQUIRE(request.Scope.empty());
-        REQUIRE(request.Catalogs.size() == 1);
-        REQUIRE(request.Catalogs[0].Name == source->Details.Name);
-        REQUIRE(request.Catalogs[0].Identifier == source->Details.Identifier);
+        REQUIRE(request.SourceName == (hasTrackingSource ? source->Details.Name : std::string{}));
+        REQUIRE(request.SourceIdentifier == (hasTrackingSource ? source->Details.Identifier : std::string{}));
         REQUIRE(request.SourceHeader == "test-header");
         REQUIRE(request.AuthenticationMode == "interactive");
         REQUIRE(request.AuthenticationAccount == "test-account");

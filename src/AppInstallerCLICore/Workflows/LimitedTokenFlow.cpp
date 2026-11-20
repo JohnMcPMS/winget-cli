@@ -62,28 +62,12 @@ namespace AppInstaller::CLI::Workflow
             Client::UninstallRequest result;
             auto installed = context.Get<Data::InstalledPackageVersion>();
             result.PackageId = installed->GetProperty(PackageVersionProperty::Id);
-            auto addCatalog = [&](const Source& source)
+            auto source = installed->GetSource();
+            if (source && source.ContainsAvailablePackages())
             {
-                if (!source || !source.ContainsAvailablePackages())
-                {
-                    return;
-                }
                 const auto& details = source.GetDetails();
-                if (std::none_of(result.Catalogs.begin(), result.Catalogs.end(),
-                    [&](const auto& catalog) { return catalog.Identifier == details.Identifier; }))
-                {
-                    result.Catalogs.push_back({ details.Name, details.Identifier });
-                }
-            };
-            addCatalog(installed->GetSource());
-            if (context.Contains(Data::Package))
-            {
-                auto package = context.Get<Data::Package>();
-                result.PackageId = package->GetProperty(PackageProperty::Id);
-                for (const auto& available : package->GetAvailable())
-                {
-                    addCatalog(available->GetSource());
-                }
+                result.SourceName = details.Name;
+                result.SourceIdentifier = details.Identifier;
             }
             auto arg = [&](Args::Type type) { return std::string{ context.Args.GetArg(type) }; };
             result.ProductCode = arg(Args::Type::ProductCode);

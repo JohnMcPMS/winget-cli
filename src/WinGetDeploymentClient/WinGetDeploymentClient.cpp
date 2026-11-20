@@ -135,9 +135,9 @@ namespace AppInstaller::Deployment::Client
                     L"{" WINGET_OUTOFPROC_COM_CLSID_CreateCompositePackageCatalogOptions L"}");
                 composite.InstalledScope(scope.empty() ? Deployment::PackageInstallScope::Any : Deployment::PackageInstallScope::User);
                 composite.CompositeSearchBehavior(Deployment::CompositeSearchBehavior::AllCatalogs);
-                for (const auto& catalog : request.Catalogs)
+                if (!request.SourceName.empty())
                 {
-                    auto reference = m_manager.GetPackageCatalogByName(winrt::to_hstring(catalog.Name));
+                    auto reference = m_manager.GetPackageCatalogByName(winrt::to_hstring(request.SourceName));
                     if (!reference)
                     {
                         throw winrt::hresult_error(HRESULT_FROM_WIN32(ERROR_NOT_FOUND));
@@ -172,7 +172,7 @@ namespace AppInstaller::Deployment::Client
                     reference.AcceptSourceAgreements(true);
                     auto connected = WaitForOperation(reference.ConnectAsync(), callbacks);
                     winrt::check_hresult(connected.ExtendedErrorCode());
-                    if (!connected.PackageCatalog() || winrt::to_string(connected.PackageCatalog().Info().Id()) != catalog.Identifier)
+                    if (!connected.PackageCatalog() || winrt::to_string(connected.PackageCatalog().Info().Id()) != request.SourceIdentifier)
                     {
                         throw winrt::hresult_error(E_INVALIDARG, L"The package source changed before delegation.");
                     }

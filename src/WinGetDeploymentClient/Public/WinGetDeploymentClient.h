@@ -18,16 +18,11 @@ namespace AppInstaller::Deployment::Client
 {
     struct UninstallRequest
     {
-        struct Catalog
-        {
-            std::string Name;
-            std::string Identifier;
-        };
-
         std::string PackageId;
         std::string ProductCode;
         std::string Scope;
-        std::vector<Catalog> Catalogs;
+        std::string SourceName;
+        std::string SourceIdentifier;
         std::string SourceHeader;
         std::string AuthenticationMode;
         std::string AuthenticationAccount;
