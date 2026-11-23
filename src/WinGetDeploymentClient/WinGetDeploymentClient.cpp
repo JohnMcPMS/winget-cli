@@ -134,7 +134,7 @@ namespace AppInstaller::Deployment::Client
                 auto composite = Activate<Deployment::CreateCompositePackageCatalogOptions>(
                     L"{" WINGET_OUTOFPROC_COM_CLSID_CreateCompositePackageCatalogOptions L"}");
                 composite.InstalledScope(scope.empty() ? Deployment::PackageInstallScope::Any : Deployment::PackageInstallScope::User);
-                composite.CompositeSearchBehavior(Deployment::CompositeSearchBehavior::AllCatalogs);
+                composite.CompositeSearchBehavior(Deployment::CompositeSearchBehavior::LocalCatalogs);
                 if (!request.SourceName.empty())
                 {
                     auto reference = m_manager.GetPackageCatalogByName(winrt::to_hstring(request.SourceName));
@@ -186,19 +186,11 @@ namespace AppInstaller::Deployment::Client
                     throw winrt::hresult_error(E_UNEXPECTED);
                 }
                 auto find = Activate<Deployment::FindPackagesOptions>(L"{" WINGET_OUTOFPROC_COM_CLSID_FindPackagesOptions L"}");
-                auto addFilter = [&](Deployment::PackageMatchField field, const std::string& value)
-                {
-                    auto filter = Activate<Deployment::PackageMatchFilter>(L"{" WINGET_OUTOFPROC_COM_CLSID_PackageMatchFilter L"}");
-                    filter.Field(field);
-                    filter.Option(Deployment::PackageFieldMatchOption::Equals);
-                    filter.Value(winrt::to_hstring(value));
-                    find.Filters().Append(filter);
-                };
-                addFilter(Deployment::PackageMatchField::Id, request.PackageId);
-                if (!request.ProductCode.empty())
-                {
-                    addFilter(Deployment::PackageMatchField::ProductCode, request.ProductCode);
-                }
+                auto filter = Activate<Deployment::PackageMatchFilter>(L"{" WINGET_OUTOFPROC_COM_CLSID_PackageMatchFilter L"}");
+                filter.Field(Deployment::PackageMatchField::Id);
+                filter.Option(Deployment::PackageFieldMatchOption::Equals);
+                filter.Value(winrt::to_hstring(request.PackageId));
+                find.Filters().Append(filter);
                 auto found = WaitForOperation(catalog.FindPackagesAsync(find), callbacks);
                 winrt::check_hresult(found.ExtendedErrorCode());
                 if (found.Status() != Deployment::FindPackagesResultStatus::Ok || found.WasLimitExceeded())

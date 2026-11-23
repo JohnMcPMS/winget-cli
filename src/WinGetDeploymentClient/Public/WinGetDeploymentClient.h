@@ -19,7 +19,6 @@ namespace AppInstaller::Deployment::Client
     struct UninstallRequest
     {
         std::string PackageId;
-        std::string ProductCode;
         std::string Scope;
         std::string SourceName;
         std::string SourceIdentifier;

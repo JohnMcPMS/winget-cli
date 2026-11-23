@@ -49,7 +49,6 @@ TEST_CASE("LimitedTokenUninstall_OwnsClassicUninstall", "[LimitedTokenFlow][Unin
     context.Args.AddArg(Args::Type::InstallScope, "user");
     context.Args.AddArg(Args::Type::Interactive);
     context.Args.AddArg(Args::Type::Force);
-    context.Args.AddArg(Args::Type::ProductCode, "test-product");
     size_t executions = 0;
     TestHook::SetLimitedTokenUninstallFactory_Override factory([&]()
     {
@@ -58,7 +57,6 @@ TEST_CASE("LimitedTokenUninstall_OwnsClassicUninstall", "[LimitedTokenFlow][Unin
         {
             ++executions;
             REQUIRE(finalRequest.Scope == "user");
-            REQUIRE(finalRequest.ProductCode == "test-product");
             REQUIRE(finalRequest.Interactive);
             REQUIRE_FALSE(finalRequest.Silent);
             REQUIRE(finalRequest.Force);

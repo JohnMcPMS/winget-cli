@@ -70,7 +70,6 @@ namespace AppInstaller::CLI::Workflow
                 result.SourceIdentifier = details.Identifier;
             }
             auto arg = [&](Args::Type type) { return std::string{ context.Args.GetArg(type) }; };
-            result.ProductCode = arg(Args::Type::ProductCode);
             result.Scope = arg(Args::Type::InstallScope);
             result.SourceHeader = arg(Args::Type::CustomHeader);
             auto authentication = GetAuthenticationArguments(context);
