@@ -114,7 +114,7 @@ namespace AppInstaller::CLI::Workflow
             {
                 return false;
             }
-            state->Session = (*s_factoryOverride)(CreateRequest(context));
+            state->Session = (*s_factoryOverride)();
         }
         else
 #endif
@@ -138,7 +138,7 @@ namespace AppInstaller::CLI::Workflow
             THROW_LAST_ERROR_IF(!state->Module);
             auto create = reinterpret_cast<Client::CreateUninstallSession>(GetProcAddress(state->Module.get(), Client::CreateUninstallSessionExport));
             THROW_LAST_ERROR_IF(!create);
-            state->Session.reset(create(CreateRequest(context)));
+            state->Session.reset(create());
         }
         THROW_HR_IF_NULL(E_UNEXPECTED, state->Session.get());
         context.Add<Data::LimitedTokenUninstall>(std::move(state));

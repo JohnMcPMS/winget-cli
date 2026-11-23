@@ -55,9 +55,9 @@ namespace AppInstaller::Deployment::Client
         virtual UninstallResult Execute(const UninstallRequest& request, const UninstallCallbacks& callbacks) = 0;
     };
 
-    using CreateUninstallSession = IUninstallSession* (__cdecl*)(const UninstallRequest&);
+    using CreateUninstallSession = IUninstallSession* (__cdecl*)();
     inline constexpr char CreateUninstallSessionExport[] = "WinGetCreateUninstallSession";
-    extern "C" IUninstallSession* __cdecl WinGetCreateUninstallSession(const UninstallRequest& request);
+    extern "C" IUninstallSession* __cdecl WinGetCreateUninstallSession();
 
     // Callback arguments are valid only until the callback returns.
     WINGET_DEPLOYMENT_CLIENT_API void RunPackageManagerActivationPlayground(

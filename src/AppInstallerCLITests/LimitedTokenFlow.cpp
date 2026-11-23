@@ -51,17 +51,17 @@ TEST_CASE("LimitedTokenUninstall_OwnsClassicUninstall", "[LimitedTokenFlow][Unin
     context.Args.AddArg(Args::Type::Force);
     context.Args.AddArg(Args::Type::ProductCode, "test-product");
     size_t executions = 0;
-    TestHook::SetLimitedTokenUninstallFactory_Override factory([&](const Client::UninstallRequest& request)
+    TestHook::SetLimitedTokenUninstallFactory_Override factory([&]()
     {
-        REQUIRE(request.Scope == "user");
-        REQUIRE(request.ProductCode == "test-product");
-        REQUIRE(request.Interactive);
-        REQUIRE_FALSE(request.Silent);
-        REQUIRE(request.Force);
         auto session = std::make_unique<TestSession>();
         session->Run = [&](const Client::UninstallRequest& finalRequest, const Client::UninstallCallbacks& callbacks)
         {
             ++executions;
+            REQUIRE(finalRequest.Scope == "user");
+            REQUIRE(finalRequest.ProductCode == "test-product");
+            REQUIRE(finalRequest.Interactive);
+            REQUIRE_FALSE(finalRequest.Silent);
+            REQUIRE(finalRequest.Force);
             REQUIRE(finalRequest.LogOutputPath == "C:\\Test\\uninstall.log");
             REQUIRE_FALSE(callbacks.IsCancelled());
             callbacks.Progress(true, 0);
@@ -108,20 +108,32 @@ TEST_CASE("LimitedTokenUninstall_PreservesDiscoveryContext", "[LimitedTokenFlow]
     context.Args.AddArg(Args::Type::AuthenticationAccount, "test-account");
     context.Args.AddArg(Args::Type::AcceptSourceAgreements);
     context.Args.AddArg(Args::Type::Silent);
-    TestHook::SetLimitedTokenUninstallFactory_Override factory([&](const Client::UninstallRequest& request)
+    bool executed = false;
+    TestHook::SetLimitedTokenUninstallFactory_Override factory([&]()
     {
-        REQUIRE(request.PackageId == manifest.Id);
-        REQUIRE(request.Scope.empty());
-        REQUIRE(request.SourceName == (hasTrackingSource ? source->Details.Name : std::string{}));
-        REQUIRE(request.SourceIdentifier == (hasTrackingSource ? source->Details.Identifier : std::string{}));
-        REQUIRE(request.SourceHeader == "test-header");
-        REQUIRE(request.AuthenticationMode == "interactive");
-        REQUIRE(request.AuthenticationAccount == "test-account");
-        REQUIRE(request.AcceptSourceAgreements);
-        REQUIRE(request.Silent);
-        return std::make_unique<TestSession>();
+        auto session = std::make_unique<TestSession>();
+        session->Run = [&](const Client::UninstallRequest& request, const Client::UninstallCallbacks&)
+        {
+            executed = true;
+            REQUIRE(request.PackageId == manifest.Id);
+            REQUIRE(request.Scope.empty());
+            REQUIRE(request.SourceName == (hasTrackingSource ? source->Details.Name : std::string{}));
+            REQUIRE(request.SourceIdentifier == (hasTrackingSource ? source->Details.Identifier : std::string{}));
+            REQUIRE(request.SourceHeader == "test-header");
+            REQUIRE(request.AuthenticationMode == "interactive");
+            REQUIRE(request.AuthenticationAccount == "test-account");
+            REQUIRE(request.AcceptSourceAgreements);
+            REQUIRE(request.Silent);
+            return Client::UninstallResult{ S_OK, 0, true, false };
+        };
+        return session;
     });
     REQUIRE(PrepareLimitedTokenUninstall(context));
+    REQUIRE_FALSE(executed);
+    context.Override({ ForceInstalledCacheUpdate, [](TestContext&) {}, 1 });
+    ExecuteLimitedTokenUninstall(context);
+    REQUIRE(executed);
+    REQUIRE_FALSE(context.IsTerminated());
 }
 
 TEST_CASE("LimitedTokenUninstall_UnsupportedRequestsRemainBlocked", "[LimitedTokenFlow][workflow]")
@@ -130,7 +142,7 @@ TEST_CASE("LimitedTokenUninstall_UnsupportedRequestsRemainBlocked", "[LimitedTok
         Args::Type::Proxy, Args::Type::NoProxy);
     CAPTURE(argument);
     TestHook::SetIsRunningWithNonDefaultFullToken_Override token(true);
-    TestHook::SetLimitedTokenUninstallFactory_Override factory([](const Client::UninstallRequest&) -> std::unique_ptr<Client::IUninstallSession>
+    TestHook::SetLimitedTokenUninstallFactory_Override factory([]() -> std::unique_ptr<Client::IUninstallSession>
     {
         FAIL("Unsupported requests must not activate the helper.");
         return {};
@@ -189,7 +201,7 @@ TEST_CASE("LimitedTokenUninstall_MissingHelperRetainsBlock", "[LimitedTokenFlow]
 TEST_CASE("LimitedTokenUninstall_BrokenHelperNeverFallsBack", "[LimitedTokenFlow][workflow]")
 {
     TestHook::SetIsRunningWithNonDefaultFullToken_Override token(true);
-    TestHook::SetLimitedTokenUninstallFactory_Override factory([](const Client::UninstallRequest&) -> std::unique_ptr<Client::IUninstallSession>
+    TestHook::SetLimitedTokenUninstallFactory_Override factory([]() -> std::unique_ptr<Client::IUninstallSession>
     {
         THROW_HR(REGDB_E_CLASSNOTREG);
     });
@@ -208,7 +220,7 @@ TEST_CASE("LimitedTokenUninstall_PreservesFailureRebootAndNeverReplays", "[Limit
     TestContext context{ output, std::cin };
     AddInstalledPackage(context);
     size_t executions = 0;
-    TestHook::SetLimitedTokenUninstallFactory_Override factory([&](const Client::UninstallRequest&)
+    TestHook::SetLimitedTokenUninstallFactory_Override factory([&]()
     {
         auto session = std::make_unique<TestSession>();
         session->Run = [&](const Client::UninstallRequest&, const Client::UninstallCallbacks&) -> Client::UninstallResult
@@ -245,7 +257,7 @@ TEST_CASE("LimitedTokenUninstall_PropagatesCancellation", "[LimitedTokenFlow][wo
     std::ostringstream output;
     TestContext context{ output, std::cin };
     AddInstalledPackage(context);
-    TestHook::SetLimitedTokenUninstallFactory_Override factory([&](const Client::UninstallRequest&)
+    TestHook::SetLimitedTokenUninstallFactory_Override factory([&]()
     {
         auto session = std::make_unique<TestSession>();
         session->Run = [&](const Client::UninstallRequest&, const Client::UninstallCallbacks& callbacks)

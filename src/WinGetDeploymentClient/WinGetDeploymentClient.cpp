@@ -109,7 +109,7 @@ namespace AppInstaller::Deployment::Client
 
         struct UninstallSession : IUninstallSession
         {
-            explicit UninstallSession(const UninstallRequest&) : m_manager(CreatePackageManager()) {}
+            UninstallSession() : m_manager(CreatePackageManager()) {}
 
             UninstallResult Execute(const UninstallRequest& request, const UninstallCallbacks& callbacks) override
             {
@@ -247,9 +247,9 @@ namespace AppInstaller::Deployment::Client
         };
     }
 
-    IUninstallSession* __cdecl WinGetCreateUninstallSession(const UninstallRequest& request)
+    IUninstallSession* __cdecl WinGetCreateUninstallSession()
     {
-        return new UninstallSession(request);
+        return new UninstallSession();
     }
 
     void RunPackageManagerActivationPlayground(

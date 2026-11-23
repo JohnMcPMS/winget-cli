@@ -16,7 +16,7 @@ namespace AppInstaller::CLI::Workflow
     };
 
 #ifndef AICLI_DISABLE_TEST_HOOKS
-    using LimitedTokenUninstallFactory = std::function<std::unique_ptr<Deployment::Client::IUninstallSession>(const Deployment::Client::UninstallRequest&)>;
+    using LimitedTokenUninstallFactory = std::function<std::unique_ptr<Deployment::Client::IUninstallSession>()>;
     LimitedTokenUninstallFactory* TestHook_SetLimitedTokenUninstallFactory(LimitedTokenUninstallFactory* factory);
 #endif
 
