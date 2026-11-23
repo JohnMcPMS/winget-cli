@@ -46,7 +46,7 @@ TEST_CASE("LimitedTokenUninstall_OwnsClassicUninstall", "[LimitedTokenFlow][Unin
     std::ostringstream output;
     TestContext context{ output, std::cin };
     AddInstalledPackage(context, type);
-    context.Args.AddArg(Args::Type::InstallScope, "user");
+    context.Args.AddArg(Args::Type::InstallScope, "user"sv);
     context.Args.AddArg(Args::Type::Interactive);
     context.Args.AddArg(Args::Type::Force);
     size_t executions = 0;
@@ -61,6 +61,7 @@ TEST_CASE("LimitedTokenUninstall_OwnsClassicUninstall", "[LimitedTokenFlow][Unin
             REQUIRE_FALSE(finalRequest.Silent);
             REQUIRE(finalRequest.Force);
             REQUIRE(finalRequest.LogOutputPath == "C:\\Test\\uninstall.log");
+            REQUIRE(finalRequest.CorrelationData.empty());
             REQUIRE_FALSE(callbacks.IsCancelled());
             callbacks.Progress(true, 0);
             callbacks.Progress(false, 0.5);
@@ -73,7 +74,7 @@ TEST_CASE("LimitedTokenUninstall_OwnsClassicUninstall", "[LimitedTokenFlow][Unin
     REQUIRE(context.Contains(Data::LimitedTokenUninstall));
     REQUIRE_FALSE(context.Contains(Data::UninstallString));
     REQUIRE_FALSE(context.Contains(Data::ProductCodes));
-    context.Args.AddArg(Args::Type::Log, "C:\\Test\\uninstall.log");
+    context.Args.AddArg(Args::Type::Log, "C:\\Test\\uninstall.log"sv);
     // No Package is present: local RecordUninstall would fail instead of duplicating worker tracking.
     context << ExecuteUninstaller << RecordUninstall;
     REQUIRE_FALSE(context.IsTerminated());
@@ -83,11 +84,17 @@ TEST_CASE("LimitedTokenUninstall_OwnsClassicUninstall", "[LimitedTokenFlow][Unin
 
 TEST_CASE("LimitedTokenUninstall_PreservesDiscoveryContext", "[LimitedTokenFlow][workflow]")
 {
+    struct CorrelatedTestContext : TestContext
+    {
+        using TestContext::TestContext;
+        std::wstring_view GetCorrelationJson() override { return LR"({"test":"correlation"})"; }
+    };
+
     const bool hasTrackingSource = GENERATE(false, true);
     CAPTURE(hasTrackingSource);
     TestHook::SetIsRunningWithNonDefaultFullToken_Override token(true);
     std::ostringstream output;
-    TestContext context{ output, std::cin };
+    CorrelatedTestContext context{ output, std::cin };
     AddInstalledPackage(context);
     auto manifest = context.Get<Data::InstalledPackageVersion>()->GetManifest();
     manifest.Id = "ARP\\User\\X64\\test-product";
@@ -101,9 +108,9 @@ TEST_CASE("LimitedTokenUninstall_PreservesDiscoveryContext", "[LimitedTokenFlow]
     availableSource->Details.Name = "UnrelatedSource";
     availableSource->Details.Identifier = "*UnrelatedSource";
     context.Add<Data::Package>(TestCompositePackage::Make(std::vector{ availableManifest }, availableSource));
-    context.Args.AddArg(Args::Type::CustomHeader, "test-header");
-    context.Args.AddArg(Args::Type::AuthenticationMode, "interactive");
-    context.Args.AddArg(Args::Type::AuthenticationAccount, "test-account");
+    context.Args.AddArg(Args::Type::CustomHeader, "test-header"sv);
+    context.Args.AddArg(Args::Type::AuthenticationMode, "interactive"sv);
+    context.Args.AddArg(Args::Type::AuthenticationAccount, "test-account"sv);
     context.Args.AddArg(Args::Type::AcceptSourceAgreements);
     context.Args.AddArg(Args::Type::Silent);
     bool executed = false;
@@ -120,6 +127,7 @@ TEST_CASE("LimitedTokenUninstall_PreservesDiscoveryContext", "[LimitedTokenFlow]
             REQUIRE(request.SourceHeader == "test-header");
             REQUIRE(request.AuthenticationMode == "interactive");
             REQUIRE(request.AuthenticationAccount == "test-account");
+            REQUIRE(request.CorrelationData == R"({"test":"correlation"})");
             REQUIRE(request.AcceptSourceAgreements);
             REQUIRE(request.Silent);
             return Client::UninstallResult{ S_OK, 0, true, false };
@@ -148,7 +156,7 @@ TEST_CASE("LimitedTokenUninstall_UnsupportedRequestsRemainBlocked", "[LimitedTok
     std::ostringstream output;
     TestContext context{ output, std::cin };
     AddInstalledPackage(context);
-    context.Args.AddArg(argument, "test");
+    context.Args.AddArg(argument, "test"sv);
     context << GetUninstallInfo;
     REQUIRE_TERMINATED_WITH(context, APPINSTALLER_CLI_ERROR_ADMIN_CONTEXT_ACTION_PROHIBITED);
     REQUIRE_FALSE(context.Contains(Data::UninstallString));
@@ -175,7 +183,7 @@ TEST_CASE("LimitedTokenUninstall_LeavesOtherTokensScopesAndNestedOperationsAlone
     AddInstalledPackage(context, "Exe", scenario == 1 ? "Machine" : "User");
     if (scenario == 2)
     {
-        context.Args.AddArg(Args::Type::InstallScope, "machine");
+        context.Args.AddArg(Args::Type::InstallScope, "machine"sv);
     }
     if (scenario >= 3)
     {

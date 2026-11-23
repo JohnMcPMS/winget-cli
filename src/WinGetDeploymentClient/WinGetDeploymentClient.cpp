@@ -8,6 +8,8 @@
 #include <chrono>
 #include <condition_variable>
 #include <mutex>
+#include <winrt/Windows.Foundation.h>
+#include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Microsoft.Management.Deployment.h>
 #include "..\Microsoft.Management.Deployment\Public\ComClsids.h"
 

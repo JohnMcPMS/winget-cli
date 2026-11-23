@@ -4,7 +4,6 @@
 #include "LimitedTokenFlow.h"
 #include "SourceFlow.h"
 #include "WorkflowBase.h"
-#include "COMContext.h"
 #include <AppInstallerRuntime.h>
 #include <cmath>
 
@@ -80,10 +79,7 @@ namespace AppInstaller::CLI::Workflow
             result.Silent = context.Args.Contains(Args::Type::Silent);
             result.Force = context.Args.Contains(Args::Type::Force);
             result.LogOutputPath = arg(Args::Type::Log);
-            if (auto comContext = dynamic_cast<COMContext*>(&context))
-            {
-                result.CorrelationData = Utility::ConvertToUTF8(comContext->GetCorrelationJson());
-            }
+            result.CorrelationData = Utility::ConvertToUTF8(context.GetCorrelationJson());
             return result;
         }
     }

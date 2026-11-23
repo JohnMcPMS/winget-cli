@@ -72,7 +72,7 @@ namespace AppInstaller::CLI::Execution
         // This should be called for every COMContext object instance
         void SetContextLoggers(const std::wstring_view telemetryCorrelationJson, const std::string& caller);
 
-        std::wstring_view GetCorrelationJson();
+        std::wstring_view GetCorrelationJson() override;
 
     private:
         void FireCallbacks(ReportType reportType, uint64_t current, uint64_t maximum, ProgressType progressType, ::AppInstaller::CLI::Workflow::ExecutionStage executionPhase);

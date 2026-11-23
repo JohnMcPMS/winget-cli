@@ -13,7 +13,7 @@
 #include <AppInstallerTelemetry.h>
 #include <AppInstallerRuntime.h>
 #include <AppInstallerDownloader.h>
-#include <Workflows/LimitedTokenFlow.h>
+#include <WinGetDeploymentClient.h>
 #include <winget/UserSettings.h>
 #include <winget/ExperimentalFeature.h>
 #include <winget/Filesystem.h>
@@ -97,6 +97,9 @@ namespace AppInstaller
 
     namespace CLI::Workflow
     {
+        using LimitedTokenUninstallFactory = std::function<std::unique_ptr<Deployment::Client::IUninstallSession>()>;
+        LimitedTokenUninstallFactory* TestHook_SetLimitedTokenUninstallFactory(LimitedTokenUninstallFactory* factory);
+
         void TestHook_SetEnableWindowsFeatureResult_Override(std::optional<DWORD>&& result);
         void TestHook_SetDoesWindowsFeatureExistResult_Override(std::optional<DWORD>&& result);
         void TestHook_SetExtractArchiveWithTarResult_Override(std::optional<DWORD>&& result);

@@ -159,6 +159,8 @@ namespace AppInstaller::CLI::Execution
 
         virtual void SetExecutionStage(Workflow::ExecutionStage stage);
 
+        virtual std::wstring_view GetCorrelationJson() { return {}; }
+
         // Get Globals for Current Context
         ThreadLocalStorage::WingetThreadGlobals& GetThreadGlobals();
         std::shared_ptr<ThreadLocalStorage::WingetThreadGlobals> GetSharedThreadGlobals();
