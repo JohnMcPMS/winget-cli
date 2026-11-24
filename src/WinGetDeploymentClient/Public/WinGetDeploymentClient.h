@@ -8,12 +8,6 @@
 #include <string_view>
 #include <vector>
 
-#ifdef WINGET_DEPLOYMENT_CLIENT_BUILD
-#define WINGET_DEPLOYMENT_CLIENT_API __declspec(dllexport)
-#else
-#define WINGET_DEPLOYMENT_CLIENT_API __declspec(dllimport)
-#endif
-
 namespace AppInstaller::Deployment::Client
 {
     struct UninstallRequest
@@ -58,7 +52,19 @@ namespace AppInstaller::Deployment::Client
     inline constexpr char CreateUninstallSessionExport[] = "WinGetCreateUninstallSession";
     extern "C" IUninstallSession* __cdecl WinGetCreateUninstallSession();
 
-    // Callback arguments are valid only until the callback returns.
-    WINGET_DEPLOYMENT_CLIENT_API void RunPackageManagerActivationPlayground(
-        const std::function<void(std::wstring_view, const std::vector<GUID>&)>& callback);
+    struct ActivationDiagnosticsResult
+    {
+        std::wstring RuntimeClassName;
+        std::vector<GUID> InterfaceIds;
+    };
+
+    struct IActivationDiagnosticsSession
+    {
+        virtual ~IActivationDiagnosticsSession() = default;
+        virtual ActivationDiagnosticsResult Execute() = 0;
+    };
+
+    using CreateActivationDiagnosticsSession = IActivationDiagnosticsSession* (__cdecl*)();
+    inline constexpr char CreateActivationDiagnosticsSessionExport[] = "WinGetCreateActivationDiagnosticsSession";
+    extern "C" IActivationDiagnosticsSession* __cdecl WinGetCreateActivationDiagnosticsSession();
 }

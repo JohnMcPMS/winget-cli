@@ -239,6 +239,34 @@ namespace AppInstaller::Deployment::Client
             Deployment::PackageManager m_manager{ nullptr };
             bool m_started = false;
         };
+
+        struct ActivationDiagnosticsSession : IActivationDiagnosticsSession
+        {
+            ActivationDiagnosticsSession() : m_manager(CreatePackageManager()) {}
+
+            ActivationDiagnosticsResult Execute() override
+            {
+                // Metadata-based proxies need IInspectable's own proxy for these calls.
+                const auto inspectable = m_manager.as<winrt::Windows::Foundation::IInspectable>();
+                const auto runtimeClassName = winrt::get_class_name(inspectable);
+                if (runtimeClassName != winrt::name_of<Deployment::PackageManager>())
+                {
+                    throw winrt::hresult_error(E_UNEXPECTED, L"Activation did not return a PackageManager.");
+                }
+
+                ActivationDiagnosticsResult result;
+                result.RuntimeClassName.assign(runtimeClassName.c_str(), runtimeClassName.size());
+                const auto interfaces = winrt::get_interfaces(inspectable);
+                result.InterfaceIds.reserve(interfaces.size());
+                for (const auto& interfaceId : interfaces)
+                {
+                    result.InterfaceIds.push_back(interfaceId);
+                }
+                return result;
+            }
+
+            Deployment::PackageManager m_manager{ nullptr };
+        };
     }
 
     IUninstallSession* __cdecl WinGetCreateUninstallSession()
@@ -246,26 +274,8 @@ namespace AppInstaller::Deployment::Client
         return new UninstallSession();
     }
 
-    void RunPackageManagerActivationPlayground(
-        const std::function<void(std::wstring_view, const std::vector<GUID>&)>& callback)
+    IActivationDiagnosticsSession* __cdecl WinGetCreateActivationDiagnosticsSession()
     {
-        auto instance = CreatePackageManager();
-        // Metadata-based proxies need IInspectable's own proxy for these calls.
-        const auto inspectable = instance.as<winrt::Windows::Foundation::IInspectable>();
-        const auto runtimeClassName = winrt::get_class_name(inspectable);
-        if (runtimeClassName != winrt::name_of<winrt::Microsoft::Management::Deployment::PackageManager>())
-        {
-            throw winrt::hresult_error(E_UNEXPECTED, L"Activation did not return a PackageManager.");
-        }
-
-        const auto interfaces = winrt::get_interfaces(inspectable);
-        std::vector<GUID> interfaceIds;
-        interfaceIds.reserve(interfaces.size());
-        for (const auto& interfaceId : interfaces)
-        {
-            interfaceIds.push_back(interfaceId);
-        }
-
-        callback(runtimeClassName, interfaceIds);
+        return new ActivationDiagnosticsSession();
     }
 }

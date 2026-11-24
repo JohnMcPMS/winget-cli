@@ -8,7 +8,7 @@
 #include <AppInstallerRuntime.h>
 #include <winrt/Microsoft.Management.Configuration.h>
 #include <winrt/Microsoft.Management.Configuration.SetProcessorFactory.h>
-#include <WinGetDeploymentClient.h>
+#include "Workflows/LimitedTokenFlow.h"
 #include "AppInstallerDownloader.h"
 #include <AppInstallerErrors.h>
 #include "Sixel.h"
@@ -75,7 +75,7 @@ namespace AppInstaller::CLI
             std::make_unique<LogViewerTestCommand>(FullName()),
             std::make_unique<DebugDscResourceCommand>(FullName()),
             std::make_unique<ValidateStorePinningCommand>(FullName()),
-            std::make_unique<LimitedCOMCommand>(FullName()),
+            std::make_unique<COMActivationDiagnosticsCommand>(FullName()),
         });
     }
 
@@ -94,21 +94,21 @@ namespace AppInstaller::CLI
         OutputHelp(context.Reporter);
     }
 
-    Resource::LocString LimitedCOMCommand::ShortDescription() const
+    Resource::LocString COMActivationDiagnosticsCommand::ShortDescription() const
     {
-        return Utility::LocIndString("Activate a package-internal limited-token COM server"sv);
+        return Utility::LocIndString("Diagnose package-internal COM activation"sv);
     }
 
-    Resource::LocString LimitedCOMCommand::LongDescription() const
+    Resource::LocString COMActivationDiagnosticsCommand::LongDescription() const
     {
-        return Utility::LocIndString("Creates PackageManager through a private registry.dat CLSID without lower-trust registration discovery."sv);
+        return Utility::LocIndString("Activates a package-internal PackageManager session and reports its runtime class and interfaces."sv);
     }
 
-    void LimitedCOMCommand::ExecuteInternal(Execution::Context& context) const
+    void COMActivationDiagnosticsCommand::ExecuteInternal(Execution::Context& context) const
     {
         if (!Runtime::IsRunningInPackagedContext())
         {
-            context.Reporter.Error() << "This playground requires the deployed WinGet development package." << std::endl;
+            context.Reporter.Error() << "COM activation diagnostics require a deployed WinGet package." << std::endl;
             AICLI_TERMINATE_CONTEXT(HRESULT_FROM_WIN32(APPMODEL_ERROR_NO_PACKAGE));
         }
 
@@ -132,17 +132,21 @@ namespace AppInstaller::CLI
             << "Caller PID: " << GetCurrentProcessId() << '\n'
             << "Caller token: " << tokenTypeName(callerType) << std::endl;
 
-        Deployment::Client::RunPackageManagerActivationPlayground(
-            [&](std::wstring_view runtimeClassName, const std::vector<GUID>& interfaceIds)
-            {
-                context.Reporter.Info() << "Activated class: " << Utility::ConvertToUTF8(runtimeClassName) << std::endl;
-                for (const auto& interfaceId : interfaceIds)
-                {
-                    context.Reporter.Info() << "Interface: " << winrt::guid{ interfaceId } << std::endl;
-                }
-            });
+        auto module = Workflow::LoadDeploymentClient();
+        THROW_HR_IF(HRESULT_FROM_WIN32(ERROR_MOD_NOT_FOUND), !module);
+        auto create = reinterpret_cast<Deployment::Client::CreateActivationDiagnosticsSession>(
+            GetProcAddress(module.get(), Deployment::Client::CreateActivationDiagnosticsSessionExport));
+        THROW_LAST_ERROR_IF(!create);
+        std::unique_ptr<Deployment::Client::IActivationDiagnosticsSession> session{ create() };
+        THROW_HR_IF_NULL(E_UNEXPECTED, session.get());
+        auto result = session->Execute();
+        context.Reporter.Info() << "Activated class: " << Utility::ConvertToUTF8(result.RuntimeClassName) << std::endl;
+        for (const auto& interfaceId : result.InterfaceIds)
+        {
+            context.Reporter.Info() << "Interface: " << winrt::guid{ interfaceId } << std::endl;
+        }
 
-        context.Reporter.Info() << "Package-internal PackageManager activation succeeded. Server PID and token type are in the server log." << std::endl;
+        context.Reporter.Info() << "Package-internal PackageManager activation succeeded." << std::endl;
     }
 
     Resource::LocString DumpProxyStubRegistrationsCommand::ShortDescription() const

@@ -91,6 +91,28 @@ namespace AppInstaller::CLI::Workflow
     }
 #endif
 
+    wil::unique_hmodule LoadDeploymentClient()
+    {
+        if (!Runtime::IsRunningInPackagedContext())
+        {
+            return {};
+        }
+        auto path = Runtime::GetPathTo(Runtime::PathName::SelfPackageRoot) / L"WinGetDeploymentClient.dll";
+        std::error_code error;
+        bool exists = std::filesystem::exists(path, error);
+        if (error)
+        {
+            THROW_HR(HRESULT_FROM_WIN32(error.value()));
+        }
+        if (!exists)
+        {
+            return {};
+        }
+        wil::unique_hmodule module{ LoadLibraryExW(path.c_str(), nullptr, LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32) };
+        THROW_LAST_ERROR_IF(!module);
+        return module;
+    }
+
     bool PrepareLimitedTokenUninstall(Context& context)
     {
         if (!IsSupported(context))
@@ -114,23 +136,11 @@ namespace AppInstaller::CLI::Workflow
         else
 #endif
         {
-            if (!Runtime::IsRunningInPackagedContext())
+            state->Module = LoadDeploymentClient();
+            if (!state->Module)
             {
                 return false;
             }
-            auto path = Runtime::GetPathTo(Runtime::PathName::SelfPackageRoot) / L"WinGetDeploymentClient.dll";
-            std::error_code error;
-            bool exists = std::filesystem::exists(path, error);
-            if (error)
-            {
-                THROW_HR(HRESULT_FROM_WIN32(error.value()));
-            }
-            if (!exists)
-            {
-                return false;
-            }
-            state->Module.reset(LoadLibraryExW(path.c_str(), nullptr, LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32));
-            THROW_LAST_ERROR_IF(!state->Module);
             auto create = reinterpret_cast<Client::CreateUninstallSession>(GetProcAddress(state->Module.get(), Client::CreateUninstallSessionExport));
             THROW_LAST_ERROR_IF(!create);
             state->Session.reset(create());

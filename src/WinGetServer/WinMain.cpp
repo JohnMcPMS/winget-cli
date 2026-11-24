@@ -29,17 +29,6 @@ static void _releaseNotifier() noexcept
     _comServerExitEvent.SetEvent();
 }
 
-static HRESULT ValidateInternalPackageManagerServer() try
-{
-    const auto tokenType = wil::get_token_information<TOKEN_ELEVATION_TYPE>(GetCurrentProcessToken());
-    RETURN_HR_IF_MSG(E_ACCESSDENIED, tokenType != TokenElevationTypeLimited,
-        "The package-internal activation playground requires a limited split token; actual token type: %u.", static_cast<unsigned>(tokenType));
-    const std::string diagnostics = "Package-internal PackageManager server PID: " + std::to_string(GetCurrentProcessId()) +
-        ", token: Limited";
-    RETURN_HR(WindowsPackageManagerServerLog(diagnostics.c_str()));
-}
-CATCH_RETURN();
-
 // The RPC runtime automatically exposes a management interface on every endpoint a server
 // listens on. That interface is explicitly exempt from the interface security descriptor
 // registered below, and by default it lets any caller that can reach the endpoint enumerate
@@ -272,7 +261,10 @@ int __stdcall wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPWSTR cmdLine, 
     {
         if (std::wstring_view{ argv[i] } == L"--internalPackageManager")
         {
-            RETURN_IF_FAILED(ValidateInternalPackageManagerServer());
+            TOKEN_ELEVATION_TYPE tokenType;
+            RETURN_IF_FAILED(wil::get_token_information_nothrow(&tokenType, GetCurrentProcessToken()));
+            RETURN_HR_IF_MSG(E_ACCESSDENIED, tokenType != TokenElevationTypeLimited,
+                "Package-internal COM activation requires a limited split token; actual token type: %u.", static_cast<unsigned>(tokenType));
         }
     }
 

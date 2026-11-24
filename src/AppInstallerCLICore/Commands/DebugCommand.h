@@ -22,9 +22,9 @@ namespace AppInstaller::CLI
         void ExecuteInternal(Execution::Context& context) const override;
     };
 
-    struct LimitedCOMCommand final : public Command
+    struct COMActivationDiagnosticsCommand final : public Command
     {
-        LimitedCOMCommand(std::string_view parent) : Command("limited-com", {}, parent) {}
+        COMActivationDiagnosticsCommand(std::string_view parent) : Command("limited-com", {}, parent) {}
 
         Resource::LocString ShortDescription() const override;
         Resource::LocString LongDescription() const override;

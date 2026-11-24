@@ -1,3 +1,4 @@
 LIBRARY WinGetDeploymentClient
 EXPORTS
     WinGetCreateUninstallSession
+    WinGetCreateActivationDiagnosticsSession

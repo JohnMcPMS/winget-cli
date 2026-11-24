@@ -20,6 +20,8 @@ namespace AppInstaller::CLI::Workflow
     LimitedTokenUninstallFactory* TestHook_SetLimitedTokenUninstallFactory(LimitedTokenUninstallFactory* factory);
 #endif
 
+    wil::unique_hmodule LoadDeploymentClient();
+
     bool PrepareLimitedTokenUninstall(Execution::Context& context);
     void ExecuteLimitedTokenUninstall(Execution::Context& context);
 }
