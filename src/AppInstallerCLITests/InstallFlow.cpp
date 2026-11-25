@@ -776,7 +776,7 @@ TEST_CASE("InstallFlow_Portable", "[InstallFlow][workflow]")
 
 TEST_CASE("PortableInstallFlow_ArchiveAliasHashes", "[InstallFlow][workflow][PortableAliasRegression]")
 {
-    TestHook::SetPathVariable_Override pathOverride;
+    TestHook::SetPortableTestEnvironment_Override testEnvironment;
     const bool executableInSubdirectory = GENERATE(false, true);
     const bool binariesDependOnPath = GENERATE(false, true);
     CAPTURE(executableInSubdirectory, binariesDependOnPath);
@@ -877,7 +877,7 @@ TEST_CASE("PortableInstallFlow_ArchiveAliasHashes", "[InstallFlow][workflow][Por
 
 TEST_CASE("PortableInstallFlow_CaseOnlyAlias", "[InstallFlow][workflow][PortableAliasRegression]")
 {
-    TestHook::SetPathVariable_Override pathOverride;
+    TestHook::SetPortableTestEnvironment_Override testEnvironment;
     const auto aliasKind = GENERATE("case-only", "distinct", "unicode-distinct");
     const bool caseOnlyAlias = std::string_view{ aliasKind } == "case-only";
     const bool unicodeDistinctAlias = std::string_view{ aliasKind } == "unicode-distinct";
@@ -995,7 +995,7 @@ TEST_CASE("PortableInstallFlow_CaseOnlyAlias", "[InstallFlow][workflow][Portable
 
 TEST_CASE("PortableInstallFlow_ArchiveAliasCollisions", "[InstallFlow][workflow][PortableAliasRegression]")
 {
-    TestHook::SetPathVariable_Override pathOverride;
+    TestHook::SetPortableTestEnvironment_Override testEnvironment;
     using AppInstaller::CLI::Portable::PortableInstaller;
     using AppInstaller::Portable::PortableFileEntry;
     using namespace AppInstaller::Registry::Portable;
@@ -1151,7 +1151,7 @@ TEST_CASE("PortableInstallFlow_ArchiveAliasCollisions", "[InstallFlow][workflow]
 
 TEST_CASE("PortableInstallFlow_ArchiveAliasCompatibility", "[InstallFlow][workflow][PortableAliasRegression]")
 {
-    TestHook::SetPathVariable_Override pathOverride;
+    TestHook::SetPortableTestEnvironment_Override testEnvironment;
     using AppInstaller::CLI::Portable::PortableInstaller;
 
     const bool executableInSubdirectory = GENERATE(false, true);
@@ -1242,7 +1242,8 @@ TEST_CASE("PortableInstallFlow_ArchiveAliasCompatibility", "[InstallFlow][workfl
 
 TEST_CASE("PortableInstallFlow_PreparationFailurePreservesRegistrationState", "[InstallFlow][workflow][PortableAliasRegression]")
 {
-    TestHook::SetPathVariable_Override pathOverride;
+    TestHook::SetPortableTestEnvironment_Override testEnvironment;
+    const HKEY arpRoot = testEnvironment.GetARPRegistryRoot(ScopeEnum::User);
     using AppInstaller::CLI::Portable::PortableInstaller;
     using AppInstaller::Portable::PortableFileEntry;
 
@@ -1258,7 +1259,7 @@ TEST_CASE("PortableInstallFlow_PreparationFailurePreservesRegistrationState", "[
     const auto sourceHash = WritePortableArchivePayload(sourcePath, "unapplied executable");
     const auto productCode = targetDirectory.GetPath().filename().u8string();
     const auto subKey = L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\" + ConvertToUTF16(productCode);
-    REQUIRE(!AppInstaller::Registry::Key::OpenIfExists(HKEY_CURRENT_USER, subKey));
+    REQUIRE(!AppInstaller::Registry::Key::OpenIfExists(arpRoot, subKey));
     const auto originalLinks = AppInstaller::Runtime::GetPathDetailsFor(AppInstaller::Runtime::PathName::PortableLinksUserLocation);
     auto cleanup = wil::scope_exit([&]()
     {
@@ -1266,7 +1267,7 @@ TEST_CASE("PortableInstallFlow_PreparationFailurePreservesRegistrationState", "[
         auto pathVariable = AppInstaller::Registry::Environment::PathVariable(ScopeEnum::User);
         pathVariable.Remove(targetDirectory.GetPath());
         pathVariable.Remove(linksDirectory.GetPath());
-        AppInstaller::Registry::Key::Delete(HKEY_CURRENT_USER, subKey, KEY_WOW64_64KEY);
+        AppInstaller::Registry::Key::Delete(arpRoot, subKey, KEY_WOW64_64KEY);
     });
     AppInstaller::Runtime::TestHook_SetPathOverride(AppInstaller::Runtime::PathName::PortableLinksUserLocation, linksDirectory.GetPath());
 
@@ -1348,7 +1349,7 @@ TEST_CASE("PortableInstallFlow_PreparationFailurePreservesRegistrationState", "[
     REQUIRE(std::filesystem::is_regular_file(sourcePath));
     CHECK(SHA256::ConvertToString(SHA256::ComputeHashFromFile(sourcePath)) == sourceHash);
 
-    const auto key = AppInstaller::Registry::Key::OpenIfExists(HKEY_CURRENT_USER, subKey);
+    const auto key = AppInstaller::Registry::Key::OpenIfExists(arpRoot, subKey);
     CHECK(static_cast<bool>(key) == existingRegistration);
     if (existingRegistration)
     {

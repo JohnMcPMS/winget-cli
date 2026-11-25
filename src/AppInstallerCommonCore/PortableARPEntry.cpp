@@ -10,6 +10,19 @@ using namespace AppInstaller::Utility;
 
 namespace AppInstaller::Registry::Portable
 {
+#ifndef AICLI_DISABLE_TEST_HOOKS
+    static HKEY s_UserRoot_TestHook_Override = nullptr;
+    static HKEY s_MachineRoot_TestHook_Override = nullptr;
+
+    void TestHook_SetPortableARPEntryRoots_Override(HKEY userRoot, HKEY machineRoot)
+    {
+        THROW_HR_IF(E_INVALIDARG, (userRoot == nullptr) != (machineRoot == nullptr));
+        THROW_HR_IF(E_UNEXPECTED, userRoot && s_UserRoot_TestHook_Override);
+        s_UserRoot_TestHook_Override = userRoot;
+        s_MachineRoot_TestHook_Override = machineRoot;
+    }
+#endif
+
     namespace
     {
         constexpr std::wstring_view s_UninstallRegistryX64 = L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall";
@@ -59,6 +72,14 @@ namespace AppInstaller::Registry::Portable
             m_subKey = s_UninstallRegistryX64;
             m_samDesired = KEY_WOW64_64KEY;
         }
+
+#ifndef AICLI_DISABLE_TEST_HOOKS
+        if (s_UserRoot_TestHook_Override)
+        {
+            m_root = m_scope == Manifest::ScopeEnum::Machine ?
+                s_MachineRoot_TestHook_Override : s_UserRoot_TestHook_Override;
+        }
+#endif
 
         m_subKey += L"\\" + ConvertToUTF16(m_productCode);
         m_key = Key::OpenIfExists(m_root, m_subKey, 0, KEY_ALL_ACCESS);
@@ -119,6 +140,13 @@ namespace AppInstaller::Registry::Portable
     {
         if (!m_key)
         {
+#ifndef AICLI_DISABLE_TEST_HOOKS
+            if (m_root == s_UserRoot_TestHook_Override || m_root == s_MachineRoot_TestHook_Override)
+            {
+                m_key = Key::Create(m_root, m_subKey, REG_OPTION_VOLATILE);
+                return m_key;
+            }
+#endif
             m_key = Key::Create(m_root, m_subKey);
         }
 

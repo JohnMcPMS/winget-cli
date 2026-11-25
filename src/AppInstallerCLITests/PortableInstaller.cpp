@@ -26,23 +26,56 @@ using namespace AppInstaller::Utility;
 using namespace AppInstaller::CLI::Workflow;
 using namespace TestCommon;
 
+TEST_CASE("PortableARPEntry_IsolatedRegistrationScopes", "[PortableInstaller][PortableAliasRegression]")
+{
+    TestHook::SetPortableTestEnvironment_Override testEnvironment;
+    const auto scope = GENERATE(ScopeEnum::User, ScopeEnum::Machine);
+    const auto arch = GENERATE(Architecture::X86, Architecture::X64);
+    CAPTURE(scope, arch);
+    const HKEY root = testEnvironment.GetARPRegistryRoot(scope);
+    const HKEY otherRoot = testEnvironment.GetARPRegistryRoot(scope == ScopeEnum::User ? ScopeEnum::Machine : ScopeEnum::User);
+    REQUIRE_THROWS_HR(AppInstaller::Registry::Portable::TestHook_SetPortableARPEntryRoots_Override(root, nullptr), E_INVALIDARG);
+    REQUIRE_THROWS_HR(TestHook::SetPortableARPEntryRoots_Override(), E_UNEXPECTED);
+    const std::string productCode = "PortableIsolatedRegistration";
+    const auto subKey = std::wstring{ scope == ScopeEnum::Machine && arch == Architecture::X86 ?
+        L"Software\\Wow6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\" :
+        L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\" } + ConvertToUTF16(productCode);
+    REQUIRE(!AppInstaller::Registry::Key::OpenIfExists(root, subKey));
+
+    PortableARPEntry entry(scope, arch, productCode);
+    CHECK_FALSE(entry.Exists());
+    CHECK(!AppInstaller::Registry::Key::OpenIfExists(root, subKey));
+    entry.SetValue(PortableValueName::DisplayName, std::string_view{ "Isolated registration" });
+    {
+        const auto key = AppInstaller::Registry::Key::OpenIfExists(root, subKey);
+        REQUIRE(key);
+        const auto name = key[std::wstring{ L"DisplayName" }];
+        REQUIRE(name.has_value());
+        CHECK(name->GetValue<AppInstaller::Registry::Value::Type::String>() == "Isolated registration");
+    }
+    CHECK(!AppInstaller::Registry::Key::OpenIfExists(otherRoot, subKey));
+    entry.Delete();
+    CHECK(!AppInstaller::Registry::Key::OpenIfExists(root, subKey));
+}
+
 TEST_CASE("PortableARPEntry_RegistrationIsCreatedOnFirstWrite", "[PortableInstaller][PortableAliasRegression]")
 {
-    TestHook::SetPathVariable_Override pathOverride;
+    TestHook::SetPortableTestEnvironment_Override testEnvironment;
+    const HKEY arpRoot = testEnvironment.GetARPRegistryRoot(ScopeEnum::User);
     const auto writeKind = GENERATE("none", "utf16", "utf8", "boolean", "other-entry");
     CAPTURE(writeKind);
     TempDirectory identity("PortableARPLifecycle", false);
     const auto productCode = identity.GetPath().filename().u8string();
     const auto subKey = L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\" + ConvertToUTF16(productCode);
-    REQUIRE(!AppInstaller::Registry::Key::OpenIfExists(HKEY_CURRENT_USER, subKey));
-    auto cleanup = wil::scope_exit([&]() { AppInstaller::Registry::Key::Delete(HKEY_CURRENT_USER, subKey, KEY_WOW64_64KEY); });
+    REQUIRE(!AppInstaller::Registry::Key::OpenIfExists(arpRoot, subKey));
+    auto cleanup = wil::scope_exit([&]() { AppInstaller::Registry::Key::Delete(arpRoot, subKey, KEY_WOW64_64KEY); });
 
     {
         PortableARPEntry entry(ScopeEnum::User, Architecture::X64, productCode);
         CHECK_FALSE(entry.Exists());
         CHECK(!entry.GetKey());
         CHECK_FALSE(entry[PortableValueName::DisplayName].has_value());
-        CHECK(!AppInstaller::Registry::Key::OpenIfExists(HKEY_CURRENT_USER, subKey));
+        CHECK(!AppInstaller::Registry::Key::OpenIfExists(arpRoot, subKey));
 
         if (std::string_view{ writeKind } == "utf16")
         {
@@ -77,14 +110,15 @@ TEST_CASE("PortableARPEntry_RegistrationIsCreatedOnFirstWrite", "[PortableInstal
         }
     }
 
-    const auto key = AppInstaller::Registry::Key::OpenIfExists(HKEY_CURRENT_USER, subKey);
+    const auto key = AppInstaller::Registry::Key::OpenIfExists(arpRoot, subKey);
     CHECK(static_cast<bool>(key) == (std::string_view{ writeKind } != "none"));
     CHECK_FALSE(std::filesystem::exists(identity.GetPath()));
 }
 
 TEST_CASE("PortableInstaller_PreparationDoesNotCreateRegistration", "[PortableInstaller][PortableAliasRegression]")
 {
-    TestHook::SetPathVariable_Override pathOverride;
+    TestHook::SetPortableTestEnvironment_Override testEnvironment;
+    const HKEY arpRoot = testEnvironment.GetARPRegistryRoot(ScopeEnum::User);
     const auto operation = GENERATE(OperationType::Install, OperationType::Upgrade, OperationType::Uninstall);
     CAPTURE(operation);
     TempDirectory targetDirectory("PortablePreparationTarget", false);
@@ -97,8 +131,8 @@ TEST_CASE("PortableInstaller_PreparationDoesNotCreateRegistration", "[PortableIn
     }
     const auto productCode = targetDirectory.GetPath().filename().u8string();
     const auto subKey = L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\" + ConvertToUTF16(productCode);
-    REQUIRE(!AppInstaller::Registry::Key::OpenIfExists(HKEY_CURRENT_USER, subKey));
-    auto cleanup = wil::scope_exit([&]() { AppInstaller::Registry::Key::Delete(HKEY_CURRENT_USER, subKey, KEY_WOW64_64KEY); });
+    REQUIRE(!AppInstaller::Registry::Key::OpenIfExists(arpRoot, subKey));
+    auto cleanup = wil::scope_exit([&]() { AppInstaller::Registry::Key::Delete(arpRoot, subKey, KEY_WOW64_64KEY); });
 
     {
         PortableInstaller installer(ScopeEnum::User, Architecture::X64, productCode, operation);
@@ -111,17 +145,18 @@ TEST_CASE("PortableInstaller_PreparationDoesNotCreateRegistration", "[PortableIn
             installer.RecordToIndex = true;
             installer.SetDesiredState({ PortableFileEntry::CreateFileEntry(source.GetPath(), targetDirectory.GetPath() / "tool.exe", {}) });
         }
-        CHECK(!AppInstaller::Registry::Key::OpenIfExists(HKEY_CURRENT_USER, subKey));
+        CHECK(!AppInstaller::Registry::Key::OpenIfExists(arpRoot, subKey));
     }
 
-    CHECK(!AppInstaller::Registry::Key::OpenIfExists(HKEY_CURRENT_USER, subKey));
+    CHECK(!AppInstaller::Registry::Key::OpenIfExists(arpRoot, subKey));
     CHECK_FALSE(std::filesystem::exists(targetDirectory.GetPath()));
     CHECK(std::filesystem::is_regular_file(source.GetPath()));
 }
 
 TEST_CASE("PortableInstaller_PartialFailureRegistersAndCleansUp", "[PortableInstaller][PortableAliasRegression]")
 {
-    TestHook::SetPathVariable_Override pathOverride;
+    TestHook::SetPortableTestEnvironment_Override testEnvironment;
+    const HKEY arpRoot = testEnvironment.GetARPRegistryRoot(ScopeEnum::User);
     const bool recordToIndex = GENERATE(false, true);
     CAPTURE(recordToIndex);
     TempDirectory targetDirectory("PortableOwnedRegistrationTarget", false);
@@ -136,14 +171,14 @@ TEST_CASE("PortableInstaller_PartialFailureRegistersAndCleansUp", "[PortableInst
     }
     const auto productCode = targetDirectory.GetPath().filename().u8string();
     const auto subKey = L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\" + ConvertToUTF16(productCode);
-    REQUIRE(!AppInstaller::Registry::Key::OpenIfExists(HKEY_CURRENT_USER, subKey));
+    REQUIRE(!AppInstaller::Registry::Key::OpenIfExists(arpRoot, subKey));
     const auto originalLinks = AppInstaller::Runtime::GetPathDetailsFor(AppInstaller::Runtime::PathName::PortableLinksUserLocation);
     auto cleanup = wil::scope_exit([&]()
     {
         AppInstaller::Runtime::TestHook_SetPathOverride(AppInstaller::Runtime::PathName::PortableLinksUserLocation, originalLinks);
         PathVariable(ScopeEnum::User).Remove(targetDirectory.GetPath());
         PathVariable(ScopeEnum::User).Remove(linksDirectory.GetPath());
-        AppInstaller::Registry::Key::Delete(HKEY_CURRENT_USER, subKey, KEY_WOW64_64KEY);
+        AppInstaller::Registry::Key::Delete(arpRoot, subKey, KEY_WOW64_64KEY);
     });
     AppInstaller::Runtime::TestHook_SetPathOverride(AppInstaller::Runtime::PathName::PortableLinksUserLocation, linksDirectory.GetPath());
 
@@ -164,7 +199,7 @@ TEST_CASE("PortableInstaller_PartialFailureRegistersAndCleansUp", "[PortableInst
     CHECK(SHA256::ConvertToString(SHA256::ComputeHashFromFile(targetPath)) == expectedHash);
     CHECK_FALSE(std::filesystem::exists(source.GetPath()));
     {
-        const auto key = AppInstaller::Registry::Key::OpenIfExists(HKEY_CURRENT_USER, subKey);
+        const auto key = AppInstaller::Registry::Key::OpenIfExists(arpRoot, subKey);
         REQUIRE(key);
         const auto identifier = key[std::wstring{ L"WinGetPackageIdentifier" }];
         REQUIRE(identifier.has_value());
@@ -175,7 +210,7 @@ TEST_CASE("PortableInstaller_PartialFailureRegistersAndCleansUp", "[PortableInst
 
     installer.PrepareForCleanUp();
     REQUIRE_NOTHROW(installer.Uninstall());
-    CHECK(!AppInstaller::Registry::Key::OpenIfExists(HKEY_CURRENT_USER, subKey));
+    CHECK(!AppInstaller::Registry::Key::OpenIfExists(arpRoot, subKey));
     CHECK_FALSE(std::filesystem::exists(targetDirectory.GetPath()));
     CHECK(std::filesystem::is_directory(blockedDirectory.GetPath()));
 }
@@ -222,7 +257,7 @@ TEST_CASE("PortableInstaller_InstallAndUpgradeReplaceInstalledState", "[Portable
 
 TEST_CASE("PortableInstaller_CaseOnlyAliasPreservesSource", "[PortableInstaller][PortableAliasRegression]")
 {
-    TestHook::SetPathVariable_Override pathOverride;
+    TestHook::SetPortableTestEnvironment_Override testEnvironment;
     const bool recordToIndex = GENERATE(false, true);
     const auto aliasFilename = GENERATE("Tool.exe", "tool.exe");
     CAPTURE(recordToIndex, aliasFilename);

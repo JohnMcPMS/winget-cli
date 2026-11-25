@@ -80,6 +80,11 @@ namespace AppInstaller
             const Registry::Key& userKey, const Registry::Key& machineKey, std::function<void()> notifyChange);
     }
 
+    namespace Registry::Portable
+    {
+        void TestHook_SetPortableARPEntryRoots_Override(HKEY userRoot, HKEY machineRoot);
+    }
+
     namespace Filesystem
     {
         void TestHook_SetCreateSymlinkResult_Override(bool* status);
@@ -174,6 +179,44 @@ namespace TestHook
         wil::unique_hkey m_root;
         AppInstaller::Registry::Key m_userKey;
         AppInstaller::Registry::Key m_machineKey;
+    };
+
+    struct SetPortableARPEntryRoots_Override
+    {
+        SetPortableARPEntryRoots_Override() :
+            m_root(TestCommon::RegCreateVolatileTestRoot()),
+            m_userRoot(TestCommon::RegCreateVolatileSubKey(m_root.get(), L"User")),
+            m_machineRoot(TestCommon::RegCreateVolatileSubKey(m_root.get(), L"Machine"))
+        {
+            AppInstaller::Registry::Portable::TestHook_SetPortableARPEntryRoots_Override(m_userRoot.get(), m_machineRoot.get());
+        }
+
+        ~SetPortableARPEntryRoots_Override()
+        {
+            AppInstaller::Registry::Portable::TestHook_SetPortableARPEntryRoots_Override(nullptr, nullptr);
+        }
+
+        HKEY GetRoot(AppInstaller::Manifest::ScopeEnum scope) const
+        {
+            return scope == AppInstaller::Manifest::ScopeEnum::Machine ? m_machineRoot.get() : m_userRoot.get();
+        }
+
+    private:
+        wil::unique_hkey m_root;
+        wil::unique_hkey m_userRoot;
+        wil::unique_hkey m_machineRoot;
+    };
+
+    struct SetPortableTestEnvironment_Override
+    {
+        HKEY GetARPRegistryRoot(AppInstaller::Manifest::ScopeEnum scope) const
+        {
+            return m_arpOverride.GetRoot(scope);
+        }
+
+    private:
+        SetPathVariable_Override m_pathOverride;
+        SetPortableARPEntryRoots_Override m_arpOverride;
     };
 
     struct SetCreateSymlinkResult_Override
