@@ -34,6 +34,7 @@ namespace AppInstaller::Registry::Portable
 
         std::optional<Value> operator[](PortableValueName valueName) const;
 
+        // Reports whether registration existed when this entry was constructed.
         bool Exists() { return m_exists; }
 
         void SetValue(PortableValueName valueName, const std::wstring& value);
@@ -42,12 +43,14 @@ namespace AppInstaller::Registry::Portable
 
         void Delete();
 
-        Registry::Key GetKey() { return m_key; };
+        Registry::Key GetKey() const;
         Manifest::ScopeEnum GetScope() { return m_scope; };
         Utility::Architecture GetArchitecture() { return m_arch; };
         std::string GetProductCode() { return m_productCode; };
 
     private:
+        Key& GetOrCreateKey();
+
         bool m_exists = false;
         std::string m_productCode;
         Key m_key;

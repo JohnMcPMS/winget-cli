@@ -356,6 +356,7 @@ namespace AppInstaller::CLI::Workflow
             AICLI_RETURN_IF_TERMINATED(context << EnsureNotRunningWithNonDefaultFullToken);
         }
 
+        bool installAttempted = false;
         try
         {
             context.Reporter.Info() << Resource::String::InstallFlowStartingPackageInstall << std::endl;
@@ -378,6 +379,7 @@ namespace AppInstaller::CLI::Workflow
                 }
             }
 
+            installAttempted = true;
             portableInstaller.Install();
             context.Add<Execution::Data::CorrelatedAppsAndFeaturesEntries>({ portableInstaller.GetAppsAndFeaturesEntry() });
             context.Add<Execution::Data::OperationReturnCode>(ERROR_SUCCESS);
@@ -387,7 +389,7 @@ namespace AppInstaller::CLI::Workflow
         {
             context.Add<Execution::Data::OperationReturnCode>(Workflow::HandleException(context, std::current_exception()));
 
-            if (!portableInstaller.IsUpdate())
+            if (installAttempted && !portableInstaller.IsUpdate())
             {
                 context.Reporter.Warn() << Resource::String::PortableInstallFailed << std::endl;
                 portableInstaller.PrepareForCleanUp();

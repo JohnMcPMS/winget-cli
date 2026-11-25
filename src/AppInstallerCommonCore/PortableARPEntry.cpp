@@ -62,15 +62,7 @@ namespace AppInstaller::Registry::Portable
 
         m_subKey += L"\\" + ConvertToUTF16(m_productCode);
         m_key = Key::OpenIfExists(m_root, m_subKey, 0, KEY_ALL_ACCESS);
-        if (m_key != NULL)
-        {
-            m_exists = true;
-        }
-        else
-        {
-            m_exists = false;
-            m_key = Key::Create(m_root, m_subKey);
-        }
+        m_exists = static_cast<bool>(m_key);
     }
 
     std::wstring_view ToString(PortableValueName valueName)
@@ -99,22 +91,38 @@ namespace AppInstaller::Registry::Portable
 
     std::optional<Value> PortableARPEntry::operator[](PortableValueName valueName) const
     {
-        return m_key[std::wstring{ ToString(valueName) }];
+        const auto key = GetKey();
+        return key ? key[std::wstring{ ToString(valueName) }] : std::nullopt;
     }
 
     void PortableARPEntry::SetValue(PortableValueName valueName, const std::wstring& value)
     {
-        m_key.SetValue(std::wstring{ ToString(valueName) }, value, REG_SZ);
+        GetOrCreateKey().SetValue(std::wstring{ ToString(valueName) }, value, REG_SZ);
     }
 
     void PortableARPEntry::SetValue(PortableValueName valueName, const std::string_view& value)
     {
-        m_key.SetValue(std::wstring{ ToString(valueName) }, ConvertToUTF16(value), REG_SZ);
+        SetValue(valueName, ConvertToUTF16(value));
     }
 
     void PortableARPEntry::SetValue(PortableValueName valueName, bool& value)
     {
-        m_key.SetValue(std::wstring{ ToString(valueName) }, value);
+        GetOrCreateKey().SetValue(std::wstring{ ToString(valueName) }, value);
+    }
+
+    Registry::Key PortableARPEntry::GetKey() const
+    {
+        return m_key ? m_key : Key::OpenIfExists(m_root, m_subKey, 0, KEY_ALL_ACCESS);
+    }
+
+    Key& PortableARPEntry::GetOrCreateKey()
+    {
+        if (!m_key)
+        {
+            m_key = Key::Create(m_root, m_subKey);
+        }
+
+        return m_key;
     }
 
     void PortableARPEntry::Delete()
