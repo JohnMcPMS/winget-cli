@@ -26,6 +26,157 @@ using namespace AppInstaller::Utility;
 using namespace AppInstaller::CLI::Workflow;
 using namespace TestCommon;
 
+TEST_CASE("PortableARPEntry_RegistrationIsCreatedOnFirstWrite", "[PortableInstaller][PortableAliasRegression]")
+{
+    const auto writeKind = GENERATE("none", "utf16", "utf8", "boolean", "other-entry");
+    CAPTURE(writeKind);
+    TempDirectory identity("PortableARPLifecycle", false);
+    const auto productCode = identity.GetPath().filename().u8string();
+    const auto subKey = L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\" + ConvertToUTF16(productCode);
+    REQUIRE(!AppInstaller::Registry::Key::OpenIfExists(HKEY_CURRENT_USER, subKey));
+    auto cleanup = wil::scope_exit([&]() { AppInstaller::Registry::Key::Delete(HKEY_CURRENT_USER, subKey, KEY_WOW64_64KEY); });
+
+    {
+        PortableARPEntry entry(ScopeEnum::User, Architecture::X64, productCode);
+        CHECK_FALSE(entry.Exists());
+        CHECK(!entry.GetKey());
+        CHECK_FALSE(entry[PortableValueName::DisplayName].has_value());
+        CHECK(!AppInstaller::Registry::Key::OpenIfExists(HKEY_CURRENT_USER, subKey));
+
+        if (std::string_view{ writeKind } == "utf16")
+        {
+            entry.SetValue(PortableValueName::DisplayName, std::wstring{ L"Portable lifecycle \u00E9" });
+            const auto value = entry[PortableValueName::DisplayName];
+            REQUIRE(value.has_value());
+            CHECK(value->GetValue<AppInstaller::Registry::Value::Type::UTF16String>() == L"Portable lifecycle \u00E9");
+        }
+        else if (std::string_view{ writeKind } == "utf8")
+        {
+            const auto name = ConvertToUTF8(L"Portable lifecycle \u00E9");
+            entry.SetValue(PortableValueName::DisplayName, std::string_view{ name });
+            const auto value = entry[PortableValueName::DisplayName];
+            REQUIRE(value.has_value());
+            CHECK(value->GetValue<AppInstaller::Registry::Value::Type::String>() == name);
+        }
+        else if (std::string_view{ writeKind } == "boolean")
+        {
+            bool addedToPath = true;
+            entry.SetValue(PortableValueName::InstallDirectoryAddedToPath, addedToPath);
+            const auto value = entry[PortableValueName::InstallDirectoryAddedToPath];
+            REQUIRE(value.has_value());
+            CHECK(value->GetValue<AppInstaller::Registry::Value::Type::DWord>() == 1);
+        }
+        else if (std::string_view{ writeKind } == "other-entry")
+        {
+            PortableARPEntry writer(ScopeEnum::User, Architecture::X64, productCode);
+            writer.SetValue(PortableValueName::DisplayName, std::string_view{ "Separate writer" });
+            const auto value = entry[PortableValueName::DisplayName];
+            REQUIRE(value.has_value());
+            CHECK(value->GetValue<AppInstaller::Registry::Value::Type::String>() == "Separate writer");
+        }
+    }
+
+    const auto key = AppInstaller::Registry::Key::OpenIfExists(HKEY_CURRENT_USER, subKey);
+    CHECK(static_cast<bool>(key) == (std::string_view{ writeKind } != "none"));
+    CHECK_FALSE(std::filesystem::exists(identity.GetPath()));
+}
+
+TEST_CASE("PortableInstaller_PreparationDoesNotCreateRegistration", "[PortableInstaller][PortableAliasRegression]")
+{
+    const auto operation = GENERATE(OperationType::Install, OperationType::Upgrade, OperationType::Uninstall);
+    CAPTURE(operation);
+    TempDirectory targetDirectory("PortablePreparationTarget", false);
+    TempFile source("PortablePreparationSource.exe");
+    {
+        std::ofstream file(source.GetPath(), std::ios::binary);
+        REQUIRE(file.is_open());
+        file << "unapplied executable";
+        REQUIRE(file.good());
+    }
+    const auto productCode = targetDirectory.GetPath().filename().u8string();
+    const auto subKey = L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\" + ConvertToUTF16(productCode);
+    REQUIRE(!AppInstaller::Registry::Key::OpenIfExists(HKEY_CURRENT_USER, subKey));
+    auto cleanup = wil::scope_exit([&]() { AppInstaller::Registry::Key::Delete(HKEY_CURRENT_USER, subKey, KEY_WOW64_64KEY); });
+
+    {
+        PortableInstaller installer(ScopeEnum::User, Architecture::X64, productCode, operation);
+        CHECK_FALSE(installer.ARPEntryExists());
+        CHECK(installer.InstallLocation.empty());
+        CHECK(installer.VerifyExpectedState());
+        installer.TargetInstallLocation = targetDirectory.GetPath();
+        if (operation != OperationType::Uninstall)
+        {
+            installer.RecordToIndex = true;
+            installer.SetDesiredState({ PortableFileEntry::CreateFileEntry(source.GetPath(), targetDirectory.GetPath() / "tool.exe", {}) });
+        }
+        CHECK(!AppInstaller::Registry::Key::OpenIfExists(HKEY_CURRENT_USER, subKey));
+    }
+
+    CHECK(!AppInstaller::Registry::Key::OpenIfExists(HKEY_CURRENT_USER, subKey));
+    CHECK_FALSE(std::filesystem::exists(targetDirectory.GetPath()));
+    CHECK(std::filesystem::is_regular_file(source.GetPath()));
+}
+
+TEST_CASE("PortableInstaller_PartialFailureRegistersAndCleansUp", "[PortableInstaller][PortableAliasRegression]")
+{
+    const bool recordToIndex = GENERATE(false, true);
+    CAPTURE(recordToIndex);
+    TempDirectory targetDirectory("PortableOwnedRegistrationTarget", false);
+    TempDirectory linksDirectory("PortableOwnedRegistrationLinks");
+    TempDirectory blockedDirectory("PortableOwnedRegistrationBlocked");
+    TempFile source("PortableOwnedRegistrationSource.exe");
+    {
+        std::ofstream file(source.GetPath(), std::ios::binary);
+        REQUIRE(file.is_open());
+        file << "partially installed executable";
+        REQUIRE(file.good());
+    }
+    const auto productCode = targetDirectory.GetPath().filename().u8string();
+    const auto subKey = L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\" + ConvertToUTF16(productCode);
+    REQUIRE(!AppInstaller::Registry::Key::OpenIfExists(HKEY_CURRENT_USER, subKey));
+    const auto originalLinks = AppInstaller::Runtime::GetPathDetailsFor(AppInstaller::Runtime::PathName::PortableLinksUserLocation);
+    auto cleanup = wil::scope_exit([&]()
+    {
+        AppInstaller::Runtime::TestHook_SetPathOverride(AppInstaller::Runtime::PathName::PortableLinksUserLocation, originalLinks);
+        PathVariable(ScopeEnum::User).Remove(targetDirectory.GetPath());
+        PathVariable(ScopeEnum::User).Remove(linksDirectory.GetPath());
+        AppInstaller::Registry::Key::Delete(HKEY_CURRENT_USER, subKey, KEY_WOW64_64KEY);
+    });
+    AppInstaller::Runtime::TestHook_SetPathOverride(AppInstaller::Runtime::PathName::PortableLinksUserLocation, linksDirectory.GetPath());
+
+    const auto targetPath = targetDirectory.GetPath() / "tool.exe";
+    const auto expectedHash = SHA256::ConvertToString(SHA256::ComputeHashFromFile(source.GetPath()));
+    PortableInstaller installer(ScopeEnum::User, Architecture::X64, productCode, OperationType::Install);
+    installer.TargetInstallLocation = targetDirectory.GetPath();
+    installer.RecordToIndex = recordToIndex;
+    installer.WinGetPackageIdentifier = productCode;
+    installer.WinGetSourceIdentifier = "*DefaultSource";
+    installer.SetDesiredState({
+        PortableFileEntry::CreateFileEntry(source.GetPath(), targetPath, expectedHash),
+        PortableFileEntry::CreateSymlinkEntry(blockedDirectory.GetPath(), targetPath),
+    });
+
+    REQUIRE_THROWS_HR(installer.Install(), APPINSTALLER_CLI_ERROR_PORTABLE_SYMLINK_PATH_IS_DIRECTORY);
+    REQUIRE(std::filesystem::is_regular_file(targetPath));
+    CHECK(SHA256::ConvertToString(SHA256::ComputeHashFromFile(targetPath)) == expectedHash);
+    CHECK_FALSE(std::filesystem::exists(source.GetPath()));
+    {
+        const auto key = AppInstaller::Registry::Key::OpenIfExists(HKEY_CURRENT_USER, subKey);
+        REQUIRE(key);
+        const auto identifier = key[std::wstring{ L"WinGetPackageIdentifier" }];
+        REQUIRE(identifier.has_value());
+        CHECK(identifier->GetValue<AppInstaller::Registry::Value::Type::String>() == productCode);
+    }
+    const auto indexPath = targetDirectory.GetPath() / installer.GetPortableIndexFileName();
+    CHECK(std::filesystem::exists(indexPath) == recordToIndex);
+
+    installer.PrepareForCleanUp();
+    REQUIRE_NOTHROW(installer.Uninstall());
+    CHECK(!AppInstaller::Registry::Key::OpenIfExists(HKEY_CURRENT_USER, subKey));
+    CHECK_FALSE(std::filesystem::exists(targetDirectory.GetPath()));
+    CHECK(std::filesystem::is_directory(blockedDirectory.GetPath()));
+}
+
 TEST_CASE("PortableInstaller_InstallAndUpgradeReplaceInstalledState", "[PortableInstaller]")
 {
     const bool recordToIndex = GENERATE(false, true);

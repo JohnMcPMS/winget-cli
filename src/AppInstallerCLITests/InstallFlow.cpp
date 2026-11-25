@@ -1236,6 +1236,134 @@ TEST_CASE("PortableInstallFlow_ArchiveAliasCompatibility", "[InstallFlow][workfl
     CHECK_FALSE(std::filesystem::exists(targetDirectory.GetPath()));
 }
 
+TEST_CASE("PortableInstallFlow_PreparationFailurePreservesRegistrationState", "[InstallFlow][workflow][PortableAliasRegression]")
+{
+    using AppInstaller::CLI::Portable::PortableInstaller;
+    using AppInstaller::Portable::PortableFileEntry;
+
+    const bool existingRegistration = GENERATE(false, true);
+    CAPTURE(existingRegistration);
+    TestHook::SetIsRunningWithNonDefaultFullToken_Override tokenOverride(false);
+    TestHook::SetCreateSymlinkResult_Override symlinkOverride(false);
+    TempDirectory sourceDirectory("PortablePreparationFailureSource");
+    TempDirectory previousSourceDirectory("PortablePreparationFailurePrevious");
+    TempDirectory targetDirectory("PortablePreparationFailureTarget", false);
+    TempDirectory linksDirectory("PortablePreparationFailureLinks");
+    const auto sourcePath = sourceDirectory.GetPath() / "tool.exe";
+    const auto sourceHash = WritePortableArchivePayload(sourcePath, "unapplied executable");
+    const auto productCode = targetDirectory.GetPath().filename().u8string();
+    const auto subKey = L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\" + ConvertToUTF16(productCode);
+    REQUIRE(!AppInstaller::Registry::Key::OpenIfExists(HKEY_CURRENT_USER, subKey));
+    const auto originalLinks = AppInstaller::Runtime::GetPathDetailsFor(AppInstaller::Runtime::PathName::PortableLinksUserLocation);
+    auto cleanup = wil::scope_exit([&]()
+    {
+        AppInstaller::Runtime::TestHook_SetPathOverride(AppInstaller::Runtime::PathName::PortableLinksUserLocation, originalLinks);
+        auto pathVariable = AppInstaller::Registry::Environment::PathVariable(ScopeEnum::User);
+        pathVariable.Remove(targetDirectory.GetPath());
+        pathVariable.Remove(linksDirectory.GetPath());
+        AppInstaller::Registry::Key::Delete(HKEY_CURRENT_USER, subKey, KEY_WOW64_64KEY);
+    });
+    AppInstaller::Runtime::TestHook_SetPathOverride(AppInstaller::Runtime::PathName::PortableLinksUserLocation, linksDirectory.GetPath());
+
+    const auto previousPath = targetDirectory.GetPath() / "previous.exe";
+    std::string previousHash;
+    if (existingRegistration)
+    {
+        const auto previousSource = previousSourceDirectory.GetPath() / "previous.exe";
+        previousHash = WritePortableArchivePayload(previousSource, "previous installed executable");
+        PortableInstaller previousInstaller{ ScopeEnum::User, Architecture::X64, productCode, OperationType::Install };
+        previousInstaller.TargetInstallLocation = targetDirectory.GetPath();
+        previousInstaller.RecordToIndex = true;
+        previousInstaller.BinariesDependOnPath = true;
+        previousInstaller.DisplayVersion = "1.0";
+        previousInstaller.WinGetPackageIdentifier = productCode;
+        previousInstaller.WinGetSourceIdentifier = "*DefaultSource";
+        previousInstaller.SetDesiredState({
+            PortableFileEntry::CreateFileEntry(previousSource, previousPath, previousHash),
+            PortableFileEntry::CreateSymlinkEntry(linksDirectory.GetPath() / "previous.exe", previousPath),
+        });
+        previousInstaller.Install();
+        REQUIRE(AppInstaller::Registry::Environment::PathVariable(ScopeEnum::User).Contains(targetDirectory.GetPath()));
+    }
+
+    ManifestInstaller installer;
+    std::filesystem::path installerPath;
+    bool planningException = false;
+
+    SECTION("Validation terminates before installation")
+    {
+        installer.BaseInstallerType = InstallerTypeEnum::Portable;
+        installer.Commands = { "C:\\escape" };
+        installerPath = sourcePath;
+    }
+
+    SECTION("Alias collision terminates before installation")
+    {
+        WritePortableArchivePayload(sourceDirectory.GetPath() / "command.exe", "conflicting payload");
+        installer.BaseInstallerType = InstallerTypeEnum::Zip;
+        installer.NestedInstallerType = InstallerTypeEnum::Portable;
+        installer.NestedInstallerFiles = { { "tool.exe", "command" } };
+        installerPath = sourceDirectory.GetPath();
+    }
+
+    SECTION("Desired-state construction throws before installation")
+    {
+        installer.BaseInstallerType = InstallerTypeEnum::Zip;
+        installer.NestedInstallerType = InstallerTypeEnum::Portable;
+        installer.NestedInstallerFiles = { { "missing.exe", "command" } };
+        installerPath = sourceDirectory.GetPath();
+        planningException = true;
+    }
+
+    PortableInstaller portableInstaller{ ScopeEnum::User, Architecture::X64, productCode, OperationType::Install };
+    portableInstaller.TargetInstallLocation = targetDirectory.GetPath();
+    const auto indexPath = targetDirectory.GetPath() / portableInstaller.GetPortableIndexFileName();
+    const auto previousIndexHash = existingRegistration ? SHA256::ConvertToString(SHA256::ComputeHashFromFile(indexPath)) : "";
+
+    std::ostringstream output;
+    TestContext context{ output, std::cin };
+    auto previousThreadGlobals = context.SetForCurrentThread();
+    context.Add<Data::Installer>(installer);
+    context.Add<Data::InstallerPath>(installerPath);
+    context.Add<Data::PortableInstaller>(std::move(portableInstaller));
+
+    context << PortableInstallImpl;
+
+    INFO(output.str());
+    if (planningException)
+    {
+        REQUIRE(context.Contains(Data::OperationReturnCode));
+        CHECK(context.Get<Data::OperationReturnCode>() != ERROR_SUCCESS);
+    }
+    else
+    {
+        CHECK(context.IsTerminated());
+        CHECK(context.GetTerminationHR() == APPINSTALLER_CLI_ERROR_INVALID_MANIFEST);
+    }
+    REQUIRE(std::filesystem::is_regular_file(sourcePath));
+    CHECK(SHA256::ConvertToString(SHA256::ComputeHashFromFile(sourcePath)) == sourceHash);
+
+    const auto key = AppInstaller::Registry::Key::OpenIfExists(HKEY_CURRENT_USER, subKey);
+    CHECK(static_cast<bool>(key) == existingRegistration);
+    if (existingRegistration)
+    {
+        REQUIRE(key);
+        const auto version = key[std::wstring{ L"DisplayVersion" }];
+        REQUIRE(version.has_value());
+        CHECK(version->GetValue<AppInstaller::Registry::Value::Type::String>() == "1.0");
+        REQUIRE(std::filesystem::is_regular_file(previousPath));
+        CHECK(SHA256::ConvertToString(SHA256::ComputeHashFromFile(previousPath)) == previousHash);
+        REQUIRE(std::filesystem::is_regular_file(indexPath));
+        CHECK(SHA256::ConvertToString(SHA256::ComputeHashFromFile(indexPath)) == previousIndexHash);
+        CHECK(AppInstaller::Registry::Environment::PathVariable(ScopeEnum::User).Contains(targetDirectory.GetPath()));
+    }
+    else
+    {
+        CHECK_FALSE(std::filesystem::exists(targetDirectory.GetPath()));
+        CHECK_FALSE(std::filesystem::exists(indexPath));
+    }
+}
+
 TEST_CASE("PortableInstallFlow_RejectsEscapingPathsAtPointOfUse", "[InstallFlow][workflow]")
 {
     TestCommon::TempDirectory targetDirectory("TestPortableInstallRoot", false);
