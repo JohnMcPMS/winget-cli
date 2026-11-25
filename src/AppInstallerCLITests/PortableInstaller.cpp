@@ -28,6 +28,7 @@ using namespace TestCommon;
 
 TEST_CASE("PortableARPEntry_RegistrationIsCreatedOnFirstWrite", "[PortableInstaller][PortableAliasRegression]")
 {
+    TestHook::SetPathVariable_Override pathOverride;
     const auto writeKind = GENERATE("none", "utf16", "utf8", "boolean", "other-entry");
     CAPTURE(writeKind);
     TempDirectory identity("PortableARPLifecycle", false);
@@ -83,6 +84,7 @@ TEST_CASE("PortableARPEntry_RegistrationIsCreatedOnFirstWrite", "[PortableInstal
 
 TEST_CASE("PortableInstaller_PreparationDoesNotCreateRegistration", "[PortableInstaller][PortableAliasRegression]")
 {
+    TestHook::SetPathVariable_Override pathOverride;
     const auto operation = GENERATE(OperationType::Install, OperationType::Upgrade, OperationType::Uninstall);
     CAPTURE(operation);
     TempDirectory targetDirectory("PortablePreparationTarget", false);
@@ -119,6 +121,7 @@ TEST_CASE("PortableInstaller_PreparationDoesNotCreateRegistration", "[PortableIn
 
 TEST_CASE("PortableInstaller_PartialFailureRegistersAndCleansUp", "[PortableInstaller][PortableAliasRegression]")
 {
+    TestHook::SetPathVariable_Override pathOverride;
     const bool recordToIndex = GENERATE(false, true);
     CAPTURE(recordToIndex);
     TempDirectory targetDirectory("PortableOwnedRegistrationTarget", false);
@@ -219,6 +222,7 @@ TEST_CASE("PortableInstaller_InstallAndUpgradeReplaceInstalledState", "[Portable
 
 TEST_CASE("PortableInstaller_CaseOnlyAliasPreservesSource", "[PortableInstaller][PortableAliasRegression]")
 {
+    TestHook::SetPathVariable_Override pathOverride;
     const bool recordToIndex = GENERATE(false, true);
     const auto aliasFilename = GENERATE("Tool.exe", "tool.exe");
     CAPTURE(recordToIndex, aliasFilename);

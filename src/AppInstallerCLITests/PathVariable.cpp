@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "TestCommon.h"
+#include "TestHooks.h"
 #include <AppInstallerRuntime.h>
 #include <Resources.h>
 #include <winget/PathVariable.h>
@@ -7,6 +8,43 @@
 
 using namespace AppInstaller::Manifest;
 using namespace AppInstaller::Registry::Environment;
+
+TEST_CASE("PathVariable_IsolatedChanges", "[pathVariable][PortableAliasRegression]")
+{
+    size_t notifications = 0;
+    TestHook::SetPathVariable_Override pathOverride([&]() { ++notifications; });
+    const auto scope = GENERATE(ScopeEnum::User, ScopeEnum::Machine);
+    CAPTURE(scope);
+    REQUIRE_THROWS_HR(TestHook::SetPathVariable_Override(std::function<void()>{}), E_INVALIDARG);
+    REQUIRE_THROWS_HR(TestHook::SetPathVariable_Override(), E_UNEXPECTED);
+    const auto otherScope = scope == ScopeEnum::User ? ScopeEnum::Machine : ScopeEnum::User;
+    auto pathVariable = PathVariable(scope);
+    const auto originalPath = pathVariable.GetPathValue();
+    const auto otherPath = PathVariable(otherScope).GetPathValue();
+    const std::filesystem::path target = L"C:\\WinGetTestPath\\Added";
+
+    REQUIRE_FALSE(pathVariable.Contains(target));
+    CHECK_FALSE(pathVariable.Remove(target));
+    CHECK(notifications == 0);
+    REQUIRE(pathVariable.Append(target));
+    CHECK(notifications == 1);
+    CHECK_FALSE(pathVariable.Append(target));
+    CHECK(notifications == 1);
+
+    auto observer = PathVariable(scope, true);
+    CHECK(observer.Contains(target));
+    CHECK(PathVariable(otherScope).GetPathValue() == otherPath);
+    CHECK_FALSE(PathVariable(otherScope).Contains(target));
+    REQUIRE_THROWS_HR(observer.Append(target), E_ACCESSDENIED);
+    REQUIRE_THROWS_HR(observer.Remove(target), E_ACCESSDENIED);
+    CHECK(notifications == 1);
+
+    REQUIRE(pathVariable.Remove(target));
+    CHECK(notifications == 2);
+    CHECK_FALSE(observer.Contains(target));
+    CHECK(pathVariable.GetPathValue() == originalPath);
+    CHECK(PathVariable(otherScope).GetPathValue() == otherPath);
+}
 
 TEST_CASE("PathVariable_EnforceReadOnly", "[pathVariable]")
 {

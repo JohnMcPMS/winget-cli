@@ -3,11 +3,33 @@
 #include "pch.h"
 #include "winget/PathVariable.h"
 #include <winget/Filesystem.h>
+#ifndef AICLI_DISABLE_TEST_HOOKS
+#include <functional>
+#include <utility>
+#endif
 
 using namespace AppInstaller::Utility;
 
 namespace AppInstaller::Registry::Environment
 {
+#ifndef AICLI_DISABLE_TEST_HOOKS
+    static Registry::Key s_UserPathKey_TestHook_Override;
+    static Registry::Key s_MachinePathKey_TestHook_Override;
+    static std::function<void()> s_NotifyPathChange_TestHook_Override;
+
+    void TestHook_SetPathVariable_Override(
+        const Registry::Key& userKey, const Registry::Key& machineKey, std::function<void()> notifyChange)
+    {
+        const bool hasOverride = static_cast<bool>(userKey);
+        THROW_HR_IF(E_INVALIDARG, hasOverride != static_cast<bool>(machineKey) || hasOverride != static_cast<bool>(notifyChange));
+        THROW_HR_IF(E_UNEXPECTED, hasOverride && s_NotifyPathChange_TestHook_Override);
+
+        s_UserPathKey_TestHook_Override = userKey;
+        s_MachinePathKey_TestHook_Override = machineKey;
+        s_NotifyPathChange_TestHook_Override = std::move(notifyChange);
+    }
+#endif
+
     namespace
     {
         constexpr std::wstring_view s_PathName = L"Path";
@@ -40,6 +62,15 @@ namespace AppInstaller::Registry::Environment
 
     PathVariable::PathVariable(Manifest::ScopeEnum scope, bool readOnly) : m_scope(scope), m_readOnly(readOnly)
     {
+#ifndef AICLI_DISABLE_TEST_HOOKS
+        if (s_NotifyPathChange_TestHook_Override)
+        {
+            m_key = m_scope == Manifest::ScopeEnum::Machine ?
+                s_MachinePathKey_TestHook_Override : s_UserPathKey_TestHook_Override;
+            return;
+        }
+#endif
+
         if (m_readOnly)
         {
             if (m_scope == Manifest::ScopeEnum::Machine)
@@ -121,6 +152,13 @@ namespace AppInstaller::Registry::Environment
 
         std::wstring pathName = std::wstring{ s_PathName };
         m_key.SetValue(pathName, ConvertToUTF16(value), REG_EXPAND_SZ);
+#ifndef AICLI_DISABLE_TEST_HOOKS
+        if (s_NotifyPathChange_TestHook_Override)
+        {
+            s_NotifyPathChange_TestHook_Override();
+            return;
+        }
+#endif
         SendNotifyMessageW(HWND_BROADCAST, WM_SETTINGCHANGE, 0, (LPARAM)TEXT("Environment"));
 
     }

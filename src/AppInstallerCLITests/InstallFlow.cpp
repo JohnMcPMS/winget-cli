@@ -776,6 +776,7 @@ TEST_CASE("InstallFlow_Portable", "[InstallFlow][workflow]")
 
 TEST_CASE("PortableInstallFlow_ArchiveAliasHashes", "[InstallFlow][workflow][PortableAliasRegression]")
 {
+    TestHook::SetPathVariable_Override pathOverride;
     const bool executableInSubdirectory = GENERATE(false, true);
     const bool binariesDependOnPath = GENERATE(false, true);
     CAPTURE(executableInSubdirectory, binariesDependOnPath);
@@ -876,6 +877,7 @@ TEST_CASE("PortableInstallFlow_ArchiveAliasHashes", "[InstallFlow][workflow][Por
 
 TEST_CASE("PortableInstallFlow_CaseOnlyAlias", "[InstallFlow][workflow][PortableAliasRegression]")
 {
+    TestHook::SetPathVariable_Override pathOverride;
     const auto aliasKind = GENERATE("case-only", "distinct", "unicode-distinct");
     const bool caseOnlyAlias = std::string_view{ aliasKind } == "case-only";
     const bool unicodeDistinctAlias = std::string_view{ aliasKind } == "unicode-distinct";
@@ -993,6 +995,7 @@ TEST_CASE("PortableInstallFlow_CaseOnlyAlias", "[InstallFlow][workflow][Portable
 
 TEST_CASE("PortableInstallFlow_ArchiveAliasCollisions", "[InstallFlow][workflow][PortableAliasRegression]")
 {
+    TestHook::SetPathVariable_Override pathOverride;
     using AppInstaller::CLI::Portable::PortableInstaller;
     using AppInstaller::Portable::PortableFileEntry;
     using namespace AppInstaller::Registry::Portable;
@@ -1148,6 +1151,7 @@ TEST_CASE("PortableInstallFlow_ArchiveAliasCollisions", "[InstallFlow][workflow]
 
 TEST_CASE("PortableInstallFlow_ArchiveAliasCompatibility", "[InstallFlow][workflow][PortableAliasRegression]")
 {
+    TestHook::SetPathVariable_Override pathOverride;
     using AppInstaller::CLI::Portable::PortableInstaller;
 
     const bool executableInSubdirectory = GENERATE(false, true);
@@ -1238,6 +1242,7 @@ TEST_CASE("PortableInstallFlow_ArchiveAliasCompatibility", "[InstallFlow][workfl
 
 TEST_CASE("PortableInstallFlow_PreparationFailurePreservesRegistrationState", "[InstallFlow][workflow][PortableAliasRegression]")
 {
+    TestHook::SetPathVariable_Override pathOverride;
     using AppInstaller::CLI::Portable::PortableInstaller;
     using AppInstaller::Portable::PortableFileEntry;
 

@@ -74,6 +74,12 @@ namespace AppInstaller
         void SetExperimentalFeatureOverride(const std::map<ExperimentalFeature::Feature, bool>* override);
     }
 
+    namespace Registry::Environment
+    {
+        void TestHook_SetPathVariable_Override(
+            const Registry::Key& userKey, const Registry::Key& machineKey, std::function<void()> notifyChange);
+    }
+
     namespace Filesystem
     {
         void TestHook_SetCreateSymlinkResult_Override(bool* status);
@@ -147,6 +153,29 @@ namespace AppInstaller
 
 namespace TestHook
 {
+    struct SetPathVariable_Override
+    {
+        SetPathVariable_Override(std::function<void()> notifyChange = []() {}) :
+            m_root(TestCommon::RegCreateVolatileTestRoot()),
+            m_userKey(AppInstaller::Registry::Key::Create(m_root.get(), L"User", REG_OPTION_VOLATILE)),
+            m_machineKey(AppInstaller::Registry::Key::Create(m_root.get(), L"Machine", REG_OPTION_VOLATILE))
+        {
+            m_userKey.SetValue(L"Path", L"C:\\WinGetTestPath\\User;", REG_EXPAND_SZ);
+            m_machineKey.SetValue(L"Path", L"C:\\WinGetTestPath\\Machine;", REG_EXPAND_SZ);
+            AppInstaller::Registry::Environment::TestHook_SetPathVariable_Override(m_userKey, m_machineKey, std::move(notifyChange));
+        }
+
+        ~SetPathVariable_Override()
+        {
+            AppInstaller::Registry::Environment::TestHook_SetPathVariable_Override({}, {}, {});
+        }
+
+    private:
+        wil::unique_hkey m_root;
+        AppInstaller::Registry::Key m_userKey;
+        AppInstaller::Registry::Key m_machineKey;
+    };
+
     struct SetCreateSymlinkResult_Override
     {
         SetCreateSymlinkResult_Override(bool status) : m_status(status)
