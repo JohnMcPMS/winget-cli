@@ -13,6 +13,7 @@
 #include <Commands/UninstallCommand.h>
 #include <winget/AdminSettings.h>
 #include <winget/PathVariable.h>
+#include <winget/PortableIndex.h>
 #include <winget/Settings.h>
 #include <winget/ManifestYamlParser.h>
 #include <Workflows/ArchiveFlow.h>
@@ -759,6 +760,106 @@ TEST_CASE("InstallFlow_Portable", "[InstallFlow][workflow]")
     INFO(installOutput.str());
 
     REQUIRE(std::filesystem::exists(portableInstallResultPath.GetPath()));
+}
+
+TEST_CASE("PortableInstallFlow_ArchiveAliasHashes", "[InstallFlow][workflow]")
+{
+    const bool executableInSubdirectory = GENERATE(false, true);
+    const bool binariesDependOnPath = GENERATE(false, true);
+    CAPTURE(executableInSubdirectory, binariesDependOnPath);
+    TestHook::SetIsRunningWithNonDefaultFullToken_Override tokenOverride(false);
+    TempDirectory extractedDirectory("PortableArchiveAliasSource");
+    TempDirectory targetDirectory("PortableArchiveAliasTarget", false);
+    TempDirectory linksDirectory("PortableArchiveAliasLinks");
+
+    const std::string relativeFilePath = executableInSubdirectory ? "bin\\tool.exe" : "tool.exe";
+    std::vector<NestedInstallerFile> nestedInstallerFiles;
+
+    SECTION("Single alias")
+    {
+        nestedInstallerFiles = { { relativeFilePath, "primary" } };
+    }
+
+    SECTION("Multiple aliases for equivalent source paths")
+    {
+        const auto prefix = GENERATE(".\\", "./");
+        const bool prefixedPathFirst = GENERATE(false, true);
+        nestedInstallerFiles = { { relativeFilePath, "primary" }, { std::string{ prefix } + relativeFilePath, "secondary" } };
+        if (prefixedPathFirst)
+        {
+            std::reverse(nestedInstallerFiles.begin(), nestedInstallerFiles.end());
+        }
+    }
+    CAPTURE(nestedInstallerFiles.front().RelativeFilePath, nestedInstallerFiles.back().RelativeFilePath);
+
+    const auto sourcePath = extractedDirectory.GetPath() / ConvertToUTF16(relativeFilePath);
+    std::filesystem::create_directories(sourcePath.parent_path());
+    {
+        std::ofstream sourceFile(sourcePath, std::ios::binary);
+        REQUIRE(sourceFile.is_open());
+        sourceFile << "portable archive executable";
+        REQUIRE(sourceFile.good());
+    }
+    const auto expectedHash = SHA256::ConvertToString(SHA256::ComputeHashFromFile(sourcePath));
+    const auto targetPath = targetDirectory.GetPath() / ConvertToUTF16(relativeFilePath);
+
+    const auto originalLinks = AppInstaller::Runtime::GetPathDetailsFor(AppInstaller::Runtime::PathName::PortableLinksUserLocation);
+    const auto productCode = targetDirectory.GetPath().filename().u8string();
+    AppInstaller::Registry::Portable::PortableARPEntry arpEntry(ScopeEnum::User, Architecture::X64, productCode);
+    auto cleanup = wil::scope_exit([&]()
+    {
+        AppInstaller::Runtime::TestHook_SetPathOverride(AppInstaller::Runtime::PathName::PortableLinksUserLocation, originalLinks);
+        auto pathVariable = AppInstaller::Registry::Environment::PathVariable(ScopeEnum::User);
+        pathVariable.Remove(targetPath.parent_path());
+        pathVariable.Remove(linksDirectory.GetPath());
+        arpEntry.Delete();
+    });
+    AppInstaller::Runtime::TestHook_SetPathOverride(AppInstaller::Runtime::PathName::PortableLinksUserLocation, linksDirectory.GetPath());
+
+    ManifestInstaller installer;
+    installer.BaseInstallerType = InstallerTypeEnum::Zip;
+    installer.NestedInstallerType = InstallerTypeEnum::Portable;
+    installer.ArchiveBinariesDependOnPath = binariesDependOnPath;
+    installer.NestedInstallerFiles = nestedInstallerFiles;
+
+    AppInstaller::CLI::Portable::PortableInstaller portableInstaller{
+        ScopeEnum::User, Architecture::X64, productCode, OperationType::Install };
+    portableInstaller.TargetInstallLocation = targetDirectory.GetPath();
+    portableInstaller.BinariesDependOnPath = binariesDependOnPath;
+
+    std::ostringstream output;
+    TestContext context{ output, std::cin };
+    auto previousThreadGlobals = context.SetForCurrentThread();
+    context.Add<Data::Installer>(installer);
+    context.Add<Data::InstallerPath>(extractedDirectory.GetPath());
+    context.Add<Data::PortableInstaller>(std::move(portableInstaller));
+
+    context << PortableInstallImpl;
+
+    INFO(output.str());
+    REQUIRE_FALSE(context.IsTerminated());
+    REQUIRE(context.Get<Data::OperationReturnCode>() == ERROR_SUCCESS);
+    REQUIRE(std::filesystem::exists(targetPath));
+    CHECK(SHA256::ConvertToString(SHA256::ComputeHashFromFile(targetPath)) == expectedHash);
+
+    const auto indexPath = targetDirectory.GetPath() / context.Get<Data::PortableInstaller>().GetPortableIndexFileName();
+    auto index = AppInstaller::Repository::Microsoft::PortableIndex::Open(
+        indexPath.u8string(), AppInstaller::SQLite::SQLiteStorageBase::OpenDisposition::Read);
+    const auto installedEntries = index.GetAllPortableFiles();
+    for (const auto& nestedInstallerFile : nestedInstallerFiles)
+    {
+        const auto aliasPath = targetPath.parent_path() / ConvertToUTF16(nestedInstallerFile.PortableCommandAlias + ".exe");
+        CAPTURE(aliasPath);
+        REQUIRE(std::filesystem::exists(aliasPath));
+        CHECK(SHA256::ConvertToString(SHA256::ComputeHashFromFile(aliasPath)) == expectedHash);
+        const auto aliasEntry = std::find_if(installedEntries.begin(), installedEntries.end(), [&](const auto& entry)
+        {
+            return entry.FileType == AppInstaller::Portable::PortableFileType::Hardlink &&
+                entry.GetFilePath() == std::filesystem::weakly_canonical(aliasPath);
+        });
+        REQUIRE(aliasEntry != installedEntries.end());
+        CHECK(aliasEntry->SHA256 == expectedHash);
+    }
 }
 
 TEST_CASE("PortableInstallFlow_RejectsEscapingPathsAtPointOfUse", "[InstallFlow][workflow]")

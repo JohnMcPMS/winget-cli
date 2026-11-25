@@ -203,8 +203,7 @@ namespace AppInstaller::CLI::Workflow
         {
             portableInstaller.RecordToIndex = true;
 
-            // Build a map of installed target path → SHA256 as file entries are created,
-            // so nested installer files that need hardlinks can reuse the hash without re-reading from disk.
+            // Cache hashes by extracted source path; nested executables are hashed on demand.
             std::map<std::filesystem::path, std::string> fileHashes;
 
             for (const auto& entry : std::filesystem::directory_iterator(installerPath))
@@ -220,7 +219,7 @@ namespace AppInstaller::CLI::Workflow
                 else
                 {
                     const PortableFileEntry& fileEntry = entries.emplace_back(PortableFileEntry::CreateFileEntry(entryPath, targetPath, {}));
-                    fileHashes[std::filesystem::weakly_canonical(targetPath)] = fileEntry.SHA256;
+                    fileHashes[std::filesystem::weakly_canonical(entryPath)] = fileEntry.SHA256;
                 }
             }
 
@@ -255,8 +254,14 @@ namespace AppInstaller::CLI::Workflow
                 if (commandAlias != originalFilename)
                 {
                     std::filesystem::path hardlinkPath = targetPath.parent_path() / commandAlias;
-                    auto it = fileHashes.find(std::filesystem::weakly_canonical(targetPath));
-                    THROW_HR_IF_MSG(APPINSTALLER_CLI_ERROR_PORTABLE_INSTALL_FAILED, it == fileHashes.end(), "Hash not found for hardlink target: %ls", targetPath.c_str());
+                    const auto sourcePath = std::filesystem::weakly_canonical(installerPath / relativeFilePath);
+                    auto it = fileHashes.find(sourcePath);
+                    if (it == fileHashes.end())
+                    {
+                        THROW_HR_IF_MSG(APPINSTALLER_CLI_ERROR_PORTABLE_INSTALL_FAILED, !std::filesystem::is_regular_file(sourcePath),
+                            "Portable hardlink source is not a regular file: %ls", sourcePath.c_str());
+                        it = fileHashes.emplace(sourcePath, SHA256::ConvertToString(SHA256::ComputeHashFromFile(sourcePath))).first;
+                    }
                     entries.emplace_back(PortableFileEntry::CreateHardlinkEntry(hardlinkPath, targetPath, it->second));
                 }
                 entries.emplace_back(PortableFileEntry::CreateSymlinkEntry(symlinkDirectory / commandAlias, targetPath));
