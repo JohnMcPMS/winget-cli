@@ -1370,6 +1370,273 @@ TEST_CASE("PortableInstallFlow_PreparationFailurePreservesRegistrationState", "[
     }
 }
 
+TEST_CASE("PortableInstallFlow_EmptyRegistrationRetry", "[InstallFlow][workflow][PortableAliasRegression]")
+{
+    TestHook::SetPortableTestEnvironment_Override testEnvironment;
+    using AppInstaller::CLI::Portable::PortableInstaller;
+    using AppInstaller::Registry::Key;
+    using AppInstaller::Registry::Value;
+    const auto scope = GENERATE(ScopeEnum::User, ScopeEnum::Machine);
+    const auto arch = GENERATE(Architecture::X86, Architecture::X64);
+    const bool emptyRegistration = GENERATE(false, true);
+    CAPTURE(scope, arch, emptyRegistration);
+    TestHook::SetIsRunningWithNonDefaultFullToken_Override tokenOverride(false);
+    TestHook::SetCreateSymlinkResult_Override symlinkOverride(false);
+    TempDirectory sourceDirectory("PortableEmptyRegistrationSource");
+    TempDirectory targetDirectory("PortableEmptyRegistrationTarget", false);
+    TempDirectory linksDirectory("PortableEmptyRegistrationLinks");
+    const auto sourcePath = sourceDirectory.GetPath() / "tool.exe";
+    const auto sourceHash = WritePortableArchivePayload(sourcePath, "portable retry payload");
+    AppInstaller::Manifest::Manifest manifest;
+    manifest.Id = "Portable.EmptyRegistrationRetry";
+    const auto productCode = MakeSuitablePathPart(manifest.Id + "_*DefaultSource");
+    const auto subKey = std::wstring{ scope == ScopeEnum::Machine && arch == Architecture::X86 ?
+        L"Software\\Wow6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\" :
+        L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\" } + ConvertToUTF16(productCode);
+    const HKEY root = testEnvironment.GetARPRegistryRoot(scope);
+    if (emptyRegistration)
+    {
+        Key::Create(root, subKey, REG_OPTION_VOLATILE);
+    }
+    auto otherProduct = Key::Create(root, subKey + L".OtherProduct", REG_OPTION_VOLATILE);
+    otherProduct.SetValue(L"Protected", L"Other product");
+    const auto otherScope = scope == ScopeEnum::User ? ScopeEnum::Machine : ScopeEnum::User;
+    const auto otherSubKey = std::wstring{ otherScope == ScopeEnum::Machine && arch == Architecture::X86 ?
+        L"Software\\Wow6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\" :
+        L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\" } + ConvertToUTF16(productCode);
+    auto otherRegistration = Key::Create(testEnvironment.GetARPRegistryRoot(otherScope), otherSubKey, REG_OPTION_VOLATILE);
+    otherRegistration.SetValue(L"Protected", L"Other scope");
+    Key otherArchitecture;
+    if (scope == ScopeEnum::Machine)
+    {
+        const auto otherArchitectureSubKey = std::wstring{ arch == Architecture::X64 ?
+            L"Software\\Wow6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\" :
+            L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\" } + ConvertToUTF16(productCode);
+        otherArchitecture = Key::Create(root, otherArchitectureSubKey, REG_OPTION_VOLATILE);
+        otherArchitecture.SetValue(L"Protected", L"Other architecture");
+    }
+    const auto linksPathName = scope == ScopeEnum::Machine ?
+        AppInstaller::Runtime::PathName::PortableLinksMachineLocation : AppInstaller::Runtime::PathName::PortableLinksUserLocation;
+    const auto originalLinks = AppInstaller::Runtime::GetPathDetailsFor(linksPathName);
+    auto restoreLinks = wil::scope_exit([&]() { AppInstaller::Runtime::TestHook_SetPathOverride(linksPathName, originalLinks); });
+    AppInstaller::Runtime::TestHook_SetPathOverride(linksPathName, linksDirectory.GetPath());
+
+    ManifestInstaller installer;
+    installer.BaseInstallerType = InstallerTypeEnum::Portable;
+    installer.Arch = arch;
+    installer.Commands = { "tool" };
+    std::ostringstream output;
+    TestContext context{ output, std::cin };
+    auto previousThreadGlobals = context.SetForCurrentThread();
+    context.Args.AddArg(Execution::Args::Type::InstallScope, scope == ScopeEnum::Machine ? "machine"sv : "user"sv);
+    context.Args.AddArg(Execution::Args::Type::InstallLocation, targetDirectory);
+    context.Add<Data::Manifest>(manifest);
+    context.Add<Data::Installer>(installer);
+    context.Add<Data::InstallerPath>(sourcePath);
+
+    context << InitializePortableInstaller << VerifyPackageAndSourceMatch << PortableInstallImpl;
+    INFO(output.str());
+    REQUIRE_FALSE(context.IsTerminated());
+    REQUIRE(context.Contains(Data::OperationReturnCode));
+    REQUIRE(context.Get<Data::OperationReturnCode>() == ERROR_SUCCESS);
+    const auto installedPath = targetDirectory.GetPath() / "tool.exe";
+    REQUIRE(std::filesystem::is_regular_file(installedPath));
+    CHECK(SHA256::ConvertToString(SHA256::ComputeHashFromFile(installedPath)) == sourceHash);
+    REQUIRE(AppInstaller::Registry::Environment::PathVariable(scope).Contains(targetDirectory.GetPath()));
+    {
+        const auto key = Key::OpenIfExists(root, subKey);
+        REQUIRE(key);
+        const auto identifier = key[std::wstring{ L"WinGetPackageIdentifier" }];
+        const auto source = key[std::wstring{ L"WinGetSourceIdentifier" }];
+        REQUIRE(identifier.has_value());
+        REQUIRE(source.has_value());
+        CHECK(identifier->GetValue<Value::Type::String>() == manifest.Id);
+        CHECK(source->GetValue<Value::Type::String>() == "*DefaultSource");
+    }
+
+    PortableInstaller uninstaller{ scope, arch, productCode, OperationType::Uninstall };
+    REQUIRE(uninstaller.VerifyExpectedState());
+    uninstaller.Uninstall();
+    CHECK_FALSE(std::filesystem::exists(targetDirectory.GetPath()));
+    CHECK_FALSE(Key::OpenIfExists(root, subKey));
+    CHECK_FALSE(AppInstaller::Registry::Environment::PathVariable(scope).Contains(targetDirectory.GetPath()));
+    const auto otherProductValue = otherProduct[std::wstring{ L"Protected" }];
+    const auto otherScopeValue = otherRegistration[std::wstring{ L"Protected" }];
+    REQUIRE(otherProductValue.has_value());
+    REQUIRE(otherScopeValue.has_value());
+    CHECK(otherProductValue->GetValue<Value::Type::String>() == "Other product");
+    CHECK(otherScopeValue->GetValue<Value::Type::String>() == "Other scope");
+    if (otherArchitecture)
+    {
+        const auto value = otherArchitecture[std::wstring{ L"Protected" }];
+        REQUIRE(value.has_value());
+        CHECK(value->GetValue<Value::Type::String>() == "Other architecture");
+    }
+}
+
+TEST_CASE("PortableInstallFlow_RecoveryProtectsNonemptyRegistrations", "[InstallFlow][workflow][PortableAliasRegression]")
+{
+    TestHook::SetPortableTestEnvironment_Override testEnvironment;
+    using AppInstaller::CLI::Portable::PortableInstaller;
+    using AppInstaller::Registry::Key;
+    const auto contents = GENERATE("named-empty", "default-empty", "subkey", "package-only", "source-only", "wrong-package", "wrong-source", "matching");
+    const auto operation = GENERATE(OperationType::Install, OperationType::Upgrade, OperationType::Uninstall);
+    const bool force = GENERATE(false, true);
+    CAPTURE(contents, operation, force);
+    const std::string productCode = "PortableProtectedRegistration";
+    const std::wstring subKey = L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\PortableProtectedRegistration";
+    const HKEY root = testEnvironment.GetARPRegistryRoot(ScopeEnum::User);
+    auto key = Key::Create(root, subKey, REG_OPTION_VOLATILE);
+    const std::string_view state{ contents };
+    if (state == "named-empty")
+    {
+        key.SetValue(L"DisplayName", L"");
+    }
+    else if (state == "default-empty")
+    {
+        key.SetValue(L"", L"");
+    }
+    else if (state == "subkey")
+    {
+        Key::Create(key, L"Child", REG_OPTION_VOLATILE);
+    }
+    else
+    {
+        if (state != "source-only")
+        {
+            key.SetValue(L"WinGetPackageIdentifier", state == "wrong-package" ? L"Other.Package" : L"PortableProtectedRegistration");
+        }
+        if (state != "package-only")
+        {
+            key.SetValue(L"WinGetSourceIdentifier", state == "wrong-source" ? L"Other.Source" : L"*DefaultSource");
+        }
+    }
+    DWORD subKeysBefore = 0;
+    DWORD valuesBefore = 0;
+    REQUIRE(RegQueryInfoKeyW(key, nullptr, nullptr, nullptr, &subKeysBefore, nullptr, nullptr,
+        &valuesBefore, nullptr, nullptr, nullptr, nullptr) == ERROR_SUCCESS);
+    std::ostringstream output;
+    TestContext context{ output, std::cin };
+    auto previousThreadGlobals = context.SetForCurrentThread();
+    if (force)
+    {
+        context.Args.AddArg(Execution::Args::Type::Force);
+    }
+    AppInstaller::Manifest::Manifest manifest;
+    manifest.Id = productCode;
+    context.Add<Data::Manifest>(manifest);
+    context.Add<Data::PortableInstaller>(PortableInstaller{ ScopeEnum::User, Architecture::X64, productCode, operation });
+
+    context << VerifyPackageAndSourceMatch;
+    INFO(output.str());
+    if (state == "matching" || force)
+    {
+        REQUIRE_FALSE(context.IsTerminated());
+    }
+    else
+    {
+        REQUIRE_TERMINATED_WITH(context, APPINSTALLER_CLI_ERROR_PORTABLE_PACKAGE_ALREADY_EXISTS);
+    }
+    REQUIRE(Key::OpenIfExists(root, subKey));
+    DWORD subKeysAfter = 0;
+    DWORD valuesAfter = 0;
+    REQUIRE(RegQueryInfoKeyW(key, nullptr, nullptr, nullptr, &subKeysAfter, nullptr, nullptr,
+        &valuesAfter, nullptr, nullptr, nullptr, nullptr) == ERROR_SUCCESS);
+    CHECK(subKeysAfter == subKeysBefore);
+    CHECK(valuesAfter == valuesBefore);
+}
+
+TEST_CASE("PortableInstallFlow_EmptyRegistrationNotRecoveredByOtherOperations", "[InstallFlow][workflow][PortableAliasRegression]")
+{
+    TestHook::SetPortableTestEnvironment_Override testEnvironment;
+    using AppInstaller::CLI::Portable::PortableInstaller;
+    using AppInstaller::Registry::Key;
+    const auto operation = GENERATE(OperationType::Upgrade, OperationType::Uninstall);
+    CAPTURE(operation);
+    const std::string productCode = "PortableNonInstallRecovery";
+    const std::wstring subKey = L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\PortableNonInstallRecovery";
+    auto key = Key::Create(testEnvironment.GetARPRegistryRoot(ScopeEnum::User), subKey, REG_OPTION_VOLATILE);
+    std::ostringstream output;
+    TestContext context{ output, std::cin };
+    auto previousThreadGlobals = context.SetForCurrentThread();
+    AppInstaller::Manifest::Manifest manifest;
+    manifest.Id = productCode;
+    context.Add<Data::Manifest>(manifest);
+    context.Add<Data::PortableInstaller>(PortableInstaller{ ScopeEnum::User, Architecture::X64, productCode, operation });
+
+    context << VerifyPackageAndSourceMatch;
+    REQUIRE_TERMINATED_WITH(context, APPINSTALLER_CLI_ERROR_PORTABLE_PACKAGE_ALREADY_EXISTS);
+    DWORD subKeys = 0;
+    DWORD values = 0;
+    REQUIRE(RegQueryInfoKeyW(key, nullptr, nullptr, nullptr, &subKeys, nullptr, nullptr,
+        &values, nullptr, nullptr, nullptr, nullptr) == ERROR_SUCCESS);
+    CHECK(subKeys == 0);
+    CHECK(values == 0);
+}
+
+TEST_CASE("PortableInstallFlow_RecoveryPropagatesRegistryErrors", "[InstallFlow][workflow][PortableAliasRegression]")
+{
+    TestHook::SetPortableTestEnvironment_Override testEnvironment;
+    using AppInstaller::CLI::Portable::PortableInstaller;
+    using AppInstaller::Registry::Key;
+    const bool failAtWrite = GENERATE(false, true);
+    CAPTURE(failAtWrite);
+    TestHook::SetIsRunningWithNonDefaultFullToken_Override tokenOverride(false);
+    TempDirectory sourceDirectory("PortableRecoveryErrorSource");
+    TempDirectory targetDirectory("PortableRecoveryErrorTarget", false);
+    TempDirectory linksDirectory("PortableRecoveryErrorLinks");
+    const auto sourcePath = sourceDirectory.GetPath() / "tool.exe";
+    const auto sourceHash = WritePortableArchivePayload(sourcePath, "unapplied retry payload");
+    const auto originalLinks = AppInstaller::Runtime::GetPathDetailsFor(AppInstaller::Runtime::PathName::PortableLinksUserLocation);
+    auto restoreLinks = wil::scope_exit([&]()
+    {
+        AppInstaller::Runtime::TestHook_SetPathOverride(AppInstaller::Runtime::PathName::PortableLinksUserLocation, originalLinks);
+    });
+    AppInstaller::Runtime::TestHook_SetPathOverride(AppInstaller::Runtime::PathName::PortableLinksUserLocation, linksDirectory.GetPath());
+    const std::string productCode = "PortableRecoveryErrors";
+    const std::wstring subKey = L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\PortableRecoveryErrors";
+    const HKEY root = testEnvironment.GetARPRegistryRoot(ScopeEnum::User);
+    Key::Create(root, subKey, REG_OPTION_VOLATILE);
+    std::ostringstream output;
+    TestContext context{ output, std::cin };
+    auto previousThreadGlobals = context.SetForCurrentThread();
+    AppInstaller::Manifest::Manifest manifest;
+    manifest.Id = productCode;
+    ManifestInstaller installer;
+    installer.BaseInstallerType = InstallerTypeEnum::Portable;
+    installer.Commands = { "tool" };
+    context.Add<Data::Manifest>(manifest);
+    context.Add<Data::Installer>(installer);
+    context.Add<Data::InstallerPath>(sourcePath);
+    PortableInstaller portableInstaller{ ScopeEnum::User, Architecture::X64, productCode, OperationType::Install };
+    portableInstaller.TargetInstallLocation = targetDirectory.GetPath();
+    const auto indexPath = targetDirectory.GetPath() / portableInstaller.GetPortableIndexFileName();
+    context.Add<Data::PortableInstaller>(std::move(portableInstaller));
+    if (failAtWrite)
+    {
+        context << VerifyPackageAndSourceMatch;
+        REQUIRE_FALSE(context.IsTerminated());
+    }
+    REQUIRE(Key::Delete(root, subKey, KEY_WOW64_64KEY));
+
+    if (failAtWrite)
+    {
+        REQUIRE_NOTHROW(PortableInstallImpl(context));
+        REQUIRE(context.Contains(Data::OperationReturnCode));
+        CHECK(context.Get<Data::OperationReturnCode>() == static_cast<DWORD>(HRESULT_FROM_WIN32(ERROR_KEY_DELETED)));
+    }
+    else
+    {
+        REQUIRE_THROWS_HR(VerifyPackageAndSourceMatch(context), HRESULT_FROM_WIN32(ERROR_KEY_DELETED));
+    }
+    INFO(output.str());
+    REQUIRE(std::filesystem::is_regular_file(sourcePath));
+    CHECK(SHA256::ConvertToString(SHA256::ComputeHashFromFile(sourcePath)) == sourceHash);
+    CHECK_FALSE(std::filesystem::exists(targetDirectory.GetPath()));
+    CHECK_FALSE(std::filesystem::exists(indexPath));
+    CHECK_FALSE(Key::OpenIfExists(root, subKey));
+}
+
 TEST_CASE("PortableInstallFlow_RejectsEscapingPathsAtPointOfUse", "[InstallFlow][workflow]")
 {
     TestCommon::TempDirectory targetDirectory("TestPortableInstallRoot", false);

@@ -149,16 +149,16 @@ namespace AppInstaller::CLI::Workflow
         {
             if (packageIdentifier != portableInstaller.WinGetPackageIdentifier || sourceIdentifier != portableInstaller.WinGetSourceIdentifier)
             {
-                if (!context.Args.Contains(Execution::Args::Type::Force))
+                if (context.Args.Contains(Execution::Args::Type::Force))
+                {
+                    AICLI_LOG(CLI, Info, << "Overriding registry match check...");
+                    context.Reporter.Warn() << Resource::String::PortableRegistryCollisionOverridden << std::endl;
+                }
+                else if (!portableInstaller.CanRecoverARPEntry())
                 {
                     AICLI_LOG(CLI, Error, << "Registry match failed, skipping write to uninstall registry");
                     context.Reporter.Error() << Resource::String::PortablePackageAlreadyExists << std::endl;
                     AICLI_TERMINATE_CONTEXT(APPINSTALLER_CLI_ERROR_PORTABLE_PACKAGE_ALREADY_EXISTS);
-                }
-                else
-                {
-                    AICLI_LOG(CLI, Info, << "Overriding registry match check...");
-                    context.Reporter.Warn() << Resource::String::PortableRegistryCollisionOverridden << std::endl;
                 }
             }
         }
@@ -389,7 +389,7 @@ namespace AppInstaller::CLI::Workflow
         {
             context.Add<Execution::Data::OperationReturnCode>(Workflow::HandleException(context, std::current_exception()));
 
-            if (installAttempted && !portableInstaller.IsUpdate())
+            if (installAttempted && !portableInstaller.IsUpdate() && portableInstaller.HasRegistrationWrites())
             {
                 context.Reporter.Warn() << Resource::String::PortableInstallFailed << std::endl;
                 portableInstaller.PrepareForCleanUp();

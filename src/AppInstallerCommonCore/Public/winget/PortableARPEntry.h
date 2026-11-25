@@ -37,6 +37,9 @@ namespace AppInstaller::Registry::Portable
         // Reports whether registration existed when this entry was constructed.
         bool Exists() { return m_exists; }
 
+        // Checks whether the existing registration has no values or subkeys.
+        bool IsEmpty() const;
+
         void SetValue(PortableValueName valueName, const std::wstring& value);
         void SetValue(PortableValueName valueName, const std::string_view& value);
         void SetValue(PortableValueName valueName, bool& value);

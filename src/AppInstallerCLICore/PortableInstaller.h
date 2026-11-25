@@ -75,7 +75,10 @@ namespace AppInstaller::CLI::Portable
         void CommitToARPEntry(PortableValueName valueName, T value)
         {
             m_portableARPEntry.SetValue(valueName, value);
+            m_hasRegistrationWrites = true;
         }
+
+        bool HasRegistrationWrites() const { return m_hasRegistrationWrites; }
 
         std::filesystem::path GetPortableIndexFileName()
         {
@@ -89,6 +92,11 @@ namespace AppInstaller::CLI::Portable
         std::string GetProductCode() { return m_portableARPEntry.GetProductCode(); };
 
         bool ARPEntryExists() { return m_portableARPEntry.Exists(); };
+
+        bool CanRecoverARPEntry()
+        {
+            return m_operation == Workflow::OperationType::Install && m_portableARPEntry.Exists() && m_portableARPEntry.IsEmpty();
+        }
 
         std::string GetOutputMessage()
         {
@@ -104,6 +112,7 @@ namespace AppInstaller::CLI::Portable
     private:
         Workflow::OperationType m_operation;
         PortableARPEntry m_portableARPEntry;
+        bool m_hasRegistrationWrites = false;
         std::vector<AppInstaller::Portable::PortableFileEntry> m_desiredEntries;
         std::vector<AppInstaller::Portable::PortableFileEntry> m_expectedEntries;
         // Rollback includes validated targets whose installation was attempted.

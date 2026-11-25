@@ -131,6 +131,15 @@ namespace AppInstaller::Registry::Portable
         GetOrCreateKey().SetValue(std::wstring{ ToString(valueName) }, value);
     }
 
+    bool PortableARPEntry::IsEmpty() const
+    {
+        DWORD subKeys = 0;
+        DWORD values = 0;
+        THROW_IF_WIN32_ERROR(RegQueryInfoKeyW(m_key, nullptr, nullptr, nullptr, &subKeys, nullptr, nullptr,
+            &values, nullptr, nullptr, nullptr, nullptr));
+        return subKeys == 0 && values == 0;
+    }
+
     Registry::Key PortableARPEntry::GetKey() const
     {
         return m_key ? m_key : Key::OpenIfExists(m_root, m_subKey, 0, KEY_ALL_ACCESS);
