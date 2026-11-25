@@ -251,7 +251,7 @@ namespace AppInstaller::CLI::Workflow
 
                 // If alias differs from original filename, create hardlink
                 // Hardlink will be placed in the same directory as the original file to avoid pathing issues and same-volume restrictions
-                if (commandAlias != originalFilename)
+                if (!Filesystem::PathEqualsCaseInsensitive(commandAlias, originalFilename))
                 {
                     std::filesystem::path hardlinkPath = targetPath.parent_path() / commandAlias;
                     const auto sourcePath = std::filesystem::weakly_canonical(installerPath / relativeFilePath);
@@ -300,7 +300,7 @@ namespace AppInstaller::CLI::Workflow
             entries.emplace_back(PortableFileEntry::CreateFileEntry(installerPath, targetFullPath, fileSha256));
 
             // If alias differs from original filename, create hardlink
-            if (commandAlias != originalFilename)
+            if (!Filesystem::PathEqualsCaseInsensitive(commandAlias, originalFilename))
             {
                 std::filesystem::path hardlinkPath = targetInstallDirectory / commandAlias;
                 entries.emplace_back(PortableFileEntry::CreateHardlinkEntry(hardlinkPath, targetFullPath, fileSha256));

@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <map>
 #include <optional>
+#include <string>
 #include <string_view>
 #include <type_traits>
 #include <vector>
@@ -21,6 +22,13 @@ namespace AppInstaller::Filesystem
 
     // Checks if the file system at path support reparse points
     bool SupportsReparsePoints(const std::filesystem::path& path);
+
+    // Gets a lexically normalized path key using Windows invariant uppercase mapping.
+    // Does not access the filesystem or resolve physical file identity.
+    std::wstring GetPathKey(const std::filesystem::path& path);
+
+    // Compares the path keys returned by GetPathKey.
+    bool PathEqualsCaseInsensitive(const std::filesystem::path& path1, const std::filesystem::path& path2);
 
     // Checks whether a relative path escapes its base directory.
     bool PathEscapesBaseDirectory(const std::filesystem::path& relativePath);

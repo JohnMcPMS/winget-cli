@@ -106,6 +106,14 @@ namespace AppInstaller::CLI::Portable
         PortableFileType fileType = entry.FileType;
         std::filesystem::path filePath = entry.GetFilePath();
 
+        if (fileType == PortableFileType::Hardlink && std::filesystem::exists(filePath) &&
+            Filesystem::PathEqualsCaseInsensitive(filePath, std::filesystem::weakly_canonical(entry.CurrentPath)) &&
+            std::filesystem::equivalent(filePath, entry.CurrentPath))
+        {
+            AICLI_LOG(CLI, Info, << "Skipping portable hardlink alias that is the source file: " << filePath);
+            return;
+        }
+
         if (fileType == PortableFileType::Directory && std::filesystem::exists(filePath))
         {
             THROW_HR_IF_MSG(HRESULT_FROM_WIN32(ERROR_ALREADY_EXISTS),
@@ -592,7 +600,7 @@ namespace AppInstaller::CLI::Portable
             {
                 // If alias differs from original filename, a hardlink exists in the install directory.
                 // Track it so uninstall removes it even when state is reconstructed from ARP values.
-                if (!targetFullPath.empty() && targetFullPath.filename() != symlinkFullPath.filename())
+                if (!targetFullPath.empty() && !Filesystem::PathEqualsCaseInsensitive(targetFullPath.filename(), symlinkFullPath.filename()))
                 {
                     std::filesystem::path hardlinkPath = InstallLocation / symlinkFullPath.filename();
 

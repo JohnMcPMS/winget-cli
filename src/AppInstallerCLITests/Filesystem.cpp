@@ -10,6 +10,24 @@ using namespace AppInstaller::Utility;
 using namespace AppInstaller::Filesystem;
 using namespace TestCommon;
 
+TEST_CASE("GetPathKey", "[filesystem][PortableAliasRegression]")
+{
+    CHECK(GetPathKey(std::filesystem::path{}).empty());
+    CHECK(GetPathKey(L"c:\\Tools/./bin\\..\\Tool.exe") == L"C:\\TOOLS\\TOOL.EXE");
+    CHECK(GetPathKey(L"\u00E9.exe") == L"\u00C9.EXE");
+    CHECK(GetPathKey(L"stra\u00DFe.exe") != GetPathKey(L"strasse.exe"));
+}
+
+TEST_CASE("PathEqualsCaseInsensitive", "[filesystem][PortableAliasRegression]")
+{
+    CHECK(PathEqualsCaseInsensitive(L"C:\\Tools\\Tool.exe", L"c:/Tools/bin/../TOOL.EXE"));
+    CHECK(PathEqualsCaseInsensitive(L"\u00E9.exe", L"\u00C9.EXE"));
+    CHECK_FALSE(PathEqualsCaseInsensitive(L"stra\u00DFe.exe", L"strasse.exe"));
+    CHECK(PathEqualsCaseInsensitive(std::filesystem::path{}, std::filesystem::path{}));
+    CHECK_FALSE(PathEqualsCaseInsensitive(std::filesystem::path{}, L"."));
+    CHECK_FALSE(PathEqualsCaseInsensitive(L"Tool.exe", L"C:\\Tool.exe"));
+}
+
 TEST_CASE("PathEscapesDirectory", "[filesystem]")
 {
     SECTION("Simple relative paths stay within the base directory")

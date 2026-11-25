@@ -370,6 +370,30 @@ namespace AppInstaller::Filesystem
         return (GetVolumeInformationFlags(path) & FILE_SUPPORTS_REPARSE_POINTS) != 0;
     }
 
+    std::wstring GetPathKey(const std::filesystem::path& path)
+    {
+        const auto normalized = path.lexically_normal().wstring();
+        if (normalized.empty())
+        {
+            return {};
+        }
+
+        const int sourceLength = wil::safe_cast<int>(normalized.size());
+        const int keyLength = LCMapStringEx(LOCALE_NAME_INVARIANT, LCMAP_UPPERCASE,
+            normalized.c_str(), sourceLength, nullptr, 0, nullptr, nullptr, 0);
+        THROW_LAST_ERROR_IF(keyLength == 0);
+
+        std::wstring result(wil::safe_cast<size_t>(keyLength), L'\0');
+        THROW_LAST_ERROR_IF(LCMapStringEx(LOCALE_NAME_INVARIANT, LCMAP_UPPERCASE,
+            normalized.c_str(), sourceLength, result.data(), keyLength, nullptr, nullptr, 0) == 0);
+        return result;
+    }
+
+    bool PathEqualsCaseInsensitive(const std::filesystem::path& path1, const std::filesystem::path& path2)
+    {
+        return GetPathKey(path1) == GetPathKey(path2);
+    }
+
     bool PathEscapesBaseDirectory(const std::filesystem::path& relativePath)
     {
         // Root components include drive-relative paths.

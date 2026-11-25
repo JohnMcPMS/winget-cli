@@ -762,7 +762,7 @@ TEST_CASE("InstallFlow_Portable", "[InstallFlow][workflow]")
     REQUIRE(std::filesystem::exists(portableInstallResultPath.GetPath()));
 }
 
-TEST_CASE("PortableInstallFlow_ArchiveAliasHashes", "[InstallFlow][workflow]")
+TEST_CASE("PortableInstallFlow_ArchiveAliasHashes", "[InstallFlow][workflow][PortableAliasRegression]")
 {
     const bool executableInSubdirectory = GENERATE(false, true);
     const bool binariesDependOnPath = GENERATE(false, true);
@@ -860,6 +860,123 @@ TEST_CASE("PortableInstallFlow_ArchiveAliasHashes", "[InstallFlow][workflow]")
         REQUIRE(aliasEntry != installedEntries.end());
         CHECK(aliasEntry->SHA256 == expectedHash);
     }
+}
+
+TEST_CASE("PortableInstallFlow_CaseOnlyAlias", "[InstallFlow][workflow][PortableAliasRegression]")
+{
+    const auto aliasKind = GENERATE("case-only", "distinct", "unicode-distinct");
+    const bool caseOnlyAlias = std::string_view{ aliasKind } == "case-only";
+    const bool unicodeDistinctAlias = std::string_view{ aliasKind } == "unicode-distinct";
+    CAPTURE(aliasKind);
+    TestHook::SetIsRunningWithNonDefaultFullToken_Override tokenOverride(false);
+    TestHook::SetCreateSymlinkResult_Override symlinkOverride(false);
+    TempDirectory sourceDirectory("PortableCaseOnlyAliasSource");
+    TempDirectory targetDirectory("PortableCaseOnlyAliasTarget", false);
+    TempDirectory linksDirectory("PortableCaseOnlyAliasLinks");
+    const std::string commandAlias = unicodeDistinctAlias ? "strasse" : (caseOnlyAlias ? "tool" : "command");
+    std::filesystem::path relativeFilePath = unicodeDistinctAlias ? std::filesystem::path{ L"stra\u00DFe.exe" } : std::filesystem::path{ "Tool.exe" };
+    ManifestInstaller installer;
+    installer.BaseInstallerType = InstallerTypeEnum::Portable;
+    bool useRename = false;
+
+    SECTION("Standalone Commands")
+    {
+        installer.Commands = { commandAlias };
+    }
+
+    SECTION("Standalone rename")
+    {
+        installer.Commands = { "unused" };
+        useRename = true;
+    }
+
+    SECTION("Archive root executable")
+    {
+        installer.BaseInstallerType = InstallerTypeEnum::Zip;
+    }
+
+    SECTION("Archive nested executable")
+    {
+        installer.BaseInstallerType = InstallerTypeEnum::Zip;
+        relativeFilePath = std::filesystem::path{ "bin" } / relativeFilePath;
+    }
+
+    const bool isArchive = installer.BaseInstallerType == InstallerTypeEnum::Zip;
+    if (isArchive)
+    {
+        installer.NestedInstallerType = InstallerTypeEnum::Portable;
+        installer.NestedInstallerFiles = { { relativeFilePath.u8string(), commandAlias } };
+    }
+
+    const auto sourcePath = sourceDirectory.GetPath() / relativeFilePath;
+    std::filesystem::create_directories(sourcePath.parent_path());
+    {
+        std::ofstream sourceFile(sourcePath, std::ios::binary);
+        REQUIRE(sourceFile.is_open());
+        sourceFile << "case-only alias executable";
+        REQUIRE(sourceFile.good());
+    }
+    const auto expectedHash = SHA256::ConvertToString(SHA256::ComputeHashFromFile(sourcePath));
+    const auto targetPath = targetDirectory.GetPath() / relativeFilePath;
+    const auto aliasPath = targetPath.parent_path() / ConvertToUTF16(commandAlias + ".exe");
+    const auto productCode = targetDirectory.GetPath().filename().u8string();
+    const auto originalLinks = AppInstaller::Runtime::GetPathDetailsFor(AppInstaller::Runtime::PathName::PortableLinksUserLocation);
+    AppInstaller::Registry::Portable::PortableARPEntry arpEntry(ScopeEnum::User, Architecture::X64, productCode);
+    auto cleanup = wil::scope_exit([&]()
+    {
+        AppInstaller::Runtime::TestHook_SetPathOverride(AppInstaller::Runtime::PathName::PortableLinksUserLocation, originalLinks);
+        auto pathVariable = AppInstaller::Registry::Environment::PathVariable(ScopeEnum::User);
+        pathVariable.Remove(targetPath.parent_path());
+        pathVariable.Remove(linksDirectory.GetPath());
+        arpEntry.Delete();
+    });
+    AppInstaller::Runtime::TestHook_SetPathOverride(AppInstaller::Runtime::PathName::PortableLinksUserLocation, linksDirectory.GetPath());
+
+    AppInstaller::CLI::Portable::PortableInstaller portableInstaller{
+        ScopeEnum::User, Architecture::X64, productCode, OperationType::Install };
+    portableInstaller.TargetInstallLocation = targetDirectory.GetPath();
+
+    std::ostringstream output;
+    TestContext context{ output, std::cin };
+    auto previousThreadGlobals = context.SetForCurrentThread();
+    if (useRename)
+    {
+        context.Args.AddArg(Execution::Args::Type::Rename, commandAlias);
+    }
+    context.Add<Data::Installer>(installer);
+    context.Add<Data::InstallerPath>(isArchive ? sourceDirectory.GetPath() : sourcePath);
+    context.Add<Data::PortableInstaller>(std::move(portableInstaller));
+
+    context << PortableInstallImpl;
+
+    INFO(output.str());
+    REQUIRE_FALSE(context.IsTerminated());
+    REQUIRE(context.Get<Data::OperationReturnCode>() == ERROR_SUCCESS);
+    REQUIRE(std::filesystem::exists(targetPath));
+    REQUIRE(std::filesystem::exists(aliasPath));
+    CHECK(SHA256::ConvertToString(SHA256::ComputeHashFromFile(targetPath)) == expectedHash);
+    CHECK(SHA256::ConvertToString(SHA256::ComputeHashFromFile(aliasPath)) == expectedHash);
+    CHECK(AppInstaller::Registry::Environment::PathVariable(ScopeEnum::User).Contains(targetPath.parent_path()));
+
+    if (isArchive)
+    {
+        const auto indexPath = targetDirectory.GetPath() / context.Get<Data::PortableInstaller>().GetPortableIndexFileName();
+        auto index = AppInstaller::Repository::Microsoft::PortableIndex::Open(
+            indexPath.u8string(), AppInstaller::SQLite::SQLiteStorageBase::OpenDisposition::Read);
+        const auto entries = index.GetAllPortableFiles();
+        CHECK(std::count_if(entries.begin(), entries.end(), [](const auto& entry)
+        {
+            return entry.FileType == AppInstaller::Portable::PortableFileType::Hardlink;
+        }) == (caseOnlyAlias ? 0 : 1));
+    }
+
+    AppInstaller::CLI::Portable::PortableInstaller uninstaller{
+        ScopeEnum::User, Architecture::X64, productCode, OperationType::Uninstall };
+    REQUIRE(uninstaller.VerifyExpectedState());
+    uninstaller.Uninstall();
+    CHECK_FALSE(std::filesystem::exists(targetPath));
+    CHECK_FALSE(std::filesystem::exists(aliasPath));
+    CHECK_FALSE(std::filesystem::exists(targetDirectory.GetPath()));
 }
 
 TEST_CASE("PortableInstallFlow_RejectsEscapingPathsAtPointOfUse", "[InstallFlow][workflow]")

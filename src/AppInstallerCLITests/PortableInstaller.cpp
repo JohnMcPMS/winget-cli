@@ -66,6 +66,56 @@ TEST_CASE("PortableInstaller_InstallAndUpgradeReplaceInstalledState", "[Portable
     REQUIRE(std::filesystem::exists(newDirectory.GetPath()) == targetAlreadyExists);
 }
 
+TEST_CASE("PortableInstaller_CaseOnlyAliasPreservesSource", "[PortableInstaller][PortableAliasRegression]")
+{
+    const bool recordToIndex = GENERATE(false, true);
+    const auto aliasFilename = GENERATE("Tool.exe", "tool.exe");
+    CAPTURE(recordToIndex, aliasFilename);
+    TempDirectory sourceDirectory("PortableAliasIdentitySource");
+    TempDirectory targetDirectory("PortableAliasIdentityTarget", false);
+    TempDirectory linksDirectory("PortableAliasIdentityLinks");
+    const auto sourcePath = sourceDirectory.GetPath() / "Tool.exe";
+    {
+        std::ofstream sourceFile(sourcePath, std::ios::binary);
+        REQUIRE(sourceFile.is_open());
+        sourceFile << "portable alias identity executable";
+        REQUIRE(sourceFile.good());
+    }
+    const auto expectedHash = SHA256::ConvertToString(SHA256::ComputeHashFromFile(sourcePath));
+    const auto targetPath = targetDirectory.GetPath() / "Tool.exe";
+    const auto aliasPath = targetDirectory.GetPath() / aliasFilename;
+    const auto productCode = targetDirectory.GetPath().filename().u8string();
+    const auto originalLinks = AppInstaller::Runtime::GetPathDetailsFor(AppInstaller::Runtime::PathName::PortableLinksUserLocation);
+    PortableARPEntry arpEntry(ScopeEnum::User, Architecture::X64, productCode);
+    auto cleanup = wil::scope_exit([&]()
+    {
+        AppInstaller::Runtime::TestHook_SetPathOverride(AppInstaller::Runtime::PathName::PortableLinksUserLocation, originalLinks);
+        PathVariable(ScopeEnum::User).Remove(linksDirectory.GetPath());
+        arpEntry.Delete();
+    });
+    AppInstaller::Runtime::TestHook_SetPathOverride(AppInstaller::Runtime::PathName::PortableLinksUserLocation, linksDirectory.GetPath());
+
+    PortableInstaller installer(ScopeEnum::User, Architecture::X64, productCode, OperationType::Install);
+    installer.TargetInstallLocation = targetDirectory.GetPath();
+    installer.RecordToIndex = recordToIndex;
+    installer.SetDesiredState({
+        PortableFileEntry::CreateFileEntry(sourcePath, targetPath, expectedHash),
+        PortableFileEntry::CreateHardlinkEntry(aliasPath, targetPath, expectedHash),
+    });
+
+    REQUIRE_NOTHROW(installer.Install());
+
+    REQUIRE(std::filesystem::exists(targetPath));
+    REQUIRE(std::filesystem::exists(aliasPath));
+    CHECK(std::filesystem::equivalent(targetPath, aliasPath));
+    CHECK(SHA256::ConvertToString(SHA256::ComputeHashFromFile(targetPath)) == expectedHash);
+    PortableInstaller uninstaller(ScopeEnum::User, Architecture::X64, productCode, OperationType::Uninstall);
+    REQUIRE(uninstaller.VerifyExpectedState());
+    uninstaller.Uninstall();
+    CHECK_FALSE(std::filesystem::exists(targetPath));
+    CHECK_FALSE(std::filesystem::exists(targetDirectory.GetPath()));
+}
+
 TEST_CASE("PortableInstaller_RollbackRemovesPartialInstall", "[PortableInstaller]")
 {
     const std::string productCode = "PortableRollbackStateTest";
