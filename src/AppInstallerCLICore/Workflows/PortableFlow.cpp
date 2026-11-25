@@ -111,6 +111,23 @@ namespace AppInstaller::CLI::Workflow
                 AICLI_TERMINATE_CONTEXT(APPINSTALLER_CLI_ERROR_INVALID_MANIFEST);
             }
         }
+
+        using PortablePathMap = std::map<std::wstring, std::filesystem::path>;
+
+        bool AddPortableAlias(Execution::Context& context, PortablePathMap& destinations,
+            const std::filesystem::path& destination, const std::filesystem::path& source)
+        {
+            auto [it, inserted] = destinations.emplace(Filesystem::GetPathKey(destination), source);
+            if (!inserted && !Filesystem::PathEqualsCaseInsensitive(it->second, source))
+            {
+                AICLI_LOG(CLI, Error, << "Portable alias destination [" << destination << "] for [" << source <<
+                    "] conflicts with [" << it->second << "]");
+                context.Reporter.Error() << ManifestError::DuplicatePortableCommandAlias << ' ' << destination.u8string() <<
+                    " (" << source.u8string() << ", " << it->second.u8string() << ')' << std::endl;
+                AICLI_TERMINATE_CONTEXT_RETURN(APPINSTALLER_CLI_ERROR_INVALID_MANIFEST, false);
+            }
+            return inserted;
+        }
     }
 
     void VerifyPackageAndSourceMatch(Execution::Context& context)
@@ -203,6 +220,15 @@ namespace AppInstaller::CLI::Workflow
         {
             portableInstaller.RecordToIndex = true;
 
+            // Directory install entries own their subtrees; include those contents in collision checks without flattening the entries.
+            PortablePathMap packagePaths;
+            for (const auto& entry : std::filesystem::recursive_directory_iterator(installerPath))
+            {
+                const auto relativePath = entry.path().lexically_relative(installerPath);
+                packagePaths.emplace(Filesystem::GetPathKey(relativePath), relativePath);
+            }
+            PortablePathMap linkPaths;
+
             // Cache hashes by extracted source path; nested executables are hashed on demand.
             std::map<std::filesystem::path, std::string> fileHashes;
 
@@ -253,18 +279,29 @@ namespace AppInstaller::CLI::Workflow
                 // Hardlink will be placed in the same directory as the original file to avoid pathing issues and same-volume restrictions
                 if (!Filesystem::PathEqualsCaseInsensitive(commandAlias, originalFilename))
                 {
-                    std::filesystem::path hardlinkPath = targetPath.parent_path() / commandAlias;
-                    const auto sourcePath = std::filesystem::weakly_canonical(installerPath / relativeFilePath);
-                    auto it = fileHashes.find(sourcePath);
-                    if (it == fileHashes.end())
+                    const bool addHardlink = AddPortableAlias(context, packagePaths, relativeFilePath.parent_path() / commandAlias, relativeFilePath);
+                    AICLI_RETURN_VALUE_IF_TERMINATED(context, {});
+                    if (addHardlink)
                     {
-                        THROW_HR_IF_MSG(APPINSTALLER_CLI_ERROR_PORTABLE_INSTALL_FAILED, !std::filesystem::is_regular_file(sourcePath),
-                            "Portable hardlink source is not a regular file: %ls", sourcePath.c_str());
-                        it = fileHashes.emplace(sourcePath, SHA256::ConvertToString(SHA256::ComputeHashFromFile(sourcePath))).first;
+                        std::filesystem::path hardlinkPath = targetPath.parent_path() / commandAlias;
+                        const auto sourcePath = std::filesystem::weakly_canonical(installerPath / relativeFilePath);
+                        auto it = fileHashes.find(sourcePath);
+                        if (it == fileHashes.end())
+                        {
+                            THROW_HR_IF_MSG(APPINSTALLER_CLI_ERROR_PORTABLE_INSTALL_FAILED, !std::filesystem::is_regular_file(sourcePath),
+                                "Portable hardlink source is not a regular file: %ls", sourcePath.c_str());
+                            it = fileHashes.emplace(sourcePath, SHA256::ConvertToString(SHA256::ComputeHashFromFile(sourcePath))).first;
+                        }
+                        entries.emplace_back(PortableFileEntry::CreateHardlinkEntry(hardlinkPath, targetPath, it->second));
                     }
-                    entries.emplace_back(PortableFileEntry::CreateHardlinkEntry(hardlinkPath, targetPath, it->second));
                 }
-                entries.emplace_back(PortableFileEntry::CreateSymlinkEntry(symlinkDirectory / commandAlias, targetPath));
+                const auto linkPath = symlinkDirectory / commandAlias;
+                const bool addLink = AddPortableAlias(context, linkPaths, linkPath, relativeFilePath);
+                AICLI_RETURN_VALUE_IF_TERMINATED(context, {});
+                if (addLink)
+                {
+                    entries.emplace_back(PortableFileEntry::CreateSymlinkEntry(linkPath, targetPath));
+                }
             }
         }
         else
