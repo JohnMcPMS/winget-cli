@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.singleton.1.4.0.schema.json
+
+PackageIdentifier: AppInstallerTest.NestedPortableAliases
+PackageVersion: 2.0.0.0
+PackageName: NestedPortableAliases
+PackageLocale: en-US
+Publisher: AppInstallerTest
+License: Test
+ShortDescription: Nested portable alias regression fixture.
+Installers:
+  - Architecture: x64
+    InstallerUrl: https://localhost:5001/TestKit/AppInstallerTestZipInstaller/NestedPortableV2.zip
+    InstallerType: zip
+    InstallerSha256: <NESTEDZIPV2HASH>
+    NestedInstallerType: portable
+    ArchiveBinariesDependOnPath: true
+    NestedInstallerFiles:
+      - RelativeFilePath: replacement\tools\AppInstallerTestExeInstaller.exe
+        PortableCommandAlias: PortableNestedOne
+      - RelativeFilePath: .\replacement\tools\AppInstallerTestExeInstaller.exe
+        PortableCommandAlias: PortableNestedTwo
+ManifestType: singleton
+ManifestVersion: 1.4.0

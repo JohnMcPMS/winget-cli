@@ -867,6 +867,68 @@ TEST_CASE("PortableInstaller_LegacyIndexCleansFallbackDirectories", "[PortableIn
     }
 }
 
+TEST_CASE("PortableInstaller_HardlinkCopyFallback", "[PortableInstaller][PortableAliasRegression]")
+{
+    TestHook::SetPortableTestEnvironment_Override testEnvironment;
+    const bool copyFallback = GENERATE(false, true);
+    CAPTURE(copyFallback);
+    TempDirectory sourceDirectory("PortableCopyFallbackSource");
+    TempDirectory targetDirectory("PortableCopyFallbackTarget", false);
+    TempDirectory linksDirectory("PortableCopyFallbackLinks");
+    const auto source = sourceDirectory.GetPath() / "tool.exe";
+    const auto expectedHash = WritePortablePublicationPayload(source, "portable alias copy fallback");
+    const auto target = targetDirectory.GetPath() / "tool.exe";
+    const auto alias = targetDirectory.GetPath() / "alias.exe";
+    const auto productCode = targetDirectory.GetPath().filename().u8string();
+    const auto subKey = L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\" + ConvertToUTF16(productCode);
+    const HKEY root = testEnvironment.GetARPRegistryRoot(ScopeEnum::User);
+    const auto originalLinks = AppInstaller::Runtime::GetPathDetailsFor(AppInstaller::Runtime::PathName::PortableLinksUserLocation);
+    auto cleanup = wil::scope_exit([&]()
+    {
+        AppInstaller::Runtime::TestHook_SetPathOverride(AppInstaller::Runtime::PathName::PortableLinksUserLocation, originalLinks);
+        AppInstaller::Registry::Key::Delete(root, subKey, KEY_WOW64_64KEY);
+    });
+    AppInstaller::Runtime::TestHook_SetPathOverride(AppInstaller::Runtime::PathName::PortableLinksUserLocation, linksDirectory.GetPath());
+    std::optional<TestHook::SetCreateHardlinkFailure_Override> hardlinkOverride;
+    if (copyFallback)
+    {
+        hardlinkOverride.emplace();
+    }
+
+    PortableInstaller installer{ ScopeEnum::User, Architecture::X64, productCode, OperationType::Install };
+    installer.TargetInstallLocation = targetDirectory.GetPath();
+    installer.RecordToIndex = true;
+    installer.SetDesiredState({
+        PortableFileEntry::CreateFileEntry(source, target, expectedHash),
+        PortableFileEntry::CreateHardlinkEntry(alias, target, expectedHash),
+    });
+    REQUIRE_NOTHROW(installer.Install());
+    REQUIRE(std::filesystem::is_regular_file(target));
+    REQUIRE(std::filesystem::is_regular_file(alias));
+    CHECK(SHA256::ConvertToString(SHA256::ComputeHashFromFile(target)) == expectedHash);
+    CHECK(SHA256::ConvertToString(SHA256::ComputeHashFromFile(alias)) == expectedHash);
+    CHECK(std::filesystem::equivalent(target, alias) == !copyFallback);
+    CHECK_FALSE(std::filesystem::exists(source));
+
+    {
+        auto index = PortableIndex::Open((targetDirectory.GetPath() / installer.GetPortableIndexFileName()).u8string(), SQLiteStorageBase::OpenDisposition::Read);
+        const auto entries = index.GetAllPortableFiles();
+        const auto entry = std::find_if(entries.begin(), entries.end(), [&](const auto& candidate)
+        {
+            return PathEqualsCaseInsensitive(candidate.GetFilePath(), alias);
+        });
+        REQUIRE(entry != entries.end());
+        CHECK(entry->SHA256 == expectedHash);
+    }
+
+    PortableInstaller uninstaller{ ScopeEnum::User, Architecture::X64, productCode, OperationType::Uninstall };
+    REQUIRE(uninstaller.VerifyExpectedState());
+    REQUIRE_NOTHROW(uninstaller.Uninstall());
+    CHECK_FALSE(std::filesystem::exists(targetDirectory.GetPath()));
+    CHECK(!AppInstaller::Registry::Key::OpenIfExists(root, subKey));
+    CHECK(PathVariable(ScopeEnum::User).Contains(std::filesystem::path{ L"C:\\WinGetTestPath\\User" }));
+}
+
 TEST_CASE("PortableInstaller_InstallAndUpgradeReplaceInstalledState", "[PortableInstaller]")
 {
     const bool recordToIndex = GENERATE(false, true);

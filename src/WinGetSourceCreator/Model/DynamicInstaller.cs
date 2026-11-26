@@ -12,6 +12,8 @@ namespace WinGetSourceCreator.Model
         // For zip it is the directories or files that need to included in the zip
         public List<string> Input { get; set; } = new List<string>();
 
+        public string RelativeDirectory { get; set; } = string.Empty;
+
         internal new void Validate()
         {
             base.Validate();
@@ -46,11 +48,19 @@ namespace WinGetSourceCreator.Model
         private void CreateZipInstaller(string outputFile)
         {
             var tmpPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+            var contentPath = Path.GetFullPath(Path.Combine(tmpPath, this.RelativeDirectory));
+            if (Path.IsPathRooted(this.RelativeDirectory) ||
+                (!contentPath.Equals(tmpPath, StringComparison.OrdinalIgnoreCase) &&
+                 !contentPath.StartsWith(tmpPath + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)))
+            {
+                throw new ArgumentException("Archive directory must stay within the archive root.", nameof(this.RelativeDirectory));
+            }
             if (Directory.Exists(tmpPath))
             {
                 Directory.Delete(tmpPath, true);
             }
             Directory.CreateDirectory(tmpPath);
+            Directory.CreateDirectory(contentPath);
 
             foreach (var input in this.Input)
             {
@@ -62,11 +72,11 @@ namespace WinGetSourceCreator.Model
                 if (File.Exists(input))
                 {
                     // TODO: maybe we want to preserve the dir?
-                    File.Copy(input, Path.Combine(tmpPath, Path.GetFileName(input)), true);
+                    File.Copy(input, Path.Combine(contentPath, Path.GetFileName(input)), true);
                 }
                 else if (Directory.Exists(input))
                 {
-                    Helpers.CopyDirectory(input, tmpPath);
+                    Helpers.CopyDirectory(input, contentPath);
                 }
                 else
                 {

@@ -91,6 +91,7 @@ namespace AppInstaller
         // Return nullopt to use the real symlink implementation.
         using CreateSymlinkCallback = std::function<std::optional<bool>(const std::filesystem::path&, const std::filesystem::path&)>;
         void TestHook_SetCreateSymlinkCallback_Override(CreateSymlinkCallback* callback);
+        void TestHook_SetCreateHardlinkFailure_Override(bool fail);
         void TestHook_SetIsSameVolume_Override(bool* result);
     }
 
@@ -220,6 +221,19 @@ namespace TestHook
     private:
         SetPathVariable_Override m_pathOverride;
         SetPortableARPEntryRoots_Override m_arpOverride;
+    };
+
+    struct SetCreateHardlinkFailure_Override
+    {
+        SetCreateHardlinkFailure_Override()
+        {
+            AppInstaller::Filesystem::TestHook_SetCreateHardlinkFailure_Override(true);
+        }
+
+        ~SetCreateHardlinkFailure_Override()
+        {
+            AppInstaller::Filesystem::TestHook_SetCreateHardlinkFailure_Override(false);
+        }
     };
 
     struct SetCreateSymlinkCallback_Override

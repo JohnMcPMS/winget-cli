@@ -48,6 +48,24 @@
         "%AGENT_TEMPDIRECTORY%/TestLocalIndex/AppInstallerTestMsixInstaller/AppInstallerTestMsixInstaller.msix"
       ],
       "HashToken": "<ZIPHASH>"
+    },
+    {
+      "Type": "zip",
+      "Name": "AppInstallerTestZipInstaller/NestedPortable.zip",
+      "Input": [
+        "%AGENT_TEMPDIRECTORY%/TestLocalIndex/AppInstallerTestExeInstaller/AppInstallerTestExeInstaller.exe"
+      ],
+      "RelativeDirectory": "nested\\bin",
+      "HashToken": "<NESTEDZIPHASH>"
+    },
+    {
+      "Type": "zip",
+      "Name": "AppInstallerTestZipInstaller/NestedPortableV2.zip",
+      "Input": [
+        "%AGENT_TEMPDIRECTORY%/TestLocalIndex/AppInstallerTestExeInstaller/AppInstallerTestExeInstaller.exe"
+      ],
+      "RelativeDirectory": "replacement\\tools",
+      "HashToken": "<NESTEDZIPV2HASH>"
     }
   ],
   "Signature": {

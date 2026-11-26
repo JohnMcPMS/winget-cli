@@ -506,8 +506,24 @@ namespace AppInstaller::Filesystem
         std::filesystem::copy_file(from, to, std::filesystem::copy_options::overwrite_existing);
     }
 
+#ifndef AICLI_DISABLE_TEST_HOOKS
+    static bool s_CreateHardlinkFailure_TestHook_Override = false;
+
+    void TestHook_SetCreateHardlinkFailure_Override(bool fail)
+    {
+        THROW_HR_IF(E_UNEXPECTED, fail && s_CreateHardlinkFailure_TestHook_Override);
+        s_CreateHardlinkFailure_TestHook_Override = fail;
+    }
+#endif
+
     bool CreateHardlink(const std::filesystem::path& target, const std::filesystem::path& link)
     {
+#ifndef AICLI_DISABLE_TEST_HOOKS
+        if (s_CreateHardlinkFailure_TestHook_Override)
+        {
+            return false;
+        }
+#endif
         try
         {
             std::filesystem::create_hard_link(target, link);

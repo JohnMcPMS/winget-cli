@@ -187,6 +187,22 @@ namespace AppInstallerCLIE2ETests.Helpers
                         },
                         HashToken = "<ZIPHASH>",
                     },
+                    new DynamicInstaller
+                    {
+                        Type = InstallerType.Zip,
+                        Name = Path.Combine(Constants.ZipInstaller, "NestedPortable.zip"),
+                        Input = new () { ExeInstaller },
+                        RelativeDirectory = Path.Combine("nested", "bin"),
+                        HashToken = "<NESTEDZIPHASH>",
+                    },
+                    new DynamicInstaller
+                    {
+                        Type = InstallerType.Zip,
+                        Name = Path.Combine(Constants.ZipInstaller, "NestedPortableV2.zip"),
+                        Input = new () { ExeInstaller },
+                        RelativeDirectory = Path.Combine("replacement", "tools"),
+                        HashToken = "<NESTEDZIPV2HASH>",
+                    },
                 },
                 Signature = new ()
                 {
