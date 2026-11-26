@@ -133,15 +133,16 @@ namespace AppInstaller::CLI::Portable
         void RegisterARPEntry();
 
         void ApplyDesiredState();
-        void RemoveExpectedState();
+        void RemoveExpectedState(bool isRollback = false);
         void InstallFile(AppInstaller::Portable::PortableFileEntry& desiredState, Repository::Microsoft::PortableIndex* index);
-        void RemoveFile(AppInstaller::Portable::PortableFileEntry& desiredState);
+        void RemoveFile(AppInstaller::Portable::PortableFileEntry& entry, std::set<std::wstring>& pathDirectoryKeys, bool isRollback);
 
         bool CreateTargetInstallDirectory();
         void RemoveInstallDirectory();
 
         void AddToPathVariable(std::filesystem::path value);
         void AddInstallDirectoryToPath(const std::filesystem::path& value);
+        void RemoveInstallDirectoryFromPath(const std::filesystem::path& value, std::set<std::wstring>& pathDirectoryKeys);
         void RemoveFromPathVariable(std::filesystem::path value, bool onlyIfEmpty);
     };
 }

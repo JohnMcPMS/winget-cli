@@ -238,7 +238,7 @@ namespace AppInstaller::CLI::Portable
         }
     }
 
-    void PortableInstaller::RemoveFile(AppInstaller::Portable::PortableFileEntry& entry)
+    void PortableInstaller::RemoveFile(AppInstaller::Portable::PortableFileEntry& entry, std::set<std::wstring>& pathDirectoryKeys, bool isRollback)
     {
         const auto& filePath = entry.GetFilePath();
         PortableFileType fileType = entry.FileType;
@@ -250,21 +250,20 @@ namespace AppInstaller::CLI::Portable
         }
         else if (fileType == PortableFileType::Symlink)
         {
-            if (Filesystem::SymlinkExists(filePath))
+            const bool symlinkExists = Filesystem::SymlinkExists(filePath);
+            if (symlinkExists)
             {
                 AICLI_LOG(CLI, Info, << "Deleting portable symlink at: " << filePath);
                 std::filesystem::remove(filePath);
             }
-            else if (InstallDirectoryAddedToPath)
+            if (InstallDirectoryAddedToPath || !symlinkExists)
             {
-                // If symlink doesn't exist, check if install directory was added to PATH directly and remove.
-                RemoveFromPathVariable(std::filesystem::path(Utility::ConvertToUTF16(entry.SymlinkTarget)).parent_path(), false);
+                const auto directory = std::filesystem::path(Utility::ConvertToUTF16(entry.SymlinkTarget)).parent_path();
+                if (!isRollback || m_requiredPathDirectoryKeys.count(Filesystem::GetPathKey(directory)))
+                {
+                    RemoveInstallDirectoryFromPath(directory, pathDirectoryKeys);
+                }
             }
-        }
-        else if (fileType == PortableFileType::Symlink && Filesystem::SymlinkExists(filePath))
-        {
-            AICLI_LOG(CLI, Info, << "Deleting portable symlink at: " << filePath);
-            std::filesystem::remove(filePath);
         }
         else if (fileType == PortableFileType::Directory && std::filesystem::exists(filePath))
         {
@@ -273,8 +272,9 @@ namespace AppInstaller::CLI::Portable
         }
     }
 
-    void PortableInstaller::RemoveExpectedState()
+    void PortableInstaller::RemoveExpectedState(bool isRollback)
     {
+        std::set<std::wstring> pathDirectoryKeys;
         std::filesystem::path existingIndexPath = InstallLocation / GetPortableIndexFileName();
         if (!InstallLocation.empty() && std::filesystem::exists(existingIndexPath))
         {
@@ -287,7 +287,7 @@ namespace AppInstaller::CLI::Portable
                 {
                     try
                     {
-                        RemoveFile(expectedEntry);
+                        RemoveFile(expectedEntry, pathDirectoryKeys, isRollback);
                         if (existingIndex.Exists(expectedEntry))
                         {
                             existingIndex.RemovePortableFile(expectedEntry);
@@ -324,7 +324,7 @@ namespace AppInstaller::CLI::Portable
             {
                 try
                 {
-                    RemoveFile(expectedEntry);
+                    RemoveFile(expectedEntry, pathDirectoryKeys, isRollback);
                 }
                 catch (...)
                 {
@@ -339,6 +339,14 @@ namespace AppInstaller::CLI::Portable
                 std::rethrow_exception(firstRemoveException);
             }
         }
+
+        // Legacy registrations may only identify the install root as their PATH fallback.
+        if (InstallDirectoryAddedToPath && !isRollback)
+        {
+            RemoveInstallDirectoryFromPath(InstallLocation, pathDirectoryKeys);
+        }
+        RemoveFromPathVariable(GetPortableLinksLocation(GetScope()), true);
+        InstallDirectoryAddedToPath = false;
     }
 
     // TODO: Optimize by applying the difference between expected and desired state.
@@ -438,19 +446,9 @@ namespace AppInstaller::CLI::Portable
     {
         THROW_HR_IF(E_UNEXPECTED, !SupportsUninstall());
 
-        RemoveExpectedState();
+        RemoveExpectedState(m_operation == Workflow::OperationType::Install);
 
         RemoveInstallDirectory();
-
-        if (!InstallDirectoryAddedToPath)
-        {
-            // Only remove the links directory if there are no links in it
-            RemoveFromPathVariable(GetPortableLinksLocation(GetScope()), true);
-        }
-        else
-        {
-            RemoveFromPathVariable(InstallLocation, false);
-        }
 
         m_portableARPEntry.Delete();
         AICLI_LOG(CLI, Info, << "PortableARPEntry deleted.");
@@ -518,6 +516,14 @@ namespace AppInstaller::CLI::Portable
         }
     }
 
+    void PortableInstaller::RemoveInstallDirectoryFromPath(const std::filesystem::path& value, std::set<std::wstring>& pathDirectoryKeys)
+    {
+        if (!value.empty() && pathDirectoryKeys.insert(Filesystem::GetPathKey(value)).second)
+        {
+            RemoveFromPathVariable(value, Filesystem::PathEqualsCaseInsensitive(value, GetPortableLinksLocation(GetScope())));
+        }
+    }
+
     void PortableInstaller::RemoveFromPathVariable(std::filesystem::path value, bool onlyIfEmpty)
     {
         if (onlyIfEmpty && std::filesystem::exists(value) && !std::filesystem::is_empty(value))
@@ -530,7 +536,6 @@ namespace AppInstaller::CLI::Portable
             // Necessary for handling old path values associated with winget-cli#5033
             if (PathVariable(GetScope()).Remove(value) || PathVariable(GetScope()).Remove(value.make_preferred()))
             {
-                InstallDirectoryAddedToPath = false;
                 AICLI_LOG(CLI, Info, << "Removed target directory from PATH registry: " << value);
             }
             else

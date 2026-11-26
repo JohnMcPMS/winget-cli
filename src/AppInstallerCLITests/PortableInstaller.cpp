@@ -478,6 +478,395 @@ TEST_CASE("PortableInstaller_UpgradePublicationTransitions", "[PortableInstaller
     }
 }
 
+TEST_CASE("PortableInstaller_UninstallCleansFallbackDirectories", "[PortableInstaller][PortableAliasRegression]")
+{
+    TestHook::SetPortableTestEnvironment_Override testEnvironment;
+    const bool multipleParents = GENERATE(false, true);
+    const bool mixed = GENERATE(false, true);
+    const bool sharedLinks = GENERATE(false, true);
+    const bool userOwnedRoot = GENERATE(false, true);
+    CAPTURE(multipleParents, mixed, sharedLinks, userOwnedRoot);
+    TempDirectory sourceDirectory("PortableRemovalSource");
+    TempDirectory targetDirectory("PortableRemovalTarget", userOwnedRoot);
+    TempDirectory linksDirectory("PortableRemovalLinks");
+    const auto sourcePayload = sourceDirectory.GetPath() / "payload";
+    const auto targetPayload = targetDirectory.GetPath() / "payload";
+    const std::vector<std::filesystem::path> relativePaths{
+        "one\\alpha.exe", multipleParents ? "two\\beta.exe" : "one\\beta.exe", "one\\gamma.exe"
+    };
+    std::vector<PortableFileEntry> entries{ PortableFileEntry::CreateDirectoryEntry(sourcePayload, targetPayload) };
+    for (const auto& relative : relativePaths)
+    {
+        WritePortablePublicationPayload(sourcePayload / relative, "owned portable executable");
+        entries.emplace_back(PortableFileEntry::CreateSymlinkEntry(linksDirectory.GetPath() / relative.filename(), targetPayload / relative));
+    }
+    const auto keptFile = targetDirectory.GetPath() / "keep.txt";
+    const auto keptHash = userOwnedRoot ? WritePortablePublicationPayload(keptFile, "user-owned file") : "";
+    PathVariable pathVariable(ScopeEnum::User);
+    const auto otherTarget = sourceDirectory.GetPath() / "other.exe";
+    const auto otherLink = linksDirectory.GetPath() / "other.exe";
+    std::string otherHash;
+    if (sharedLinks)
+    {
+        otherHash = WritePortablePublicationPayload(otherTarget, "other package executable");
+        std::filesystem::create_symlink(otherTarget, otherLink);
+        pathVariable.Append(linksDirectory.GetPath());
+    }
+    const auto productCode = targetDirectory.GetPath().filename().u8string();
+    const auto subKey = L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\" + ConvertToUTF16(productCode);
+    const HKEY root = testEnvironment.GetARPRegistryRoot(ScopeEnum::User);
+    const auto originalLinks = AppInstaller::Runtime::GetPathDetailsFor(AppInstaller::Runtime::PathName::PortableLinksUserLocation);
+    auto cleanup = wil::scope_exit([&]()
+    {
+        AppInstaller::Runtime::TestHook_SetPathOverride(AppInstaller::Runtime::PathName::PortableLinksUserLocation, originalLinks);
+        AppInstaller::Registry::Key::Delete(root, subKey, KEY_WOW64_64KEY);
+    });
+    AppInstaller::Runtime::TestHook_SetPathOverride(AppInstaller::Runtime::PathName::PortableLinksUserLocation, linksDirectory.GetPath());
+    TestHook::SetCreateSymlinkCallback_Override symlinkOverride(
+        [&](const std::filesystem::path&, const std::filesystem::path& link) -> std::optional<bool>
+        {
+            if (mixed && link.filename() == "gamma.exe")
+            {
+                return std::nullopt;
+            }
+            return false;
+        });
+
+    PortableInstaller installer{ ScopeEnum::User, Architecture::X64, productCode, OperationType::Install };
+    installer.TargetInstallLocation = targetDirectory.GetPath();
+    installer.RecordToIndex = true;
+    installer.SetDesiredState(entries);
+    REQUIRE_NOTHROW(installer.Install());
+    const auto indexPath = targetDirectory.GetPath() / installer.GetPortableIndexFileName();
+    REQUIRE(std::filesystem::exists(indexPath));
+    for (const auto& relative : relativePaths)
+    {
+        REQUIRE(std::filesystem::is_regular_file(targetPayload / relative));
+        REQUIRE(pathVariable.Contains((targetPayload / relative).parent_path()));
+    }
+    REQUIRE(pathVariable.Contains(linksDirectory.GetPath()) == (mixed || sharedLinks));
+
+    PortableInstaller uninstaller{ ScopeEnum::User, Architecture::X64, productCode, OperationType::Uninstall };
+    REQUIRE(uninstaller.VerifyExpectedState());
+    REQUIRE_NOTHROW(uninstaller.Uninstall());
+    for (const auto& relative : relativePaths)
+    {
+        CAPTURE(relative);
+        CHECK_FALSE(pathVariable.Contains((targetPayload / relative).parent_path()));
+        CHECK_FALSE(SymlinkExists(linksDirectory.GetPath() / relative.filename()));
+    }
+    CHECK_FALSE(std::filesystem::exists(targetPayload));
+    CHECK_FALSE(std::filesystem::exists(indexPath));
+    CHECK_FALSE(AppInstaller::Registry::Key::OpenIfExists(root, subKey));
+    CHECK(pathVariable.Contains(linksDirectory.GetPath()) == sharedLinks);
+    CHECK(pathVariable.Contains(std::filesystem::path{ L"C:\\WinGetTestPath\\User" }));
+    CHECK(std::filesystem::exists(targetDirectory.GetPath()) == userOwnedRoot);
+    if (userOwnedRoot)
+    {
+        REQUIRE(std::filesystem::is_regular_file(keptFile));
+        CHECK(SHA256::ConvertToString(SHA256::ComputeHashFromFile(keptFile)) == keptHash);
+    }
+    if (sharedLinks)
+    {
+        CheckPortablePublishedAlias(otherLink, otherTarget, otherHash, false);
+    }
+}
+
+TEST_CASE("PortableInstaller_RollbackCleansFallbackDirectories", "[PortableInstaller][PortableAliasRegression]")
+{
+    TestHook::SetPortableTestEnvironment_Override testEnvironment;
+    const bool mixed = GENERATE(false, true);
+    const bool sharedLinks = GENERATE(false, true);
+    CAPTURE(mixed, sharedLinks);
+    TempDirectory sourceDirectory("PortablePathRollbackSource");
+    TempDirectory targetDirectory("PortablePathRollbackTarget");
+    TempDirectory linksDirectory("PortablePathRollbackLinks");
+    TempDirectory blockedDirectory("PortablePathRollbackBlocked");
+    const auto sourcePayload = sourceDirectory.GetPath() / "payload";
+    const auto targetPayload = targetDirectory.GetPath() / "payload";
+    const std::vector<std::filesystem::path> relativePaths{ "one\\alpha.exe", "two\\beta.exe", "one\\gamma.exe" };
+    std::vector<PortableFileEntry> entries{ PortableFileEntry::CreateDirectoryEntry(sourcePayload, targetPayload) };
+    for (const auto& relative : relativePaths)
+    {
+        WritePortablePublicationPayload(sourcePayload / relative, "partially installed executable");
+        entries.emplace_back(PortableFileEntry::CreateSymlinkEntry(linksDirectory.GetPath() / relative.filename(), targetPayload / relative));
+    }
+    const auto unappliedSource = sourceDirectory.GetPath() / "unapplied.exe";
+    const auto unappliedTarget = targetDirectory.GetPath() / "unapplied.exe";
+    const auto sourceHash = WritePortablePublicationPayload(unappliedSource, "unapplied replacement");
+    const auto keptHash = WritePortablePublicationPayload(unappliedTarget, "user-owned original");
+    entries.emplace_back(PortableFileEntry::CreateSymlinkEntry(blockedDirectory.GetPath(), targetPayload / relativePaths.front()));
+    entries.emplace_back(PortableFileEntry::CreateFileEntry(unappliedSource, unappliedTarget, sourceHash));
+    PathVariable pathVariable(ScopeEnum::User);
+    pathVariable.Append(linksDirectory.GetPath());
+    const auto otherTarget = sourceDirectory.GetPath() / "other.exe";
+    const auto otherLink = linksDirectory.GetPath() / "other.exe";
+    std::string otherHash;
+    if (sharedLinks)
+    {
+        otherHash = WritePortablePublicationPayload(otherTarget, "other package executable");
+        std::filesystem::create_symlink(otherTarget, otherLink);
+    }
+    const auto productCode = targetDirectory.GetPath().filename().u8string();
+    const auto subKey = L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\" + ConvertToUTF16(productCode);
+    const HKEY root = testEnvironment.GetARPRegistryRoot(ScopeEnum::User);
+    const auto originalLinks = AppInstaller::Runtime::GetPathDetailsFor(AppInstaller::Runtime::PathName::PortableLinksUserLocation);
+    auto cleanup = wil::scope_exit([&]()
+    {
+        AppInstaller::Runtime::TestHook_SetPathOverride(AppInstaller::Runtime::PathName::PortableLinksUserLocation, originalLinks);
+        AppInstaller::Registry::Key::Delete(root, subKey, KEY_WOW64_64KEY);
+    });
+    AppInstaller::Runtime::TestHook_SetPathOverride(AppInstaller::Runtime::PathName::PortableLinksUserLocation, linksDirectory.GetPath());
+    TestHook::SetCreateSymlinkCallback_Override symlinkOverride(
+        [&](const std::filesystem::path&, const std::filesystem::path& link) -> std::optional<bool>
+        {
+            if (mixed && link.filename() == "gamma.exe")
+            {
+                return std::nullopt;
+            }
+            return false;
+        });
+
+    PortableInstaller installer{ ScopeEnum::User, Architecture::X64, productCode, OperationType::Install };
+    installer.TargetInstallLocation = targetDirectory.GetPath();
+    installer.RecordToIndex = true;
+    installer.SetDesiredState(entries);
+    REQUIRE_THROWS_HR(installer.Install(), APPINSTALLER_CLI_ERROR_PORTABLE_SYMLINK_PATH_IS_DIRECTORY);
+    REQUIRE(installer.InstallDirectoryAddedToPath);
+    const auto indexPath = targetDirectory.GetPath() / installer.GetPortableIndexFileName();
+    REQUIRE(std::filesystem::exists(indexPath));
+    for (const auto& relative : relativePaths)
+    {
+        REQUIRE(std::filesystem::is_regular_file(targetPayload / relative));
+        REQUIRE(pathVariable.Contains((targetPayload / relative).parent_path()));
+    }
+
+    installer.PrepareForCleanUp();
+    REQUIRE_NOTHROW(installer.Uninstall());
+    for (const auto& relative : relativePaths)
+    {
+        CAPTURE(relative);
+        CHECK_FALSE(pathVariable.Contains((targetPayload / relative).parent_path()));
+        CHECK_FALSE(SymlinkExists(linksDirectory.GetPath() / relative.filename()));
+    }
+    CHECK_FALSE(std::filesystem::exists(targetPayload));
+    CHECK_FALSE(std::filesystem::exists(indexPath));
+    CHECK_FALSE(AppInstaller::Registry::Key::OpenIfExists(root, subKey));
+    CHECK(pathVariable.Contains(linksDirectory.GetPath()) == sharedLinks);
+    CHECK(pathVariable.Contains(std::filesystem::path{ L"C:\\WinGetTestPath\\User" }));
+    CHECK(std::filesystem::is_directory(blockedDirectory.GetPath()));
+    REQUIRE(std::filesystem::is_regular_file(unappliedSource));
+    REQUIRE(std::filesystem::is_regular_file(unappliedTarget));
+    CHECK(SHA256::ConvertToString(SHA256::ComputeHashFromFile(unappliedSource)) == sourceHash);
+    CHECK(SHA256::ConvertToString(SHA256::ComputeHashFromFile(unappliedTarget)) == keptHash);
+    if (sharedLinks)
+    {
+        CheckPortablePublishedAlias(otherLink, otherTarget, otherHash, false);
+    }
+}
+
+TEST_CASE("PortableInstaller_UpgradeCleansOldFallbackDirectories", "[PortableInstaller][PortableAliasRegression]")
+{
+    TestHook::SetPortableTestEnvironment_Override testEnvironment;
+    const auto outcome = GENERATE("symlinks", "fallbacks", "mixed");
+    const bool movingRoot = GENERATE(false, true);
+    const bool sharedLinks = GENERATE(false, true);
+    CAPTURE(outcome, movingRoot, sharedLinks);
+    const std::string_view mode{ outcome };
+    TempDirectory oldSource("PortablePathUpgradeOldSource");
+    TempDirectory newSource("PortablePathUpgradeNewSource");
+    TempDirectory oldDirectory("PortablePathUpgradeOldTarget");
+    TempDirectory newDirectory("PortablePathUpgradeNewTarget", false);
+    TempDirectory linksDirectory("PortablePathUpgradeLinks");
+    const auto& newRoot = movingRoot ? newDirectory.GetPath() : oldDirectory.GetPath();
+    const auto oldPayload = oldDirectory.GetPath() / "payload";
+    const auto newPayload = newRoot / "replacement";
+    const auto keptFile = oldDirectory.GetPath() / "keep.txt";
+    const auto keptHash = WritePortablePublicationPayload(keptFile, "user-owned old root");
+    const std::vector<std::filesystem::path> relativePaths{ "one\\alpha.exe", "two\\beta.exe", "one\\gamma.exe" };
+    std::vector<PortableFileEntry> oldEntries{ PortableFileEntry::CreateDirectoryEntry(oldSource.GetPath() / "payload", oldPayload) };
+    std::vector<PortableFileEntry> newEntries{ PortableFileEntry::CreateDirectoryEntry(newSource.GetPath() / "payload", newPayload) };
+    std::vector<std::string> newHashes;
+    for (const auto& relative : relativePaths)
+    {
+        WritePortablePublicationPayload(oldSource.GetPath() / "payload" / relative, "old executable");
+        newHashes.emplace_back(WritePortablePublicationPayload(newSource.GetPath() / "payload" / relative, "replacement executable"));
+        const auto link = linksDirectory.GetPath() / relative.filename();
+        oldEntries.emplace_back(PortableFileEntry::CreateSymlinkEntry(link, oldPayload / relative));
+        newEntries.emplace_back(PortableFileEntry::CreateSymlinkEntry(link, newPayload / relative));
+    }
+    PathVariable pathVariable(ScopeEnum::User);
+    const auto otherTarget = oldSource.GetPath() / "other.exe";
+    const auto otherLink = linksDirectory.GetPath() / "other.exe";
+    std::string otherHash;
+    if (sharedLinks)
+    {
+        otherHash = WritePortablePublicationPayload(otherTarget, "other package executable");
+        std::filesystem::create_symlink(otherTarget, otherLink);
+        pathVariable.Append(linksDirectory.GetPath());
+    }
+    const auto productCode = oldDirectory.GetPath().filename().u8string();
+    const auto subKey = L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\" + ConvertToUTF16(productCode);
+    const HKEY root = testEnvironment.GetARPRegistryRoot(ScopeEnum::User);
+    const auto originalLinks = AppInstaller::Runtime::GetPathDetailsFor(AppInstaller::Runtime::PathName::PortableLinksUserLocation);
+    auto cleanup = wil::scope_exit([&]()
+    {
+        AppInstaller::Runtime::TestHook_SetPathOverride(AppInstaller::Runtime::PathName::PortableLinksUserLocation, originalLinks);
+        AppInstaller::Registry::Key::Delete(root, subKey, KEY_WOW64_64KEY);
+    });
+    AppInstaller::Runtime::TestHook_SetPathOverride(AppInstaller::Runtime::PathName::PortableLinksUserLocation, linksDirectory.GetPath());
+    TestHook::SetCreateSymlinkCallback_Override symlinkOverride(
+        [&](const std::filesystem::path&, const std::filesystem::path& link) -> std::optional<bool>
+        {
+            if (mode == "mixed" && link.filename() == "alpha.exe")
+            {
+                return false;
+            }
+            return std::nullopt;
+        });
+
+    PortableInstaller initial{ ScopeEnum::User, Architecture::X64, productCode, OperationType::Install };
+    initial.TargetInstallLocation = oldDirectory.GetPath();
+    initial.RecordToIndex = true;
+    initial.BinariesDependOnPath = true;
+    initial.DisplayVersion = "1.0";
+    initial.SetDesiredState(oldEntries);
+    REQUIRE_NOTHROW(initial.Install());
+    for (const auto& relative : relativePaths)
+    {
+        REQUIRE(pathVariable.Contains((oldPayload / relative).parent_path()));
+    }
+
+    PortableInstaller updater{ ScopeEnum::User, Architecture::X64, productCode, OperationType::Upgrade };
+    updater.TargetInstallLocation = newRoot;
+    updater.RecordToIndex = true;
+    updater.BinariesDependOnPath = mode == "fallbacks";
+    updater.DisplayVersion = "2.0";
+    updater.SetDesiredState(newEntries);
+    REQUIRE(updater.VerifyExpectedState());
+    REQUIRE_NOTHROW(updater.Install());
+    for (size_t i = 0; i < relativePaths.size(); ++i)
+    {
+        const auto& relative = relativePaths[i];
+        CAPTURE(relative);
+        CHECK_FALSE(pathVariable.Contains((oldPayload / relative).parent_path()));
+        const bool fallback = mode == "fallbacks" || (mode == "mixed" && relative.filename() == "alpha.exe");
+        CheckPortablePublishedAlias(linksDirectory.GetPath() / relative.filename(), newPayload / relative, newHashes[i], fallback);
+        const bool parentRequired = mode == "fallbacks" || (mode == "mixed" && relative.parent_path() == "one");
+        CHECK(pathVariable.Contains((newPayload / relative).parent_path()) == parentRequired);
+    }
+    CHECK_FALSE(std::filesystem::exists(oldPayload));
+    CHECK(std::filesystem::exists(newRoot / updater.GetPortableIndexFileName()));
+    if (movingRoot)
+    {
+        CHECK_FALSE(std::filesystem::exists(oldDirectory.GetPath() / initial.GetPortableIndexFileName()));
+    }
+    CHECK(pathVariable.Contains(linksDirectory.GetPath()) == (sharedLinks || mode != "fallbacks"));
+    CHECK(pathVariable.Contains(std::filesystem::path{ L"C:\\WinGetTestPath\\User" }));
+    PortableARPEntry registration{ ScopeEnum::User, Architecture::X64, productCode };
+    REQUIRE(registration.Exists());
+    const auto location = registration[PortableValueName::InstallLocation];
+    REQUIRE(location.has_value());
+    CHECK(location->GetValue<AppInstaller::Registry::Value::Type::UTF16String>() == newRoot.native());
+    REQUIRE(std::filesystem::is_regular_file(keptFile));
+    CHECK(SHA256::ConvertToString(SHA256::ComputeHashFromFile(keptFile)) == keptHash);
+    if (sharedLinks)
+    {
+        CheckPortablePublishedAlias(otherLink, otherTarget, otherHash, false);
+    }
+}
+
+TEST_CASE("PortableInstaller_LegacyIndexCleansFallbackDirectories", "[PortableInstaller][PortableAliasRegression]")
+{
+    TestHook::SetPortableTestEnvironment_Override testEnvironment;
+    const auto state = GENERATE("fallbacks", "mixed-aggregate", "mixed-cleared-flag", "mixed-removed-paths");
+    const bool sharedLinks = GENERATE(false, true);
+    CAPTURE(state, sharedLinks);
+    const std::string_view legacyState{ state };
+    const bool mixed = legacyState != "fallbacks";
+    const bool seedFallbackPaths = legacyState != "mixed-removed-paths";
+    bool fallbackFlag = legacyState != "mixed-cleared-flag";
+    TempDirectory targetDirectory("PortableLegacyRemovalTarget");
+    TempDirectory linksDirectory("PortableLegacyRemovalLinks");
+    TempDirectory otherDirectory("PortableLegacyRemovalOther");
+    const auto targetPayload = targetDirectory.GetPath() / "payload";
+    const std::vector<std::filesystem::path> relativePaths{ "one\\alpha.exe", "two\\beta.exe", "three\\gamma.exe" };
+    const auto keptFile = targetDirectory.GetPath() / "keep.txt";
+    const auto keptHash = WritePortablePublicationPayload(keptFile, "user-owned legacy root");
+    PathVariable pathVariable(ScopeEnum::User);
+    pathVariable.Append(linksDirectory.GetPath());
+    std::vector<PortableFileEntry> entries{ PortableFileEntry::CreateDirectoryEntry({}, targetPayload) };
+    for (const auto& relative : relativePaths)
+    {
+        const auto target = targetPayload / relative;
+        const auto link = linksDirectory.GetPath() / relative.filename();
+        WritePortablePublicationPayload(target, "legacy installed executable");
+        entries.emplace_back(PortableFileEntry::CreateSymlinkEntry(link, target));
+        if (mixed && relative.filename() == "gamma.exe")
+        {
+            std::filesystem::create_symlink(target, link);
+        }
+        else if (seedFallbackPaths)
+        {
+            pathVariable.Append(target.parent_path());
+        }
+    }
+    const auto otherTarget = otherDirectory.GetPath() / "other.exe";
+    const auto otherLink = linksDirectory.GetPath() / "other.exe";
+    std::string otherHash;
+    if (sharedLinks)
+    {
+        otherHash = WritePortablePublicationPayload(otherTarget, "other package executable");
+        std::filesystem::create_symlink(otherTarget, otherLink);
+    }
+    const auto productCode = targetDirectory.GetPath().filename().u8string();
+    const auto subKey = L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\" + ConvertToUTF16(productCode);
+    const HKEY root = testEnvironment.GetARPRegistryRoot(ScopeEnum::User);
+    const auto originalLinks = AppInstaller::Runtime::GetPathDetailsFor(AppInstaller::Runtime::PathName::PortableLinksUserLocation);
+    auto cleanup = wil::scope_exit([&]()
+    {
+        AppInstaller::Runtime::TestHook_SetPathOverride(AppInstaller::Runtime::PathName::PortableLinksUserLocation, originalLinks);
+        AppInstaller::Registry::Key::Delete(root, subKey, KEY_WOW64_64KEY);
+    });
+    AppInstaller::Runtime::TestHook_SetPathOverride(AppInstaller::Runtime::PathName::PortableLinksUserLocation, linksDirectory.GetPath());
+    PortableARPEntry registration{ ScopeEnum::User, Architecture::X64, productCode };
+    registration.SetValue(PortableValueName::InstallLocation, targetDirectory.GetPath().native());
+    bool ownedRoot = false;
+    registration.SetValue(PortableValueName::InstallDirectoryCreated, ownedRoot);
+    registration.SetValue(PortableValueName::InstallDirectoryAddedToPath, fallbackFlag);
+    const auto indexPath = targetDirectory.GetPath() / ConvertToUTF16(productCode + ".db");
+    {
+        auto index = PortableIndex::CreateNew(indexPath.u8string(), { 1, 0 });
+        for (const auto& entry : entries)
+        {
+            index.AddPortableFile(entry);
+        }
+    }
+
+    PortableInstaller uninstaller{ ScopeEnum::User, Architecture::X64, productCode, OperationType::Uninstall };
+    REQUIRE(uninstaller.ARPEntryExists());
+    REQUIRE(uninstaller.InstallDirectoryAddedToPath == fallbackFlag);
+    REQUIRE(uninstaller.VerifyExpectedState());
+    REQUIRE_NOTHROW(uninstaller.Uninstall());
+    for (const auto& relative : relativePaths)
+    {
+        CAPTURE(relative);
+        CHECK_FALSE(pathVariable.Contains((targetPayload / relative).parent_path()));
+        CHECK_FALSE(SymlinkExists(linksDirectory.GetPath() / relative.filename()));
+    }
+    CHECK_FALSE(std::filesystem::exists(targetPayload));
+    CHECK_FALSE(std::filesystem::exists(indexPath));
+    CHECK_FALSE(AppInstaller::Registry::Key::OpenIfExists(root, subKey));
+    CHECK(pathVariable.Contains(linksDirectory.GetPath()) == sharedLinks);
+    CHECK(pathVariable.Contains(std::filesystem::path{ L"C:\\WinGetTestPath\\User" }));
+    REQUIRE(std::filesystem::is_regular_file(keptFile));
+    CHECK(SHA256::ConvertToString(SHA256::ComputeHashFromFile(keptFile)) == keptHash);
+    if (sharedLinks)
+    {
+        CheckPortablePublishedAlias(otherLink, otherTarget, otherHash, false);
+    }
+}
+
 TEST_CASE("PortableInstaller_InstallAndUpgradeReplaceInstalledState", "[PortableInstaller]")
 {
     const bool recordToIndex = GENERATE(false, true);

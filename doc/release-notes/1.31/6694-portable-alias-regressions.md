@@ -9,3 +9,4 @@
 * Allow retrying a fresh portable installation when an earlier failure left its uninstall registration completely empty, without automatically overwriting populated registrations.
 * Preserve the original portable installation error when cleaning up a failed installation, reporting any cleanup error separately.
 * Keep portable commands discoverable when some aliases use symlinks and others require PATH fallback, regardless of alias order, including across upgrades.
+* Remove all portable fallback directories from PATH during uninstall, failed-install cleanup, and upgrades, including legacy mixed-alias installations, while preserving shared command links.
