@@ -392,9 +392,16 @@ namespace AppInstaller::CLI::Workflow
             if (installAttempted && !portableInstaller.IsUpdate() && portableInstaller.HasRegistrationWrites())
             {
                 context.Reporter.Warn() << Resource::String::PortableInstallFailed << std::endl;
-                portableInstaller.PrepareForCleanUp();
-                portableInstaller.Uninstall();
-                AICLI_TERMINATE_CONTEXT(APPINSTALLER_CLI_ERROR_PORTABLE_UNINSTALL_FAILED);
+                try
+                {
+                    portableInstaller.PrepareForCleanUp();
+                    portableInstaller.Uninstall();
+                }
+                catch (...)
+                {
+                    AICLI_LOG(CLI, Error, << "Portable install cleanup failed.");
+                    Workflow::HandleException(context, std::current_exception());
+                }
             }
         }
     }

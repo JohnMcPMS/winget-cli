@@ -7,3 +7,4 @@
 * Reject conflicting portable archive aliases before changing installed files, preserving existing installations when an upgrade contains a conflict.
 * Avoid creating empty portable uninstall registrations or removing an existing installation when preparation fails before installation begins.
 * Allow retrying a fresh portable installation when an earlier failure left its uninstall registration completely empty, without automatically overwriting populated registrations.
+* Preserve the original portable installation error when cleaning up a failed installation, reporting any cleanup error separately.

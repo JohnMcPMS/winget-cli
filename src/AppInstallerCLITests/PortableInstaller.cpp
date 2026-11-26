@@ -215,6 +215,63 @@ TEST_CASE("PortableInstaller_PartialFailureRegistersAndCleansUp", "[PortableInst
     CHECK(std::filesystem::is_directory(blockedDirectory.GetPath()));
 }
 
+TEST_CASE("PortableInstaller_RollbackDoesNotCreateIndex", "[PortableInstaller][PortableAliasRegression]")
+{
+    TestHook::SetPortableTestEnvironment_Override testEnvironment;
+    const bool targetAlreadyExists = GENERATE(false, true);
+    CAPTURE(targetAlreadyExists);
+    TempDirectory targetDirectory("PortableUnappliedRollbackTarget", targetAlreadyExists);
+    TempDirectory linksDirectory("PortableUnappliedRollbackLinks");
+    TempFile source("PortableUnappliedRollbackSource.exe");
+    {
+        std::ofstream file(source.GetPath(), std::ios::binary);
+        REQUIRE(file.is_open());
+        file << "unapplied executable";
+        REQUIRE(file.good());
+    }
+    const auto sourceHash = SHA256::ConvertToString(SHA256::ComputeHashFromFile(source.GetPath()));
+    const auto preservedPath = targetDirectory.GetPath() / "keep.txt";
+    if (targetAlreadyExists)
+    {
+        std::ofstream file(preservedPath, std::ios::binary);
+        REQUIRE(file.is_open());
+        file << "user-owned file";
+        REQUIRE(file.good());
+    }
+    const auto preservedHash = targetAlreadyExists ? SHA256::ConvertToString(SHA256::ComputeHashFromFile(preservedPath)) : "";
+    const auto productCode = targetDirectory.GetPath().filename().u8string();
+    const auto subKey = L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\" + ConvertToUTF16(productCode);
+    const HKEY root = testEnvironment.GetARPRegistryRoot(ScopeEnum::User);
+    const auto originalLinks = AppInstaller::Runtime::GetPathDetailsFor(AppInstaller::Runtime::PathName::PortableLinksUserLocation);
+    auto restoreLinks = wil::scope_exit([&]()
+    {
+        AppInstaller::Runtime::TestHook_SetPathOverride(AppInstaller::Runtime::PathName::PortableLinksUserLocation, originalLinks);
+    });
+    AppInstaller::Runtime::TestHook_SetPathOverride(AppInstaller::Runtime::PathName::PortableLinksUserLocation, linksDirectory.GetPath());
+
+    PortableInstaller installer{ ScopeEnum::User, Architecture::X64, productCode, OperationType::Install };
+    installer.TargetInstallLocation = targetDirectory.GetPath();
+    installer.RecordToIndex = true;
+    installer.SetDesiredState({ PortableFileEntry::CreateFileEntry(source.GetPath(), targetDirectory.GetPath() / "tool.exe", sourceHash) });
+    const auto indexPath = targetDirectory.GetPath() / installer.GetPortableIndexFileName();
+    REQUIRE_FALSE(std::filesystem::exists(indexPath));
+    REQUIRE(!AppInstaller::Registry::Key::OpenIfExists(root, subKey));
+
+    installer.PrepareForCleanUp();
+    CHECK_NOTHROW(installer.Uninstall());
+    CHECK_FALSE(std::filesystem::exists(indexPath));
+    CHECK_FALSE(AppInstaller::Registry::Key::OpenIfExists(root, subKey));
+    CHECK(std::filesystem::exists(targetDirectory.GetPath()) == targetAlreadyExists);
+    CHECK_FALSE(std::filesystem::exists(targetDirectory.GetPath() / "tool.exe"));
+    REQUIRE(std::filesystem::is_regular_file(source.GetPath()));
+    CHECK(SHA256::ConvertToString(SHA256::ComputeHashFromFile(source.GetPath())) == sourceHash);
+    if (targetAlreadyExists)
+    {
+        REQUIRE(std::filesystem::is_regular_file(preservedPath));
+        CHECK(SHA256::ConvertToString(SHA256::ComputeHashFromFile(preservedPath)) == preservedHash);
+    }
+}
+
 TEST_CASE("PortableInstaller_InstallAndUpgradeReplaceInstalledState", "[PortableInstaller]")
 {
     const bool recordToIndex = GENERATE(false, true);

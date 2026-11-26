@@ -4,6 +4,7 @@
 #include "WorkflowCommon.h"
 #include "TestHooks.h"
 #include "AppInstallerRuntime.h"
+#include <AppInstallerErrors.h>
 #include <AppInstallerFileLogger.h>
 #include <AppInstallerProgress.h>
 #include <winget/MSStore.h>
@@ -1367,6 +1368,168 @@ TEST_CASE("PortableInstallFlow_PreparationFailurePreservesRegistrationState", "[
     {
         CHECK_FALSE(std::filesystem::exists(targetDirectory.GetPath()));
         CHECK_FALSE(std::filesystem::exists(indexPath));
+    }
+}
+
+TEST_CASE("PortableInstallFlow_PreparationExceptionPreservesPrimaryResult", "[InstallFlow][workflow][PortableAliasRegression]")
+{
+    TestHook::SetPortableTestEnvironment_Override testEnvironment;
+    using AppInstaller::CLI::Portable::PortableInstaller;
+    using AppInstaller::Registry::Key;
+    using AppInstaller::Registry::Portable::PortableARPEntry;
+    using AppInstaller::Registry::Portable::PortableValueName;
+    using AppInstaller::Registry::Value;
+    const bool existingRegistration = GENERATE(false, true);
+    CAPTURE(existingRegistration);
+    TestHook::SetIsRunningWithNonDefaultFullToken_Override tokenOverride(false);
+    TempDirectory sourceDirectory("PortablePrimaryPreparationSource");
+    TempDirectory targetDirectory("PortablePrimaryPreparationTarget", existingRegistration);
+    TempDirectory linksDirectory("PortablePrimaryPreparationLinks");
+    const std::string packageId = "Portable.PrimaryPreparation";
+    const auto productCode = MakeSuitablePathPart(packageId + "_*DefaultSource");
+    const auto subKey = L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\" + ConvertToUTF16(productCode);
+    const HKEY root = testEnvironment.GetARPRegistryRoot(ScopeEnum::User);
+    const auto originalLinks = AppInstaller::Runtime::GetPathDetailsFor(AppInstaller::Runtime::PathName::PortableLinksUserLocation);
+    auto cleanup = wil::scope_exit([&]()
+    {
+        AppInstaller::Runtime::TestHook_SetPathOverride(AppInstaller::Runtime::PathName::PortableLinksUserLocation, originalLinks);
+        Key::Delete(root, subKey, KEY_WOW64_64KEY);
+    });
+    AppInstaller::Runtime::TestHook_SetPathOverride(AppInstaller::Runtime::PathName::PortableLinksUserLocation, linksDirectory.GetPath());
+
+    const auto previousPath = targetDirectory.GetPath() / "previous.exe";
+    std::string previousHash;
+    if (existingRegistration)
+    {
+        previousHash = WritePortableArchivePayload(previousPath, "previous registered executable");
+        PortableARPEntry entry{ ScopeEnum::User, Architecture::X64, productCode };
+        entry.SetValue(PortableValueName::WinGetPackageIdentifier, std::string_view{ packageId });
+        entry.SetValue(PortableValueName::WinGetSourceIdentifier, "*DefaultSource"sv);
+        entry.SetValue(PortableValueName::DisplayVersion, "1.0"sv);
+        entry.SetValue(PortableValueName::InstallLocation, targetDirectory.GetPath().wstring());
+        entry.SetValue(PortableValueName::PortableTargetFullPath, previousPath.wstring());
+        entry.SetValue(PortableValueName::SHA256, std::string_view{ previousHash });
+        AppInstaller::Registry::Environment::PathVariable(ScopeEnum::User).Append(targetDirectory.GetPath());
+    }
+
+    PortableInstaller portableInstaller{ ScopeEnum::User, Architecture::X64, productCode, OperationType::Install };
+    portableInstaller.TargetInstallLocation = targetDirectory.GetPath();
+    portableInstaller.RecordToIndex = true;
+    const auto indexPath = targetDirectory.GetPath() / portableInstaller.GetPortableIndexFileName();
+    REQUIRE_FALSE(std::filesystem::exists(indexPath));
+    const auto missingPath = sourceDirectory.GetPath() / "missing.exe";
+    REQUIRE_FALSE(std::filesystem::exists(missingPath));
+    AppInstaller::Manifest::Manifest manifest;
+    manifest.Id = packageId;
+    manifest.Version = "2.0";
+    ManifestInstaller installer;
+    installer.BaseInstallerType = InstallerTypeEnum::Portable;
+    installer.Commands = { "tool" };
+    std::ostringstream output;
+    TestContext context{ output, std::cin };
+    auto previousThreadGlobals = context.SetForCurrentThread();
+    context.Add<Data::Manifest>(manifest);
+    context.Add<Data::Installer>(installer);
+    context.Add<Data::InstallerPath>(missingPath);
+    context.Add<Data::PortableInstaller>(std::move(portableInstaller));
+
+    CHECK_NOTHROW(context << VerifyPackageAndSourceMatch << PortableInstallImpl <<
+        ReportInstallerResult("Portable"sv, APPINSTALLER_CLI_ERROR_PORTABLE_INSTALL_FAILED, true));
+    INFO(output.str());
+    REQUIRE(context.Contains(Data::OperationReturnCode));
+    CHECK(context.Get<Data::OperationReturnCode>() == static_cast<DWORD>(APPINSTALLER_CLI_ERROR_STREAM_READ_FAILURE));
+    REQUIRE_TERMINATED_WITH(context, APPINSTALLER_CLI_ERROR_PORTABLE_INSTALL_FAILED);
+    CHECK(output.str().find(AppInstaller::GetUserPresentableMessage(APPINSTALLER_CLI_ERROR_STREAM_READ_FAILURE)) != std::string::npos);
+    CHECK_FALSE(std::filesystem::exists(indexPath));
+    CHECK(std::filesystem::exists(targetDirectory.GetPath()) == existingRegistration);
+    CHECK(AppInstaller::Registry::Environment::PathVariable(ScopeEnum::User).Contains(targetDirectory.GetPath()) == existingRegistration);
+    const auto key = Key::OpenIfExists(root, subKey);
+    CHECK(static_cast<bool>(key) == existingRegistration);
+    if (existingRegistration)
+    {
+        REQUIRE(key);
+        const auto version = key[std::wstring{ L"DisplayVersion" }];
+        REQUIRE(version.has_value());
+        CHECK(version->GetValue<Value::Type::String>() == "1.0");
+        REQUIRE(std::filesystem::is_regular_file(previousPath));
+        CHECK(SHA256::ConvertToString(SHA256::ComputeHashFromFile(previousPath)) == previousHash);
+    }
+}
+
+TEST_CASE("PortableInstallFlow_InstallFailureSurvivesCleanup", "[InstallFlow][workflow][PortableAliasRegression]")
+{
+    TestHook::SetPortableTestEnvironment_Override testEnvironment;
+    using AppInstaller::CLI::Portable::PortableInstaller;
+    using AppInstaller::Registry::Key;
+    const bool recordToIndex = GENERATE(false, true);
+    const bool cleanupFails = GENERATE(false, true);
+    CAPTURE(recordToIndex, cleanupFails);
+    TestHook::SetIsRunningWithNonDefaultFullToken_Override tokenOverride(false);
+    TempDirectory sourceDirectory("PortablePrimaryInstallSource");
+    TempDirectory targetDirectory("PortablePrimaryInstallTarget", false);
+    TempDirectory linksDirectory("PortablePrimaryInstallLinks");
+    const auto sourcePath = sourceDirectory.GetPath() / "tool.exe";
+    WritePortableArchivePayload(sourcePath, "partially installed executable");
+    const auto blockedLink = linksDirectory.GetPath() / "tool.exe";
+    const auto blockerPath = blockedLink / "keep.txt";
+    const auto blockerHash = WritePortableArchivePayload(blockerPath, "unrelated link blocker");
+    const std::string packageId = "Portable.PrimaryInstall";
+    const auto productCode = MakeSuitablePathPart(packageId + "_*DefaultSource");
+    const auto subKey = L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\" + ConvertToUTF16(productCode);
+    const auto cleanupBlocker = subKey + L"\\CleanupBlocker";
+    const HKEY root = testEnvironment.GetARPRegistryRoot(ScopeEnum::User);
+    const auto originalLinks = AppInstaller::Runtime::GetPathDetailsFor(AppInstaller::Runtime::PathName::PortableLinksUserLocation);
+    auto cleanup = wil::scope_exit([&]()
+    {
+        AppInstaller::Runtime::TestHook_SetPathOverride(AppInstaller::Runtime::PathName::PortableLinksUserLocation, originalLinks);
+        Key::Delete(root, cleanupBlocker, KEY_WOW64_64KEY);
+        Key::Delete(root, subKey, KEY_WOW64_64KEY);
+    });
+    AppInstaller::Runtime::TestHook_SetPathOverride(AppInstaller::Runtime::PathName::PortableLinksUserLocation, linksDirectory.GetPath());
+    if (cleanupFails)
+    {
+        const auto key = Key::Create(root, subKey, REG_OPTION_VOLATILE);
+        key.SetValue(L"WinGetPackageIdentifier", ConvertToUTF16(packageId));
+        key.SetValue(L"WinGetSourceIdentifier", L"*DefaultSource");
+        Key::Create(key, L"CleanupBlocker", REG_OPTION_VOLATILE);
+    }
+
+    PortableInstaller portableInstaller{ ScopeEnum::User, Architecture::X64, productCode, OperationType::Install };
+    portableInstaller.TargetInstallLocation = targetDirectory.GetPath();
+    portableInstaller.RecordToIndex = recordToIndex;
+    const auto indexPath = targetDirectory.GetPath() / portableInstaller.GetPortableIndexFileName();
+    AppInstaller::Manifest::Manifest manifest;
+    manifest.Id = packageId;
+    manifest.Version = "1.0";
+    ManifestInstaller installer;
+    installer.BaseInstallerType = InstallerTypeEnum::Portable;
+    installer.Commands = { "tool" };
+    std::ostringstream output;
+    TestContext context{ output, std::cin };
+    auto previousThreadGlobals = context.SetForCurrentThread();
+    context.Add<Data::Manifest>(manifest);
+    context.Add<Data::Installer>(installer);
+    context.Add<Data::InstallerPath>(sourcePath);
+    context.Add<Data::PortableInstaller>(std::move(portableInstaller));
+
+    CHECK_NOTHROW(context << VerifyPackageAndSourceMatch << PortableInstallImpl <<
+        ReportInstallerResult("Portable"sv, APPINSTALLER_CLI_ERROR_PORTABLE_INSTALL_FAILED, true));
+    INFO(output.str());
+    REQUIRE(context.Contains(Data::OperationReturnCode));
+    CHECK(context.Get<Data::OperationReturnCode>() == static_cast<DWORD>(APPINSTALLER_CLI_ERROR_PORTABLE_SYMLINK_PATH_IS_DIRECTORY));
+    CHECK(context.IsTerminated());
+    CHECK(context.GetTerminationHR() == APPINSTALLER_CLI_ERROR_PORTABLE_INSTALL_FAILED);
+    CHECK(output.str().find(AppInstaller::GetUserPresentableMessage(APPINSTALLER_CLI_ERROR_PORTABLE_SYMLINK_PATH_IS_DIRECTORY)) != std::string::npos);
+    CHECK_FALSE(std::filesystem::exists(sourcePath));
+    CHECK_FALSE(std::filesystem::exists(targetDirectory.GetPath()));
+    CHECK_FALSE(std::filesystem::exists(indexPath));
+    REQUIRE(std::filesystem::is_regular_file(blockerPath));
+    CHECK(SHA256::ConvertToString(SHA256::ComputeHashFromFile(blockerPath)) == blockerHash);
+    CHECK(static_cast<bool>(Key::OpenIfExists(root, subKey)) == cleanupFails);
+    if (cleanupFails)
+    {
+        CHECK(output.str().find(AppInstaller::GetUserPresentableMessage(HRESULT_FROM_WIN32(ERROR_ACCESS_DENIED))) != std::string::npos);
+        CHECK(Key::OpenIfExists(root, cleanupBlocker));
     }
 }
 
