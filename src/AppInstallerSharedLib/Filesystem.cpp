@@ -532,20 +532,26 @@ namespace AppInstaller::Filesystem
     }
 
 #ifndef AICLI_DISABLE_TEST_HOOKS
-    static bool* s_CreateSymlinkResult_TestHook_Override = nullptr;
+    using CreateSymlinkCallback = std::function<std::optional<bool>(const std::filesystem::path&, const std::filesystem::path&)>;
+    static CreateSymlinkCallback* s_CreateSymlinkCallback_TestHook_Override = nullptr;
 
-    void TestHook_SetCreateSymlinkResult_Override(bool* status)
+    void TestHook_SetCreateSymlinkCallback_Override(CreateSymlinkCallback* callback)
     {
-        s_CreateSymlinkResult_TestHook_Override = status;
+        THROW_HR_IF(E_UNEXPECTED, callback && s_CreateSymlinkCallback_TestHook_Override);
+        s_CreateSymlinkCallback_TestHook_Override = callback;
     }
 #endif
 
     bool CreateSymlink(const std::filesystem::path& target, const std::filesystem::path& link)
     {
 #ifndef AICLI_DISABLE_TEST_HOOKS
-        if (s_CreateSymlinkResult_TestHook_Override)
+        if (s_CreateSymlinkCallback_TestHook_Override)
         {
-            return *s_CreateSymlinkResult_TestHook_Override;
+            const auto result = (*s_CreateSymlinkCallback_TestHook_Override)(target, link);
+            if (result.has_value())
+            {
+                return *result;
+            }
         }
 #endif
         try

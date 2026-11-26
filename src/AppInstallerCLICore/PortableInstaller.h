@@ -5,6 +5,7 @@
 #include "winget/PortableFileEntry.h"
 #include <Workflows/WorkflowBase.h>
 #include <filesystem>
+#include <set>
 #include <utility>
 
 using namespace AppInstaller::Registry::Portable;
@@ -40,7 +41,7 @@ namespace AppInstaller::CLI::Portable
         std::string WinGetSourceIdentifier;
         bool InstallDirectoryCreated = false;
         bool BinariesDependOnPath = false;
-        // If we fail to create a symlink, add install directory to PATH variable
+        // True when any alias requires its executable directory on PATH.
         bool InstallDirectoryAddedToPath = false;
 
         bool Purge = false;
@@ -117,6 +118,8 @@ namespace AppInstaller::CLI::Portable
         std::vector<AppInstaller::Portable::PortableFileEntry> m_expectedEntries;
         // Rollback includes validated targets whose installation was attempted.
         std::vector<AppInstaller::Portable::PortableFileEntry> m_cleanupEntries;
+        std::set<std::wstring> m_requiredPathDirectoryKeys;
+        bool m_symlinkCreated = false;
         std::stringstream m_stream;
 
         bool SupportsInstall() const { return m_operation == Workflow::OperationType::Install || IsUpdate(); }
@@ -138,6 +141,7 @@ namespace AppInstaller::CLI::Portable
         void RemoveInstallDirectory();
 
         void AddToPathVariable(std::filesystem::path value);
+        void AddInstallDirectoryToPath(const std::filesystem::path& value);
         void RemoveFromPathVariable(std::filesystem::path value, bool onlyIfEmpty);
     };
 }

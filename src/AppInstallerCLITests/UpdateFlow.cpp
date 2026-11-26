@@ -194,8 +194,7 @@ TEST_CASE("UpdateFlow_Portable_SymlinkCreationFail", "[UpdateFlow][workflow]")
     std::ostringstream updateOutput;
     TestContext context{ updateOutput, std::cin };
     auto PreviousThreadGlobals = context.SetForCurrentThread();
-    bool overrideCreateSymlinkStatus = false;
-    AppInstaller::Filesystem::TestHook_SetCreateSymlinkResult_Override(&overrideCreateSymlinkStatus);
+    TestHook::SetCreateSymlinkResult_Override createSymlinkResultOverride(false);
     OverridePortableInstaller(context);
     OverrideForCompositeInstalledSource(context, CreateTestSource({ TSR::TestInstaller_Portable }));
     const auto& targetDirectory = tempDirectory.GetPath();

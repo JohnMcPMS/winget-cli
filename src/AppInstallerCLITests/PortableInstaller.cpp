@@ -26,6 +26,35 @@ using namespace AppInstaller::Utility;
 using namespace AppInstaller::CLI::Workflow;
 using namespace TestCommon;
 
+namespace
+{
+    std::string WritePortablePublicationPayload(const std::filesystem::path& path, std::string_view contents)
+    {
+        std::filesystem::create_directories(path.parent_path());
+        {
+            std::ofstream file(path, std::ios::binary);
+            REQUIRE(file.is_open());
+            file << contents;
+            REQUIRE(file.good());
+        }
+        return SHA256::ConvertToString(SHA256::ComputeHashFromFile(path));
+    }
+
+    void CheckPortablePublishedAlias(const std::filesystem::path& link, const std::filesystem::path& target,
+        const std::string& expectedHash, bool fallback)
+    {
+        CAPTURE(link, target, fallback);
+        REQUIRE(std::filesystem::is_regular_file(target));
+        CHECK(SHA256::ConvertToString(SHA256::ComputeHashFromFile(target)) == expectedHash);
+        const bool linked = SymlinkExists(link);
+        CHECK(linked == !fallback);
+        if (linked)
+        {
+            CHECK(VerifySymlink(link, target));
+        }
+    }
+}
+
 TEST_CASE("PortableARPEntry_IsolatedRegistrationScopes", "[PortableInstaller][PortableAliasRegression]")
 {
     TestHook::SetPortableTestEnvironment_Override testEnvironment;
@@ -269,6 +298,183 @@ TEST_CASE("PortableInstaller_RollbackDoesNotCreateIndex", "[PortableInstaller][P
     {
         REQUIRE(std::filesystem::is_regular_file(preservedPath));
         CHECK(SHA256::ConvertToString(SHA256::ComputeHashFromFile(preservedPath)) == preservedHash);
+    }
+}
+
+TEST_CASE("PortableInstaller_AliasPublicationOutcomes", "[PortableInstaller][PortableAliasRegression]")
+{
+    TestHook::SetPortableTestEnvironment_Override testEnvironment;
+    const auto outcome = GENERATE("symlinks", "fallbacks", "fallback-first", "symlink-first");
+    const bool sameParent = GENERATE(false, true);
+    const bool sharedLinks = GENERATE(false, true);
+    CAPTURE(outcome, sameParent, sharedLinks);
+    const std::string_view mode{ outcome };
+    const bool alphaFallback = mode == "fallbacks" || mode == "fallback-first";
+    const bool betaFallback = mode == "fallbacks" || mode == "symlink-first";
+    TempDirectory sourceDirectory("PortablePublicationSource");
+    TempDirectory targetDirectory("PortablePublicationTarget", false);
+    TempDirectory linksDirectory("PortablePublicationLinks");
+    const auto sourcePayload = sourceDirectory.GetPath() / "payload";
+    const auto targetPayload = targetDirectory.GetPath() / "payload";
+    const auto alphaRelative = std::filesystem::path{ sameParent ? "shared" : "one" } / "alpha.exe";
+    const auto betaRelative = std::filesystem::path{ sameParent ? "shared" : "two" } / "beta.exe";
+    const auto alphaHash = WritePortablePublicationPayload(sourcePayload / alphaRelative, "alpha executable");
+    const auto betaHash = WritePortablePublicationPayload(sourcePayload / betaRelative, "beta executable");
+    const auto alphaTarget = targetPayload / alphaRelative;
+    const auto betaTarget = targetPayload / betaRelative;
+    const auto alphaLink = linksDirectory.GetPath() / "alpha.exe";
+    const auto betaLink = linksDirectory.GetPath() / "beta.exe";
+    const auto otherTarget = sourceDirectory.GetPath() / "other.exe";
+    const auto otherLink = linksDirectory.GetPath() / "other.exe";
+    std::string otherHash;
+    PathVariable pathVariable(ScopeEnum::User);
+    if (sharedLinks)
+    {
+        otherHash = WritePortablePublicationPayload(otherTarget, "other package executable");
+        std::filesystem::create_symlink(otherTarget, otherLink);
+        pathVariable.Append(linksDirectory.GetPath());
+    }
+    const auto productCode = targetDirectory.GetPath().filename().u8string();
+    const auto subKey = L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\" + ConvertToUTF16(productCode);
+    const HKEY root = testEnvironment.GetARPRegistryRoot(ScopeEnum::User);
+    const auto originalLinks = AppInstaller::Runtime::GetPathDetailsFor(AppInstaller::Runtime::PathName::PortableLinksUserLocation);
+    auto cleanup = wil::scope_exit([&]()
+    {
+        AppInstaller::Runtime::TestHook_SetPathOverride(AppInstaller::Runtime::PathName::PortableLinksUserLocation, originalLinks);
+        AppInstaller::Registry::Key::Delete(root, subKey, KEY_WOW64_64KEY);
+    });
+    AppInstaller::Runtime::TestHook_SetPathOverride(AppInstaller::Runtime::PathName::PortableLinksUserLocation, linksDirectory.GetPath());
+    TestHook::SetCreateSymlinkCallback_Override symlinkOverride(
+        [&](const std::filesystem::path&, const std::filesystem::path& link) -> std::optional<bool>
+        {
+            if ((link == alphaLink && alphaFallback) || (link == betaLink && betaFallback))
+            {
+                return false;
+            }
+            return std::nullopt;
+        });
+
+    PortableInstaller installer{ ScopeEnum::User, Architecture::X64, productCode, OperationType::Install };
+    installer.TargetInstallLocation = targetDirectory.GetPath();
+    installer.RecordToIndex = true;
+    installer.SetDesiredState({
+        PortableFileEntry::CreateDirectoryEntry(sourcePayload, targetPayload),
+        PortableFileEntry::CreateSymlinkEntry(alphaLink, alphaTarget),
+        PortableFileEntry::CreateSymlinkEntry(betaLink, betaTarget),
+    });
+    REQUIRE_NOTHROW(installer.Install());
+
+    CheckPortablePublishedAlias(alphaLink, alphaTarget, alphaHash, alphaFallback);
+    CheckPortablePublishedAlias(betaLink, betaTarget, betaHash, betaFallback);
+    CHECK(pathVariable.Contains(alphaTarget.parent_path()) == (alphaFallback || (sameParent && betaFallback)));
+    CHECK(pathVariable.Contains(betaTarget.parent_path()) == (betaFallback || (sameParent && alphaFallback)));
+    CHECK(pathVariable.Contains(linksDirectory.GetPath()) == (sharedLinks || !alphaFallback || !betaFallback));
+    CHECK(pathVariable.Contains(std::filesystem::path{ L"C:\\WinGetTestPath\\User" }));
+    CHECK(installer.InstallDirectoryAddedToPath == (alphaFallback || betaFallback));
+    PortableARPEntry registration{ ScopeEnum::User, Architecture::X64, productCode };
+    const auto flag = registration[PortableValueName::InstallDirectoryAddedToPath];
+    REQUIRE(flag.has_value());
+    CHECK(flag->GetValue<AppInstaller::Registry::Value::Type::DWord>() == (alphaFallback || betaFallback ? 1u : 0u));
+    if (sharedLinks)
+    {
+        CheckPortablePublishedAlias(otherLink, otherTarget, otherHash, false);
+    }
+}
+
+TEST_CASE("PortableInstaller_UpgradePublicationTransitions", "[PortableInstaller][PortableAliasRegression]")
+{
+    TestHook::SetPortableTestEnvironment_Override testEnvironment;
+    const bool oldForcedPath = GENERATE(false, true);
+    const bool mixedUpgrade = GENERATE(false, true);
+    const bool sharedLinks = GENERATE(false, true);
+    CAPTURE(oldForcedPath, mixedUpgrade, sharedLinks);
+    const bool newForcedPath = !oldForcedPath && !mixedUpgrade;
+    TempDirectory oldSource("PortablePublicationOld");
+    TempDirectory newSource("PortablePublicationNew");
+    TempDirectory targetDirectory("PortablePublicationUpgradeTarget", false);
+    TempDirectory linksDirectory("PortablePublicationUpgradeLinks");
+    const auto targetPayload = targetDirectory.GetPath() / "payload";
+    const auto alphaTarget = targetPayload / "alpha.exe";
+    const auto betaTarget = targetPayload / "beta.exe";
+    const auto alphaLink = linksDirectory.GetPath() / "alpha.exe";
+    const auto betaLink = linksDirectory.GetPath() / "beta.exe";
+    const auto oldAlphaHash = WritePortablePublicationPayload(oldSource.GetPath() / "payload" / "alpha.exe", "old alpha");
+    const auto oldBetaHash = WritePortablePublicationPayload(oldSource.GetPath() / "payload" / "beta.exe", "old beta");
+    const auto newAlphaHash = WritePortablePublicationPayload(newSource.GetPath() / "payload" / "alpha.exe", "new alpha");
+    const auto newBetaHash = WritePortablePublicationPayload(newSource.GetPath() / "payload" / "beta.exe", "new beta");
+    const auto otherTarget = oldSource.GetPath() / "other.exe";
+    const auto otherLink = linksDirectory.GetPath() / "other.exe";
+    std::string otherHash;
+    PathVariable pathVariable(ScopeEnum::User);
+    if (sharedLinks)
+    {
+        otherHash = WritePortablePublicationPayload(otherTarget, "other package executable");
+        std::filesystem::create_symlink(otherTarget, otherLink);
+        pathVariable.Append(linksDirectory.GetPath());
+    }
+    const auto productCode = targetDirectory.GetPath().filename().u8string();
+    const auto subKey = L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\" + ConvertToUTF16(productCode);
+    const HKEY root = testEnvironment.GetARPRegistryRoot(ScopeEnum::User);
+    const auto originalLinks = AppInstaller::Runtime::GetPathDetailsFor(AppInstaller::Runtime::PathName::PortableLinksUserLocation);
+    auto cleanup = wil::scope_exit([&]()
+    {
+        AppInstaller::Runtime::TestHook_SetPathOverride(AppInstaller::Runtime::PathName::PortableLinksUserLocation, originalLinks);
+        AppInstaller::Registry::Key::Delete(root, subKey, KEY_WOW64_64KEY);
+    });
+    AppInstaller::Runtime::TestHook_SetPathOverride(AppInstaller::Runtime::PathName::PortableLinksUserLocation, linksDirectory.GetPath());
+    bool applyingUpgrade = false;
+    TestHook::SetCreateSymlinkCallback_Override symlinkOverride(
+        [&](const std::filesystem::path&, const std::filesystem::path& link) -> std::optional<bool>
+        {
+            if (applyingUpgrade && mixedUpgrade && link == alphaLink)
+            {
+                return false;
+            }
+            return std::nullopt;
+        });
+
+    PortableInstaller initial{ ScopeEnum::User, Architecture::X64, productCode, OperationType::Install };
+    initial.TargetInstallLocation = targetDirectory.GetPath();
+    initial.RecordToIndex = true;
+    initial.BinariesDependOnPath = oldForcedPath;
+    initial.DisplayVersion = "1.0";
+    initial.SetDesiredState({
+        PortableFileEntry::CreateDirectoryEntry(oldSource.GetPath() / "payload", targetPayload),
+        PortableFileEntry::CreateSymlinkEntry(alphaLink, alphaTarget),
+        PortableFileEntry::CreateSymlinkEntry(betaLink, betaTarget),
+    });
+    REQUIRE_NOTHROW(initial.Install());
+    CheckPortablePublishedAlias(alphaLink, alphaTarget, oldAlphaHash, oldForcedPath);
+    CheckPortablePublishedAlias(betaLink, betaTarget, oldBetaHash, oldForcedPath);
+    REQUIRE(pathVariable.Contains(targetPayload) == oldForcedPath);
+    REQUIRE(pathVariable.Contains(linksDirectory.GetPath()) == (sharedLinks || !oldForcedPath));
+
+    applyingUpgrade = true;
+    PortableInstaller updater{ ScopeEnum::User, Architecture::X64, productCode, OperationType::Upgrade };
+    updater.TargetInstallLocation = targetDirectory.GetPath();
+    updater.RecordToIndex = true;
+    updater.BinariesDependOnPath = newForcedPath;
+    updater.DisplayVersion = "2.0";
+    updater.SetDesiredState({
+        PortableFileEntry::CreateDirectoryEntry(newSource.GetPath() / "payload", targetPayload),
+        PortableFileEntry::CreateSymlinkEntry(alphaLink, alphaTarget),
+        PortableFileEntry::CreateSymlinkEntry(betaLink, betaTarget),
+    });
+    REQUIRE(updater.VerifyExpectedState());
+    REQUIRE_NOTHROW(updater.Install());
+
+    CheckPortablePublishedAlias(alphaLink, alphaTarget, newAlphaHash, mixedUpgrade || newForcedPath);
+    CheckPortablePublishedAlias(betaLink, betaTarget, newBetaHash, newForcedPath);
+    CHECK(pathVariable.Contains(targetPayload) == (mixedUpgrade || newForcedPath));
+    CHECK(pathVariable.Contains(linksDirectory.GetPath()) == (sharedLinks || !newForcedPath));
+    CHECK(updater.InstallDirectoryAddedToPath == (mixedUpgrade || newForcedPath));
+    PortableARPEntry registration{ ScopeEnum::User, Architecture::X64, productCode };
+    const auto flag = registration[PortableValueName::InstallDirectoryAddedToPath];
+    REQUIRE(flag.has_value());
+    CHECK(flag->GetValue<AppInstaller::Registry::Value::Type::DWord>() == (mixedUpgrade || newForcedPath ? 1u : 0u));
+    if (sharedLinks)
+    {
+        CheckPortablePublishedAlias(otherLink, otherTarget, otherHash, false);
     }
 }
 

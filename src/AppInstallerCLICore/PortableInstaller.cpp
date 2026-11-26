@@ -206,11 +206,8 @@ namespace AppInstaller::CLI::Portable
                 // Scenario indicated by 'ArchiveBinariesDependOnPath' manifest entry.
                 // Skip symlink creation for portables dependent on binaries that require the install directory to be added to PATH.
                 std::filesystem::path installDirectory = symlinkTargetPath.parent_path();
-                AddToPathVariable(installDirectory);
-                // Only remove the links directory if there are no links in it
-                RemoveFromPathVariable(GetPortableLinksLocation(GetScope()), true);
+                AddInstallDirectoryToPath(installDirectory);
                 AICLI_LOG(Core, Info, << "Install directory added to PATH: " << installDirectory);
-                CommitToARPEntry(PortableValueName::InstallDirectoryAddedToPath, InstallDirectoryAddedToPath = true);
             }
             else
             {
@@ -227,22 +224,14 @@ namespace AppInstaller::CLI::Portable
 
                 if (Filesystem::CreateSymlink(symlinkTargetPath, filePath))
                 {
-                    if (InstallDirectoryAddedToPath)
-                    {
-                        // If the install directory was previously added to PATH, remove it now that the symlink has been created.
-                        RemoveFromPathVariable(symlinkTargetPath.parent_path(), false);
-                    }
-                    CommitToARPEntry(PortableValueName::InstallDirectoryAddedToPath, InstallDirectoryAddedToPath = false);
+                    m_symlinkCreated = true;
                     AICLI_LOG(Core, Info, << "Symlink created at: " << filePath << " with target path: " << symlinkTargetPath);
                 }
                 else
                 {
                     // If symlink creation fails, resort to adding the package directory to PATH.
                     AICLI_LOG(Core, Info, << "Failed to create symlink at: " << filePath);
-                    AddToPathVariable(symlinkTargetPath.parent_path());
-                    // Only remove the links directory if there are no links in it
-                    RemoveFromPathVariable(GetPortableLinksLocation(GetScope()), true);
-                    CommitToARPEntry(PortableValueName::InstallDirectoryAddedToPath, InstallDirectoryAddedToPath = true);
+                    AddInstallDirectoryToPath(symlinkTargetPath.parent_path());
                 }
             }
             m_stream << Resource::String::PortableAliasAdded << ' ' << filePath.stem() << std::endl;
@@ -362,6 +351,8 @@ namespace AppInstaller::CLI::Portable
             RemoveInstallDirectory();
         }
 
+        CommitToARPEntry(PortableValueName::InstallDirectoryAddedToPath, InstallDirectoryAddedToPath = false);
+
         if (RecordToIndex)
         {
             std::filesystem::path targetIndexPath = TargetInstallLocation / GetPortableIndexFileName();
@@ -402,6 +393,8 @@ namespace AppInstaller::CLI::Portable
         THROW_HR_IF(E_UNEXPECTED, !SupportsInstall());
         m_cleanupEntries.clear();
         m_cleanupEntries.reserve(m_desiredEntries.size());
+        m_requiredPathDirectoryKeys.clear();
+        m_symlinkCreated = false;
 
         // If the operation is an install, the ARP entry should be created first so that a catastrophic failure
         // leaves the system in a state where an uninstall may be possible
@@ -423,10 +416,15 @@ namespace AppInstaller::CLI::Portable
             ApplyDesiredState();
         }
 
-        if (!InstallDirectoryAddedToPath)
+        if (m_symlinkCreated)
         {
             AddToPathVariable(GetPortableLinksLocation(GetScope()));
         }
+        else
+        {
+            RemoveFromPathVariable(GetPortableLinksLocation(GetScope()), true);
+        }
+        CommitToARPEntry(PortableValueName::InstallDirectoryAddedToPath, InstallDirectoryAddedToPath = !m_requiredPathDirectoryKeys.empty());
 
         // If the operation is an upgrade, the ARP entry should be created last so that a catastrophic failure
         // leaves the system in a state where an upgrade can be re-attempted
@@ -508,6 +506,15 @@ namespace AppInstaller::CLI::Portable
         else
         {
             AICLI_LOG(CLI, Info, << "Portable target directory already exists in PATH registry: " << value);
+        }
+    }
+
+    void PortableInstaller::AddInstallDirectoryToPath(const std::filesystem::path& value)
+    {
+        if (m_requiredPathDirectoryKeys.insert(Filesystem::GetPathKey(value)).second)
+        {
+            AddToPathVariable(value);
+            CommitToARPEntry(PortableValueName::InstallDirectoryAddedToPath, InstallDirectoryAddedToPath = true);
         }
     }
 

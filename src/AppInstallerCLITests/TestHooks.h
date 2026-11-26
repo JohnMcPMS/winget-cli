@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 
 #include <AppInstallerTelemetry.h>
@@ -87,7 +88,9 @@ namespace AppInstaller
 
     namespace Filesystem
     {
-        void TestHook_SetCreateSymlinkResult_Override(bool* status);
+        // Return nullopt to use the real symlink implementation.
+        using CreateSymlinkCallback = std::function<std::optional<bool>(const std::filesystem::path&, const std::filesystem::path&)>;
+        void TestHook_SetCreateSymlinkCallback_Override(CreateSymlinkCallback* callback);
         void TestHook_SetIsSameVolume_Override(bool* result);
     }
 
@@ -219,20 +222,34 @@ namespace TestHook
         SetPortableARPEntryRoots_Override m_arpOverride;
     };
 
-    struct SetCreateSymlinkResult_Override
+    struct SetCreateSymlinkCallback_Override
     {
-        SetCreateSymlinkResult_Override(bool status) : m_status(status)
+        SetCreateSymlinkCallback_Override(AppInstaller::Filesystem::CreateSymlinkCallback callback) : m_callback(std::move(callback))
         {
-            AppInstaller::Filesystem::TestHook_SetCreateSymlinkResult_Override(&m_status);
+            AppInstaller::Filesystem::TestHook_SetCreateSymlinkCallback_Override(&m_callback);
         }
 
-        ~SetCreateSymlinkResult_Override()
+        ~SetCreateSymlinkCallback_Override()
         {
-            AppInstaller::Filesystem::TestHook_SetCreateSymlinkResult_Override(nullptr);
+            AppInstaller::Filesystem::TestHook_SetCreateSymlinkCallback_Override(nullptr);
         }
 
     private:
-        bool m_status;
+        AppInstaller::Filesystem::CreateSymlinkCallback m_callback;
+    };
+
+    struct SetCreateSymlinkResult_Override
+    {
+        SetCreateSymlinkResult_Override(bool status) :
+            m_override([status](const std::filesystem::path&, const std::filesystem::path&) -> std::optional<bool>
+            {
+                return status;
+            })
+        {
+        }
+
+    private:
+        SetCreateSymlinkCallback_Override m_override;
     };
 
     struct SetScanArchiveResult_Override
